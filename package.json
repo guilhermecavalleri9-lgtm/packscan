@@ -1,0 +1,12 @@
+{
+  "name": "packscan",
+  "version": "1.0.0",
+  "description": "Sistema de roteirizacao PackScan",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PackScan — Roteirização</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0f1117;--bg2:#181c27;--bg3:#1e2333;--border:#2a3047;--border2:#3a4460;--text:#e8ecf5;--text2:#8a93b0;--text3:#555e7a;--accent:#4f8ef7;--accent2:#2563c4;--green:#34c97e;--green2:#1a6640;--amber:#f5a623;--red:#f05252;--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--radius:8px;--radius-lg:12px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh}
+.header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;gap:1.5rem;height:56px}
+.logo{font-family:var(--mono);font-weight:600;font-size:16px;color:var(--accent);letter-spacing:2px}
+.logo span{color:var(--text2);font-weight:400}
+.tab-bar{display:flex;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 2rem}
+.tab{padding:12px 18px;font-size:13px;cursor:pointer;border:none;background:none;color:var(--text2);border-bottom:2px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:6px;font-family:var(--sans);transition:color .15s}
+.tab:hover{color:var(--text)}.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:500}
+.tab-num{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-family:var(--mono);font-size:10px;color:var(--text3)}
+.tab.active .tab-num{background:var(--accent2);border-color:var(--accent);color:#fff}
+.page{display:none;padding:1.5rem 2rem}.page.active{display:block}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem 1.5rem;margin-bottom:1rem}
+.card-title{font-family:var(--mono);font-size:11px;color:var(--text3);letter-spacing:1px;text-transform:uppercase;margin-bottom:1rem;display:flex;align-items:center;gap:8px}
+.card-title::after{content:'';flex:1;height:1px;background:var(--border)}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.metric{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:.875rem 1rem}
+.metric-label{font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:6px}
+.metric-value{font-size:22px;font-weight:600;font-family:var(--mono)}
+.btn{padding:8px 16px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg3);color:var(--text);cursor:pointer;font-size:13px;display:inline-flex;align-items:center;gap:6px;font-family:var(--sans);transition:all .15s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn-primary{background:var(--accent2);border-color:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent);color:#fff}
+.btn-green{background:var(--green2);border-color:var(--green);color:var(--green)}
+.btn-green:hover{background:var(--green);color:#fff}
+.btn-red{background:#3a1a1a;border-color:var(--red);color:var(--red)}
+.btn-red:hover{background:var(--red);color:#fff}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input[type=text],input[type=number],input[type=password],select{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-family:var(--sans);font-size:13px;padding:8px 12px;width:100%;transition:border-color .15s}
+input:focus,select:focus{outline:none;border-color:var(--accent)}
+select option{background:var(--bg3)}
+label{font-size:12px;color:var(--text2);display:block;margin-bottom:4px}
+.upload-zone{border:2px dashed var(--border2);border-radius:var(--radius-lg);padding:2rem;text-align:center;cursor:pointer;transition:all .2s;color:var(--text2);margin-bottom:1rem}
+.upload-zone:hover{border-color:var(--accent);color:var(--accent);background:rgba(79,142,247,.05)}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500;font-family:var(--mono)}
+.b-blue{background:rgba(79,142,247,.15);color:var(--accent);border:1px solid rgba(79,142,247,.3)}
+.b-green{background:rgba(52,201,126,.12);color:var(--green);border:1px solid rgba(52,201,126,.3)}
+.b-gray{background:var(--bg3);color:var(--text2);border:1px solid var(--border)}
+.b-red{background:rgba(240,82,82,.12);color:var(--red);border:1px solid rgba(240,82,82,.3)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;padding:8px 12px;background:var(--bg3);color:var(--text3);font-weight:500;font-family:var(--mono);font-size:11px;border-bottom:1px solid var(--border);letter-spacing:.5px;text-transform:uppercase}
+td{padding:8px 12px;border-bottom:1px solid var(--border);color:var(--text)}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.progress-wrap{background:var(--bg3);border-radius:4px;height:6px;overflow:hidden}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:4px;transition:width .3s}
+.progress-fill.green{background:linear-gradient(90deg,var(--green2),var(--green))}
+.bip-input{font-family:var(--mono);font-size:22px;padding:12px 16px;letter-spacing:3px;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--radius);color:var(--text);width:100%;transition:border-color .15s}
+.bip-input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,142,247,.1)}
+.bip-fb{padding:.75rem 1rem;border-radius:var(--radius);margin-top:.75rem;display:none;font-size:13px;font-family:var(--mono)}
+.bip-ok{background:rgba(52,201,126,.1);border:1px solid rgba(52,201,126,.3);color:var(--green)}
+.bip-err{background:rgba(240,82,82,.1);border:1px solid rgba(240,82,82,.3);color:var(--red)}
+.bip-warn{background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.3);color:var(--amber)}
+.mot-card{border:1px solid var(--border);border-radius:var(--radius-lg);padding:.75rem 1rem;margin-bottom:6px;display:flex;align-items:center;gap:10px;background:var(--bg2);cursor:pointer;transition:all .15s}
+.mot-card:hover{border-color:var(--border2)}.mot-card.sel{border-color:var(--accent);background:rgba(79,142,247,.05)}
+.avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;font-family:var(--mono);flex-shrink:0}
+#map{height:520px;border-radius:var(--radius-lg);border:1px solid var(--border)}
+.rota-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg3);margin-bottom:6px}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.geo-log{font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:8px;max-height:180px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .75rem;line-height:1.8}
+.geo-log .ok{color:var(--green)}.geo-log .err{color:var(--red)}.geo-log .warn{color:#f5a623}.geo-log .cache{color:var(--accent)}
+.cor-picker{display:flex;flex-wrap:wrap;gap:6px}
+.cor-dot{width:24px;height:24px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .15s}
+.cor-dot:hover{transform:scale(1.2)}.cor-dot.ativo{border-color:#fff;transform:scale(1.15)}
+.alert{padding:.875rem 1rem;border-radius:var(--radius);margin-bottom:1rem;font-size:13px;display:flex;align-items:flex-start;gap:8px;line-height:1.5}
+.alert-green{background:rgba(52,201,126,.08);border:1px solid rgba(52,201,126,.25);color:var(--green)}
+.alert-amber{background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.25);color:#f5a623}
+.alert-blue{background:rgba(79,142,247,.08);border:1px solid rgba(79,142,247,.25);color:var(--accent)}
+.et-preview{background:#fff;color:#000;border-radius:4px;width:300px;height:75px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Courier New',monospace;border:1px solid #ccc;margin:1rem auto}
+.et-preview .main{font-size:26px;font-weight:700;letter-spacing:2px}
+.et-preview .bar{font-size:11px;letter-spacing:4px;margin-top:3px;color:#333}
+.api-key-row{display:flex;gap:8px;align-items:flex-end}
+.api-key-row input{flex:1}
+.cache-bar{display:flex;gap:16px;font-family:var(--mono);font-size:12px;color:var(--text2);padding:.625rem 1rem;background:var(--bg3);border-radius:var(--radius);border:1px solid var(--border);margin-bottom:1rem}
+.cache-bar strong{color:var(--text)}
+::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:var(--bg)}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+.leaflet-draw-toolbar a,.leaflet-bar a{background-color:var(--bg2)!important;border-color:var(--border)!important;color:var(--text)!important}
+.leaflet-popup-content-wrapper{background:var(--bg2);color:var(--text);border:1px solid var(--border);box-shadow:none}
+.leaflet-popup-tip{background:var(--bg2)}
+.leaflet-tooltip{background:var(--bg2);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:11px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">PACK<span>SCAN</span></div>
+  <span style="color:var(--text3);font-size:12px;font-family:var(--mono)">// Grande Florianópolis · Google Maps Geocoding</span>
+</div>
+
+<div class="tab-bar">
+  <button class="tab active" onclick="goTab(0)"><span class="tab-num">01</span> Importar</button>
+  <button class="tab" onclick="goTab(1)"><span class="tab-num">02</span> Geocodificar</button>
+  <button class="tab" onclick="goTab(2)"><span class="tab-num">03</span> Desenhar Rotas</button>
+  <button class="tab" onclick="goTab(3)"><span class="tab-num">04</span> Bipar</button>
+  <button class="tab" onclick="goTab(4)"><span class="tab-num">05</span> Etiquetas</button>
+  <button class="tab" onclick="goTab(5)"><span class="tab-num">06</span> Motoristas</button>
+</div>
+
+<!-- TAB 0: IMPORTAR -->
+<div class="page active" id="p0">
+  <div style="max-width:820px">
+    <div class="card">
+      <div class="card-title">importar planilha</div>
+      <div class="upload-zone" onclick="document.getElementById('fi').click()">
+        <div style="font-size:36px;margin-bottom:.5rem">📄</div>
+        <p style="font-size:14px;font-weight:500;color:var(--text);margin-bottom:4px">Clique para selecionar Excel (.xlsx) ou CSV</p>
+        <small>colunas: tracking · endereço · CEP · bairro · cidade</small>
+      </div>
+      <input type="file" id="fi" accept=".csv,.xlsx,.xls" style="display:none;width:auto" onchange="handleFile(this)">
+      <div class="grid-2" style="margin-bottom:1rem">
+        <div><label>Tracking / Código</label><select id="c0"><option>—</option></select></div>
+        <div><label>Endereço (rua + número)</label><select id="c1"><option>—</option></select></div>
+        <div><label>CEP</label><select id="c3"><option>—</option></select></div>
+        <div><label>Bairro (opcional)</label><select id="c2"><option>—</option></select></div>
+        <div><label>Cidade (opcional)</label><select id="c4"><option>—</option></select></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="confirmarImport()">✓ Confirmar importação</button>
+        <button class="btn" onclick="carregarDemo()">⚡ Demo (200 pacotes Forquilhas/SJ)</button>
+      </div>
+    </div>
+    <div id="import-msg"></div>
+  </div>
+</div>
+
+<!-- TAB 1: GEOCODIFICAR -->
+<div class="page" id="p1">
+  <div style="max-width:860px">
+    <div class="api-key-row" style="margin-bottom:.75rem">
+        <div style="flex:1"><label>Google Maps API Key (começa com AIza...)</label>
+          <input type="password" id="api-key" placeholder="AIzaSy..." oninput="salvarChave()"></div>
+        <button class="btn" onclick="toggleKey()">👁</button>
+        <button class="btn btn-green" onclick="testarChave()">✓ Testar</button>
+      </div>
+      <div id="key-status" style="font-size:12px;font-family:var(--mono);color:var(--text3)">chave não configurada</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">cache de CEPs geocodificados</div>
+      <div class="cache-bar">
+        <span>CEPs no cache: <strong id="cache-count">0</strong></span>
+        <span>·</span>
+        <span>Tamanho: <strong id="cache-size">0 KB</strong></span>
+        <span>·</span>
+        <span>CEPs neste arquivo: <strong id="ceps-unicos">—</strong></span>
+        <span>·</span>
+        <span>Faltam consultar: <strong id="ceps-faltam" style="color:var(--amber)">—</strong></span>
+      </div>
+      <div class="btn-row">
+        <button class="btn" onclick="exportarCache()">↓ Exportar cache</button>
+        <button class="btn" onclick="document.getElementById('fi-cache').click()">↑ Importar cache</button>
+        <button class="btn btn-red btn-sm" onclick="limparCache()">🗑 Limpar</button>
+        <input type="file" id="fi-cache" accept=".json" style="display:none;width:auto" onchange="importarCache(this)">
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">geocodificar</div>
+      <div style="margin-bottom:.75rem;font-size:13px;color:var(--text2)" id="geo-preview-info">Importe os pacotes primeiro.</div>
+      <div class="btn-row" style="margin-bottom:1rem">
+        <button class="btn btn-primary" id="btn-geo" onclick="iniciarGeo()">▶ Iniciar geocodificação</button>
+        <button class="btn btn-green" id="btn-ver-mapa" style="display:none" onclick="goTab(2)">→ Ver no mapa</button>
+        <button class="btn btn-red btn-sm" id="btn-parar" style="display:none" onclick="geoParar=true">⏹ Parar</button>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:6px">
+        <span id="geo-status" style="font-family:var(--mono)">aguardando...</span>
+        <span id="geo-pct" style="font-family:var(--mono);color:var(--accent)">0%</span>
+      </div>
+      <div class="progress-wrap"><div class="progress-fill" id="geo-prog" style="width:0%"></div></div>
+      <div class="geo-log" id="geo-log"></div>
+    </div>
+
+    <div class="grid-4" id="geo-metrics" style="display:none">
+      <div class="metric"><div class="metric-label">total pacotes</div><div class="metric-value" id="gm-total">0</div></div>
+      <div class="metric"><div class="metric-label">do cache ⚡</div><div class="metric-value" style="color:var(--accent)" id="gm-cache">0</div></div>
+      <div class="metric"><div class="metric-label">Google API</div><div class="metric-value" style="color:var(--green)" id="gm-api">0</div></div>
+      <div class="metric"><div class="metric-label">não encontrados</div><div class="metric-value" style="color:var(--red)" id="gm-err">0</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 2: DESENHAR ROTAS -->
+<div class="page" id="p2">
+  <div style="display:grid;grid-template-columns:240px 1fr;gap:1rem">
+    <div style="display:flex;flex-direction:column;gap:.75rem">
+      <div class="card" style="padding:1rem">
+        <div class="card-title">nova rota</div>
+        <div style="margin-bottom:.75rem"><label>Motorista</label><input type="text" id="mot-nome" placeholder="Ex: João Silva"></div>
+        <div style="margin-bottom:.75rem"><label>Cor</label><div class="cor-picker" id="cor-picker"></div></div>
+        <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="ativarDesenho()">✏ Desenhar área</button>
+        <p style="font-size:11px;color:var(--text3);margin-top:8px;font-family:var(--mono);line-height:1.6">Clique nos pontos do mapa para criar o polígono. Feche clicando no primeiro ponto.</p>
+      </div>
+      <div class="card" style="padding:1rem;overflow-y:auto;max-height:280px">
+        <div class="card-title">rotas criadas</div>
+        <div id="rotas-lista"></div>
+        <div id="rotas-vazio" style="font-size:12px;color:var(--text3);font-family:var(--mono)">nenhuma ainda</div>
+      </div>
+      <button class="btn btn-green" style="justify-content:center" onclick="finalizarRotas()">✓ Finalizar e calcular</button>
+    </div>
+    <div>
+      <div id="map"></div>
+      <p style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">cada ponto = coordenada GPS real do endereço · clique para ver detalhes · desenhe polígonos para definir as rotas</p>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 3: BIPAR -->
+<div class="page" id="p3">
+  <div style="display:grid;grid-template-columns:240px 1fr;gap:1rem">
+    <div><div class="card" style="padding:1rem"><div class="card-title">motoristas</div><div id="mot-list"></div></div></div>
+    <div>
+      <div class="card">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:.75rem;font-family:var(--mono)">motorista: <span id="mot-ativo" style="color:var(--accent)">nenhum</span></div>
+        <input class="bip-input" id="bip" placeholder="Bipe o código..." onkeydown="handleBip(event)" autocomplete="off" spellcheck="false">
+        <div class="bip-fb" id="bip-fb"></div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;font-size:12px;width:auto">
+          <input type="checkbox" id="auto-print" checked style="width:auto"> imprimir etiqueta automaticamente
+        </label>
+      </div>
+      <div class="card"><div class="card-title">progresso</div><div id="bip-prog"><span style="color:var(--text3);font-family:var(--mono);font-size:12px">selecione um motorista</span></div></div>
+      <div class="card" style="overflow-x:auto"><div class="card-title">últimos bipados</div>
+        <table><thead><tr><th>Tracking</th><th>Endereço</th><th>CEP</th><th>Nº</th><th></th></tr></thead><tbody id="bip-tbody"></tbody></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 4: ETIQUETAS -->
+<div class="page" id="p4">
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">preview — 100mm × 25mm</div>
+      <div class="et-preview"><div class="main">R01 · P007</div><div class="bar">|||||||||||||||||||||</div></div>
+      <p style="font-size:12px;color:var(--text2);text-align:center;font-family:var(--mono)">rota + número do pacote na ordem de entrega</p>
+    </div>
+    <div class="card">
+      <div class="card-title">imprimir em lote</div>
+      <div style="margin-bottom:.75rem"><label>Rota</label><select id="et-rota"><option value="">— todas —</option></select></div>
+      <div style="margin-bottom:1rem"><label>Formato</label>
+        <select id="et-tipo"><option value="termica">Térmica 100×25mm</option><option value="a4">A4 — 6 por folha</option></select>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" onclick="imprimirLote()">🖨 Imprimir</button>
+        <button class="btn btn-green" onclick="imprimirLote()">↓ PDF</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 5: MOTORISTAS -->
+<div class="page" id="p5">
+  <div class="card">
+    <div class="card-title">download por motorista</div>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:1rem">Excel com endereço, CEP e número do pacote na ordem de entrega.</p>
+    <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem">
+      <div style="flex:1;min-width:200px"><label>Motorista</label><select id="mot-dl" onchange="previewMot(this.value)"><option value="">— selecione —</option></select></div>
+      <button class="btn btn-primary" onclick="downloadMot()">↓ Excel</button>
+      <button class="btn btn-green" onclick="downloadTodos()">↓ Todos</button>
+    </div>
+    <div id="mot-preview" style="overflow-x:auto"></div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const BACKEND_URL = '';
+
+// ─── CACHE (localStorage) ─────────────────────────────────────────────────────
+const CACHE_KEY='packscan_geo_v3';
+const KEY_STORE='packscan_apikey';
+
+function cacheGet(){try{return JSON.parse(localStorage.getItem(CACHE_KEY)||'{}')}catch{return{}}}
+function cacheSave(o){try{localStorage.setItem(CACHE_KEY,JSON.stringify(o))}catch(e){alert('Cache cheio! Exporte o cache e limpe-o.')}}
+function cacheSet(cep,data){const c=cacheGet();c[cep]=data;cacheSave(c)}
+
+function atualizarCacheUI(){
+  const c=cacheGet();
+  const n=Object.keys(c).length;
+  const kb=Math.round(JSON.stringify(c).length/1024);
+  document.getElementById('cache-count').textContent=n;
+  document.getElementById('cache-size').textContent=kb+' KB';
+  analisarCEPs();
+}
+
+function exportarCache(){
+  const blob=new Blob([JSON.stringify(cacheGet(),null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='packscan_cache_geo.json';a.click();
+}
+function importarCache(inp){
+  const f=inp.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=e=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      cacheSave({...cacheGet(),...data});
+      atualizarCacheUI();
+      alert(`✓ ${Object.keys(data).length} CEPs importados!`);
+    }catch{alert('Arquivo inválido.');}
+  };
+  r.readAsText(f);
+}
+function limparCache(){
+  if(!confirm('Limpar todo o cache?'))return;
+  localStorage.removeItem(CACHE_KEY);atualizarCacheUI();
+}
+
+// ─── API KEY ──────────────────────────────────────────────────────────────────
+  const st=document.getElementById('key-status');
+  st.textContent='⏳ testando...';st.style.color='var(--amber)';
+  try{
+    const r=await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=Florianopolis,SC,Brasil&key=${key}`);
+    const d=await r.json();
+    if(d.status==='OK'){st.textContent='✓ Chave válida! Pronta para usar.';st.style.color='var(--green)';}
+    else if(d.status==='REQUEST_DENIED'){st.textContent='✗ Chave inválida ou sem permissão para Geocoding API.';st.style.color='var(--red)';}
+    else{st.textContent=`Status: ${d.status}`;st.style.color='var(--amber)';}
+  }catch(e){st.textContent='✗ Erro de rede: '+e.message;st.style.color='var(--red)';}
+}
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let pacotes=[],rotas=[],bipados={},motAtivo=null;
+let map,drawnItems,drawControl,mapaInit=false;
+let corAtiva='#4f8ef7',geoParar=false;
+const CORES=['#4f8ef7','#34c97e','#f5a623','#f05252','#a78bfa','#38bdf8','#fb923c','#e879f9','#4ade80','#facc15','#f472b6','#22d3ee'];
+const DEMO_CEPS=['88107075','88107230','88107010','88107050','88107390','88107480','88107550','88107600','88107180','88107260','88107310','88107420','88102280','88102020','88101010'];
+const DEMO_RUAS=['Rua das Orquídeas','Rua dos Girassóis','Rua Principal','Rua da Amizade','Av. das Nações','Rua Três','Rua Sete de Setembro','Travessa das Flores','Rua das Palmeiras','Rua João XXIII'];
+
+function goTab(n){
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',i===n));
+  document.querySelectorAll('.page').forEach((p,i)=>p.classList.toggle('active',i===n));
+  if(n===1){atualizarCacheUI();}
+  if(n===2){if(!mapaInit)initMap();else{setTimeout(()=>map.invalidateSize(),100);plotarPontos();}}
+  if(n===3)renderMotList();
+  if(n===4)renderEtSelect();
+  if(n===5)renderMotDownload();
+}
+
+// ─── IMPORTAR ─────────────────────────────────────────────────────────────────
+let _pFile=null;
+function handleFile(inp){
+  _pFile=inp.files[0];if(!_pFile)return;
+  const ext=_pFile.name.split('.').pop().toLowerCase();
+  const reader=new FileReader();
+  reader.onload=e=>{
+    let hdrs;
+    if(ext==='csv')hdrs=e.target.result.split('\n')[0].split(/[,;]/).map(h=>h.trim().replace(/"/g,''));
+    else{const wb=XLSX.read(e.target.result,{type:'binary'});hdrs=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1})[0].map(h=>String(h));}
+    ['c0','c1','c2','c3','c4'].forEach(id=>{
+      const s=document.getElementById(id);s.innerHTML='<option>—</option>';
+      hdrs.forEach(h=>s.innerHTML+=`<option>${h}</option>`);
+    });
+    const auto={c0:['track','cod','barcode','rastr','codigo'],c1:['ender','address','logr','rua'],c2:['bairro','neigh'],c3:['cep','postal','zip'],c4:['cidade','city']};
+    Object.entries(auto).forEach(([id,kws])=>{
+      const s=document.getElementById(id);
+      for(let i=1;i<s.options.length;i++){if(kws.some(k=>s.options[i].text.toLowerCase().includes(k))){s.selectedIndex=i;break;}}
+    });
+  };
+  if(ext==='csv')reader.readAsText(_pFile,'UTF-8');else reader.readAsBinaryString(_pFile);
+}
+
+function confirmarImport(){
+  if(!_pFile){alert('Selecione um arquivo.');return;}
+  const cols=['c0','c1','c2','c3','c4'].map(id=>document.getElementById(id).value);
+  if(cols[0]==='—'||cols[1]==='—'||cols[3]==='—'){alert('Mapeie: Tracking, Endereço e CEP.');return;}
+  const ext=_pFile.name.split('.').pop().toLowerCase();
+  const reader=new FileReader();
+  reader.onload=e=>{
+    let rows;
+    if(ext==='csv'){
+      const lines=e.target.result.split('\n').filter(r=>r.trim());
+      const hdrs=lines[0].split(/[,;]/).map(h=>h.trim().replace(/"/g,''));
+      rows=lines.slice(1).map(l=>{const v=l.split(/[,;]/);const o={};hdrs.forEach((h,i)=>o[h]=(v[i]||'').trim().replace(/"/g,''));return o;});
+    }else{const wb=XLSX.read(e.target.result,{type:'binary'});rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);}
+    pacotes=rows.filter(r=>r[cols[0]]).map((r,i)=>({
+      id:i+1,tracking:String(r[cols[0]]||'').trim(),
+      endereco:String(r[cols[1]]||'').trim(),
+      bairro:cols[2]!=='—'?String(r[cols[2]]||'').trim():'',
+      cep:String(r[cols[3]]||'').trim().replace(/\D/g,''),
+      cidade:cols[4]!=='—'?String(r[cols[4]]||'').trim():'',
+      lat:null,lng:null,rota:null,numNaRota:null
+    }));
+    finImport();
+  };
+  if(ext==='csv')reader.readAsText(_pFile,'UTF-8');else reader.readAsBinaryString(_pFile);
+}
+
+function carregarDemo(){
+  pacotes=[];
+  for(let i=0;i<200;i++){
+    const cep=DEMO_CEPS[Math.floor(Math.random()*DEMO_CEPS.length)];
+    const rua=DEMO_RUAS[Math.floor(Math.random()*DEMO_RUAS.length)];
+    const n=Math.floor(Math.random()*999)+1;
+    pacotes.push({id:i+1,tracking:`BR${String(100000000+i).padStart(9,'0')}BR`,
+      endereco:`${rua}, ${n}`,bairro:'Forquilhas',cep,cidade:'São José',lat:null,lng:null,rota:null,numNaRota:null});
+  }
+  finImport();
+}
+
+function finImport(){
+  document.getElementById('import-msg').innerHTML=`<div class="alert alert-green">✓ <strong>${pacotes.length.toLocaleString('pt-BR')} pacotes importados.</strong> Vá para <strong>Geocodificar</strong>.</div>`;
+  analisarCEPs();
+}
+
+function analisarCEPs(){
+  if(!pacotes.length)return;
+  const cache=cacheGet();
+  const unicos=[...new Set(pacotes.map(p=>p.cep).filter(c=>c.length>=8))];
+  const faltam=unicos.filter(c=>!cache[c]).length;
+  document.getElementById('ceps-unicos').textContent=unicos.length;
+  document.getElementById('ceps-faltam').textContent=faltam;
+  document.getElementById('ceps-faltam').style.color=faltam===0?'var(--green)':'var(--amber)';
+  const seg=Math.ceil(faltam*0.15); // Google é muito mais rápido, ~150ms por req
+  document.getElementById('geo-preview-info').textContent=
+    faltam===0
+      ? `✓ Todos os ${unicos.length} CEPs já estão no cache — geocodificação será instantânea!`
+      : `${unicos.length} CEPs únicos · ${unicos.length-faltam} no cache · ${faltam} para consultar (~${seg<60?seg+'s':Math.ceil(seg/60)+'min'})`;
+}
+
+// ─── GEOCODIFICAR (Google Maps) ───────────────────────────────────────────────
+async function iniciarGeo(){
+  if(!pacotes.length){alert('Importe os pacotes primeiro.');return;}
+  geoParar=false;
+  const btn=document.getElementById('btn-geo');
+  btn.disabled=true;btn.textContent='⏳ Geocodificando...';
+  document.getElementById('btn-parar').style.display='inline-flex';
+  document.getElementById('geo-metrics').style.display='grid';
+  document.getElementById('gm-total').textContent=pacotes.length;
+  const log=document.getElementById('geo-log');log.innerHTML='';
+
+  const cache=cacheGet();
+  const cepsUnicos=[...new Set(pacotes.map(p=>p.cep).filter(c=>c.length>=8))];
+  const cepsFaltam=cepsUnicos.filter(c=>!cache[c]);
+  let cntCache=0,cntApi=0,cntErr=0;
+
+  log.innerHTML=`<span class="cache">⚡ ${cepsUnicos.length-cepsFaltam.length} CEPs carregados do cache</span><br>`;
+
+  // consulta CEPs novos no Google
+  for(let i=0;i<cepsFaltam.length;i++){
+    if(geoParar)break;
+    const cep=cepsFaltam[i];
+    // query: CEP + Brasil — Google reconhece perfeitamente
+    try{
+      const r=await fetch(`${BACKEND_URL}/api/geocode?cep=${cep}`);
+      const d=await r.json();
+      if(r.ok&&d.lat){
+        cacheSet(cep,d);
+        const origem=d.fromCache?'cache servidor':'Google API';
+        log.innerHTML=`<span class="ok">✓ ${cep} → ${d.logradouro||d.bairro||''}, ${d.cidade||''} (${origem})</span><br>`+log.innerHTML;
+        cntApi++;
+      }else{
+        log.innerHTML=`<span class="err">✗ ${cep} → ${d.error||'não encontrado'}</span><br>`+log.innerHTML;
+        cntErr++;
+      }
+    }catch(e){
+      log.innerHTML=`<span class="err">⚠ ${cep} → erro: ${e.message}</span><br>`+log.innerHTML;
+      cntErr++;
+    }
+    const pct=Math.round((i+1)/cepsFaltam.length*100);
+    document.getElementById('geo-prog').style.width=pct+'%';
+    document.getElementById('geo-pct').textContent=pct+'%';
+    document.getElementById('geo-status').textContent=`${i+1}/${cepsFaltam.length} · ok:${cntApi} erro:${cntErr}`;
+    await new Promise(r=>setTimeout(r,120)); // ~8 req/s, bem dentro do limite Google
+  }
+
+  // atribui coords a todos os pacotes
+  const cacheAtual=cacheGet();
+  pacotes.forEach(p=>{
+    const coord=cacheAtual[p.cep];
+    if(coord){
+      // jitter pequeno para não empilhar pontos do mesmo CEP
+      const j=(Math.random()-.5)*0.0008;
+      const j2=(Math.random()-.5)*0.0008;
+      p.lat=coord.lat+j;p.lng=coord.lng+j2;
+      if(coord.bairro&&!p.bairro)p.bairro=coord.bairro;
+      if(coord.cidade&&!p.cidade)p.cidade=coord.cidade;
+      cntCache++;
+    }
+  });
+
+  const comCoord=pacotes.filter(p=>p.lat).length;
+  document.getElementById('gm-cache').textContent=cepsUnicos.length-cepsFaltam.length;
+  document.getElementById('gm-api').textContent=cntApi;
+  document.getElementById('gm-err').textContent=cntErr;
+  document.getElementById('geo-status').textContent=`concluído — ${comCoord}/${pacotes.length} com coordenadas`;
+  document.getElementById('geo-prog').style.width='100%';
+  document.getElementById('geo-pct').textContent='100%';
+  btn.disabled=false;btn.textContent='↺ Repetir';
+  document.getElementById('btn-parar').style.display='none';
+  document.getElementById('btn-ver-mapa').style.display='inline-flex';
+  atualizarCacheUI();
+
+  if(!mapaInit)initMap();else plotarPontos();
+}
+
+// ─── MAPA ─────────────────────────────────────────────────────────────────────
+let marcadores=[];
+function initMap(){
+  if(mapaInit)return;mapaInit=true;
+  map=L.map('map',{preferCanvas:true}).setView([-27.6136,-48.6400],13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OSM',maxZoom:19,subdomains:['a','b','c']
+  }).addTo(map);
+  drawnItems=new L.FeatureGroup().addTo(map);
+  criarDrawControl(corAtiva);
+  map.on(L.Draw.Event.CREATED,onPolyCreated);
+  initCorPicker();
+  setTimeout(()=>{map.invalidateSize();plotarPontos();},300);
+}
+
+function criarDrawControl(cor){
+  if(drawControl)map.removeControl(drawControl);
+  drawControl=new L.Control.Draw({
+    draw:{polygon:{shapeOptions:{color:cor,fillColor:cor,fillOpacity:.15,weight:2}},rectangle:false,circle:false,circlemarker:false,marker:false,polyline:false},
+    edit:{featureGroup:drawnItems}
+  });
+  map.addControl(drawControl);
+}
+
+function onPolyCreated(e){
+  const nome=document.getElementById('mot-nome').value.trim();
+  if(!nome){alert('Digite o nome do motorista antes de desenhar.');return;}
+  const cor=corAtiva;
+  e.layer.setStyle({color:cor,fillColor:cor,fillOpacity:.15,weight:2});
+  e.layer.bindTooltip(`<b>${nome}</b>`,{permanent:true,direction:'center'});
+  drawnItems.addLayer(e.layer);
+  rotas.push({id:rotas.length+1,motorista:nome,cor,layer:e.layer,pkgs:[]});
+  renderRotasList();
+  document.getElementById('mot-nome').value='';
+  const usadas=rotas.map(r=>r.cor);
+  setCorAtiva(CORES.find(c=>!usadas.includes(c))||CORES[rotas.length%CORES.length]);
+}
+
+function plotarPontos(){
+  if(!map)return;
+  marcadores.forEach(m=>map.removeLayer(m));marcadores=[];
+  const geo=pacotes.filter(p=>p.lat&&p.lng);
+  if(!geo.length)return;
+  geo.forEach(p=>{
+    const cor=p.rota?(rotas.find(r=>r.id===p.rota)?.cor||'#888'):'#4f8ef7';
+    const m=L.circleMarker([p.lat,p.lng],{radius:5,color:cor,fillColor:cor,fillOpacity:.85,weight:1});
+    m.bindPopup(`<b>${p.tracking}</b><br>${p.endereco}<br>${p.bairro} — CEP ${p.cep}<br>${p.cidade}`);
+    m.addTo(map);marcadores.push(m);
+  });
+  const lats=geo.map(p=>p.lat),lngs=geo.map(p=>p.lng);
+  map.fitBounds([[Math.min(...lats),Math.min(...lngs)],[Math.max(...lats),Math.max(...lngs)]],{padding:[40,40]});
+}
+
+function initCorPicker(){
+  const el=document.getElementById('cor-picker');el.innerHTML='';
+  CORES.forEach(c=>{
+    const d=document.createElement('div');
+    d.className='cor-dot'+(c===corAtiva?' ativo':'');
+    d.style.background=c;d.title=c;d.onclick=()=>setCorAtiva(c);
+    el.appendChild(d);
+  });
+}
+
+function setCorAtiva(c){
+  corAtiva=c;
+  document.querySelectorAll('.cor-dot').forEach(d=>d.classList.toggle('ativo',d.style.background===c));
+  criarDrawControl(c);
+}
+
+function ativarDesenho(){
+  const nome=document.getElementById('mot-nome').value.trim();
+  if(!nome){alert('Digite o nome do motorista antes de desenhar.');return;}
+  document.querySelector('.leaflet-draw-draw-polygon')?.click();
+}
+
+function renderRotasList(){
+  const el=document.getElementById('rotas-lista'),vazio=document.getElementById('rotas-vazio');
+  if(!rotas.length){el.innerHTML='';vazio.style.display='block';return;}
+  vazio.style.display='none';el.innerHTML='';
+  rotas.forEach((r,i)=>{
+    const d=document.createElement('div');d.className='rota-item';
+    d.innerHTML=`<div class="dot" style="background:${r.cor}"></div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.motorista}</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">R${String(r.id).padStart(2,'0')} · ${r.pkgs.length} pkg</div></div><button class="btn btn-red btn-sm" onclick="removerRota(${i})">✕</button>`;
+    el.appendChild(d);
+  });
+}
+
+function removerRota(i){map.removeLayer(rotas[i].layer);rotas.splice(i,1);rotas.forEach((r,j)=>r.id=j+1);renderRotasList();}
+
+function reordenarNN(pkgs){
+  if(pkgs.length<=1)return pkgs;
+  const vis=new Array(pkgs.length).fill(false);
+  const res=[];let cur=0;vis[0]=true;res.push(pkgs[0]);
+  for(let s=1;s<pkgs.length;s++){
+    let best=-1,bd=Infinity;
+    for(let j=0;j<pkgs.length;j++){
+      if(!vis[j]){const dx=pkgs[cur].lat-pkgs[j].lat,dy=pkgs[cur].lng-pkgs[j].lng,d=dx*dx+dy*dy;if(d<bd){bd=d;best=j;}}
+    }
+    vis[best]=true;res.push(pkgs[best]);cur=best;
+  }
+  return res;
+}
+
+function isInPoly(lat,lng,poly){
+  const ll=poly.getLatLngs()[0];let inside=false;
+  for(let i=0,j=ll.length-1;i<ll.length;j=i++){
+    const xi=ll[i].lat,yi=ll[i].lng,xj=ll[j].lat,yj=ll[j].lng;
+    if(((yi>lng)!==(yj>lng))&&(lat<(xj-xi)*(lng-yi)/(yj-yi)+xi))inside=!inside;
+  }
+  return inside;
+}
+
+function finalizarRotas(){
+  if(!rotas.length){alert('Desenhe pelo menos uma rota.');return;}
+  rotas.forEach(r=>r.pkgs=[]);
+  const semRota=[];
+  pacotes.filter(p=>p.lat&&p.lng).forEach(p=>{
+    let ok=false;
+    for(const r of rotas){if(r.layer instanceof L.Polygon&&isInPoly(p.lat,p.lng,r.layer)){r.pkgs.push(p);p.rota=r.id;ok=true;break;}}
+    if(!ok)semRota.push(p);
+  });
+  rotas.forEach(r=>{r.pkgs=reordenarNN(r.pkgs);r.pkgs.forEach((p,i)=>p.numNaRota=i+1);});
+  plotarPontos();
+  const resumo=rotas.map(r=>`${r.motorista}: ${r.pkgs.length} pkg`).join('\n');
+  if(semRota.length)alert(`Rotas calculadas!\n${resumo}\n\n⚠ ${semRota.length} pacotes fora dos polígonos.`);
+  else alert(`✓ Rotas calculadas!\n${resumo}`);
+  renderMotList();renderEtSelect();renderMotDownload();
+}
+
+// ─── BIPAR ────────────────────────────────────────────────────────────────────
+function renderMotList(){
+  const el=document.getElementById('mot-list');el.innerHTML='';
+  if(!rotas.length){el.innerHTML='<p style="font-size:12px;color:var(--text3);font-family:var(--mono)">finalize as rotas primeiro</p>';return;}
+  rotas.forEach(r=>{
+    const bip=r.pkgs.filter(p=>bipados[p.tracking]).length;
+    const ini=r.motorista.split(' ').map(w=>w[0]).join('').substring(0,2).toUpperCase();
+    const d=document.createElement('div');
+    d.className='mot-card'+(motAtivo===r.id?' sel':'');
+    d.onclick=()=>{motAtivo=r.id;document.getElementById('mot-ativo').textContent=`${r.motorista} — R${String(r.id).padStart(2,'0')}`;document.getElementById('bip').focus();renderMotList();atualizarProg();};
+    d.innerHTML=`<div class="avatar" style="background:${r.cor}22;color:${r.cor}">${ini}</div><div style="flex:1;min-width:0"><div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.motorista}</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">R${String(r.id).padStart(2,'0')} · ${r.pkgs.length} pkg</div><div class="progress-wrap" style="margin-top:4px"><div class="progress-fill${bip===r.pkgs.length&&bip>0?' green':''}" style="width:${r.pkgs.length?Math.round(bip/r.pkgs.length*100):0}%"></div></div></div><span class="badge ${bip===r.pkgs.length&&bip>0?'b-green':'b-gray'}">${bip}/${r.pkgs.length}</span>`;
+    el.appendChild(d);
+  });
+}
+
+function atualizarProg(){
+  if(!motAtivo)return;
+  const r=rotas.find(r=>r.id===motAtivo);if(!r)return;
+  const bip=r.pkgs.filter(p=>bipados[p.tracking]).length;
+  const pct=r.pkgs.length?Math.round(bip/r.pkgs.length*100):0;
+  document.getElementById('bip-prog').innerHTML=`<div style="display:flex;justify-content:space-between;font-size:12px;font-family:var(--mono);margin-bottom:6px"><span style="color:var(--text2)">${bip} de ${r.pkgs.length}</span><span style="color:var(--accent)">${pct}%</span></div><div class="progress-wrap"><div class="progress-fill${pct===100?' green':''}" style="width:${pct}%"></div></div>`;
+}
+
+function handleBip(e){
+  if(e.key!=='Enter')return;
+  const val=document.getElementById('bip').value.trim();
+  document.getElementById('bip').value='';
+  if(!val)return;
+  if(!motAtivo){showFb('Selecione um motorista primeiro.','err');return;}
+  const rota=rotas.find(r=>r.id===motAtivo);
+  const pacote=pacotes.find(p=>p.tracking===val);
+  if(!pacote){showFb(`Código não encontrado: ${val}`,'err');return;}
+  if(pacote.rota!==motAtivo){const or=rotas.find(r=>r.id===pacote.rota);showFb(`Pacote da Rota ${String(pacote.rota||'?').padStart(2,'0')} — ${or?.motorista||'sem rota'}!`,'warn');return;}
+  if(bipados[val]){showFb(`Já bipado: ${val}`,'warn');return;}
+  bipados[val]=true;
+  showFb(`✓ R${String(rota.id).padStart(2,'0')} · P${String(pacote.numNaRota).padStart(3,'0')} · ${pacote.bairro||pacote.cep}`,'ok');
+  if(document.getElementById('auto-print').checked)imprimirEtiqueta(pacote,rota);
+  const tb=document.getElementById('bip-tbody');
+  const tr=document.createElement('tr');
+  tr.innerHTML=`<td style="font-family:var(--mono);font-size:11px">${pacote.tracking}</td><td>${pacote.endereco}</td><td style="font-family:var(--mono)">${pacote.cep}</td><td><span class="badge b-blue">P${String(pacote.numNaRota).padStart(3,'0')}</span></td><td><button class="btn btn-sm" onclick="imprimirEtiquetaManual('${pacote.tracking}')">🖨</button></td>`;
+  tb.insertBefore(tr,tb.firstChild);
+  if(tb.children.length>15)tb.removeChild(tb.lastChild);
+  atualizarProg();renderMotList();
+}
+
+function showFb(msg,tipo){
+  const el=document.getElementById('bip-fb');
+  el.className=`bip-fb bip-${tipo}`;el.textContent=msg;el.style.display='block';
+  clearTimeout(el._t);el._t=setTimeout(()=>el.style.display='none',3500);
+}
+
+// ─── ETIQUETAS ────────────────────────────────────────────────────────────────
+function imprimirEtiqueta(pacote,rota){
+  const rNum=String(rota.id).padStart(2,'0'),pNum=String(pacote.numNaRota).padStart(3,'0');
+  const win=window.open('','_blank','width=400,height=200');if(!win)return;
+  win.document.write(`<!DOCTYPE html><html><head><title>R${rNum}·P${pNum}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff}.et{width:100mm;height:25mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Courier New',monospace}.main{font-size:20pt;font-weight:bold;letter-spacing:2px}.bar{font-size:9pt;letter-spacing:4px;margin-top:2mm}@media print{body{min-height:auto}@page{size:100mm 25mm;margin:0}}</style></head><body><div class="et"><div class="main">R${rNum} · P${pNum}</div><div class="bar">|||||||||||||||||||||</div></div><script>window.onload=()=>{window.print();setTimeout(()=>window.close(),500)}<\/script></body></html>`);
+  win.document.close();
+}
+
+function imprimirEtiquetaManual(tracking){
+  const p=pacotes.find(x=>x.tracking===tracking);if(!p)return;
+  const r=rotas.find(r=>r.id===p.rota);if(r)imprimirEtiqueta(p,r);
+}
+
+function renderEtSelect(){
+  const s=document.getElementById('et-rota');s.innerHTML='<option value="">— todas —</option>';
+  rotas.forEach(r=>s.innerHTML+=`<option value="${r.id}">R${String(r.id).padStart(2,'0')} — ${r.motorista} (${r.pkgs.length})</option>`);
+}
+
+function imprimirLote(){
+  const rid=document.getElementById('et-rota').value;
+  const pkgs=rid?rotas.find(r=>r.id==rid)?.pkgs||[]:rotas.flatMap(r=>r.pkgs);
+  if(!pkgs.length){alert('Sem pacotes. Finalize as rotas primeiro.');return;}
+  const tipo=document.getElementById('et-tipo').value;
+  const cols=tipo==='a4'?3:1,pgSize=tipo==='termica'?'100mm 25mm':'210mm 297mm';
+  const win=window.open('','_blank');if(!win)return;
+  let items='';
+  pkgs.forEach(p=>{
+    const rNum=String(p.rota||0).padStart(2,'0'),pNum=String(p.numNaRota||0).padStart(3,'0');
+    items+=`<div class="et"><div class="main">R${rNum} · P${pNum}</div><div class="bar">|||||||||||||||||||||</div></div>`;
+  });
+  win.document.write(`<!DOCTYPE html><html><head><title>Etiquetas</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'Courier New',monospace;background:#fff}.grid{display:grid;grid-template-columns:repeat(${cols},1fr);gap:2mm;padding:${cols>1?'5mm':'0'}}.et{height:25mm;display:flex;flex-direction:column;align-items:center;justify-content:center;border-bottom:${cols>1?'1px solid #eee':'none'};break-inside:avoid}.main{font-size:${cols>1?'14':'20'}pt;font-weight:bold;letter-spacing:2px}.bar{font-size:9pt;letter-spacing:3px;margin-top:1mm}@media print{@page{size:${pgSize};margin:0}}</style></head><body><div class="grid">${items}</div><script>window.onload=()=>window.print()<\/script></body></html>`);
+  win.document.close();
+}
+
+// ─── MOTORISTAS ───────────────────────────────────────────────────────────────
+function renderMotDownload(){
+  const s=document.getElementById('mot-dl');s.innerHTML='<option value="">— selecione —</option>';
+  rotas.forEach(r=>s.innerHTML+=`<option value="${r.id}">R${String(r.id).padStart(2,'0')} — ${r.motorista} (${r.pkgs.length} pkg)</option>`);
+}
+
+function previewMot(rid){
+  if(!rid){document.getElementById('mot-preview').innerHTML='';return;}
+  const r=rotas.find(r=>r.id==rid);if(!r)return;
+  let html='<table><thead><tr><th>Nº</th><th>Tracking</th><th>Endereço</th><th>Bairro</th><th>CEP</th><th>Cidade</th></tr></thead><tbody>';
+  r.pkgs.slice(0,10).forEach(p=>html+=`<tr><td><span class="badge b-blue">P${String(p.numNaRota).padStart(3,'0')}</span></td><td style="font-family:var(--mono);font-size:11px">${p.tracking}</td><td>${p.endereco}</td><td>${p.bairro}</td><td style="font-family:var(--mono)">${p.cep}</td><td>${p.cidade}</td></tr>`);
+  if(r.pkgs.length>10)html+=`<tr><td colspan="6" style="color:var(--text3);text-align:center;padding:10px;font-family:var(--mono)">... +${r.pkgs.length-10} no Excel</td></tr>`;
+  html+='</tbody></table>';
+  document.getElementById('mot-preview').innerHTML=html;
+}
+
+function downloadMot(){
+  const rid=document.getElementById('mot-dl').value;
+  if(!rid){alert('Selecione um motorista.');return;}
+  const r=rotas.find(r=>r.id==rid);if(r)gerarExcel(r);
+}
+
+function gerarExcel(r){
+  const data=[['Nº na rota','Tracking','Endereço','Bairro','CEP','Cidade'],
+    ...r.pkgs.map(p=>[`P${String(p.numNaRota).padStart(3,'0')}`,p.tracking,p.endereco,p.bairro,p.cep,p.cidade||''])];
+  const wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(data);
+  ws['!cols']=[{wch:10},{wch:22},{wch:30},{wch:18},{wch:12},{wch:16}];
+  XLSX.utils.book_append_sheet(wb,ws,'Rota');
+  XLSX.writeFile(wb,`Rota_${String(r.id).padStart(2,'0')}_${r.motorista.replace(/ /g,'_')}.xlsx`);
+}
+
+function downloadTodos(){
+  if(!rotas.length){alert('Finalize as rotas primeiro.');return;}
+  const wb=XLSX.utils.book_new();
+  rotas.forEach(r=>{
+    const data=[['Nº na rota','Tracking','Endereço','Bairro','CEP','Cidade'],
+      ...r.pkgs.map(p=>[`P${String(p.numNaRota).padStart(3,'0')}`,p.tracking,p.endereco,p.bairro,p.cep,p.cidade||''])];
+    const ws=XLSX.utils.aoa_to_sheet(data);
+    ws['!cols']=[{wch:10},{wch:22},{wch:30},{wch:18},{wch:12},{wch:16}];
+    XLSX.utils.book_append_sheet(wb,ws,`R${String(r.id).padStart(2,'0')}_${r.motorista.split(' ')[0]}`);
+  });
+  XLSX.writeFile(wb,'PackScan_Rotas.xlsx');
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+atualizarCacheUI();
+</script>
+</body>
+</html>
