@@ -1,7 +1,7 @@
 {
   "name": "packscan",
-  "version": "1.0.0",
-  "description": "Sistema de roteirizacao PackScan",
+  "version": "2.0.0",
+  "description": "Sistema de roteirizacao PackScan com geocodificacao por endereco e IA",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
