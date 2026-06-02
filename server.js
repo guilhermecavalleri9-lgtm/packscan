@@ -5,9 +5,10 @@ const path = require('path');
 const url = require('url');
 
 const PORT = process.env.PORT || 3000;
-const GOOGLE_MAPS_KEY = process.env.GOOGLE_MAPS_KEY || 'AIzaSyCHRl5eRHAfw0-WVEBj0wC5tpbJ81265gk';
+const GOOGLE_KEY = process.env.GOOGLE_MAPS_KEY || 'AIzaSyCHRl5eRHAfw0-WVEBj0wC5tpbJ81265gk';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const GEO_CACHE_FILE = path.join(__dirname, 'geo_cache.json');
+const CEP_CACHE_FILE = path.join(__dirname, 'cep_cache.json');
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function readBody(req) {
@@ -24,16 +25,16 @@ function json(res, code, data) {
   res.end(JSON.stringify(data));
 }
 
-function loadCache() {
-  try { return JSON.parse(fs.readFileSync(GEO_CACHE_FILE, 'utf8')); } catch(e) { return {}; }
+function loadJSON(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch(e) { return {}; }
 }
-function saveCache(data) {
-  try { fs.writeFileSync(GEO_CACHE_FILE, JSON.stringify(data)); } catch(e) { console.error('cache write error:', e.message); }
+function saveJSON(file, data) {
+  try { fs.writeFileSync(file, JSON.stringify(data)); } catch(e) { console.error('save error:', e.message); }
 }
 
-function httpsGet(hostname, path) {
+function httpsGet(hostname, reqPath) {
   return new Promise((resolve, reject) => {
-    https.get({ hostname, path }, r => {
+    https.get({ hostname, path: reqPath, headers: { 'User-Agent': 'PackScan/3.0' } }, r => {
       let data = '';
       r.on('data', c => data += c);
       r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
@@ -41,118 +42,122 @@ function httpsGet(hostname, path) {
   });
 }
 
-function httpsPost(hostname, path, headers, payload) {
+function httpsPost(hostname, reqPath, headers, payload) {
   return new Promise((resolve, reject) => {
     const buf = Buffer.from(payload);
-    const req = https.request({ hostname, path, method: 'POST', headers: { ...headers, 'Content-Length': buf.length } }, r => {
-      let data = '';
-      r.on('data', c => data += c);
-      r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-    });
+    const req = https.request(
+      { hostname, path: reqPath, method: 'POST', headers: { ...headers, 'Content-Length': buf.length } },
+      r => {
+        let data = '';
+        r.on('data', c => data += c);
+        r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
+      }
+    );
     req.on('error', reject);
     req.write(buf);
     req.end();
   });
 }
 
-// ─── NORMALIZAR ENDEREÇO COM IA + VERIFICAÇÃO + FALLBACK CEP ────────────────
-function normalizarEnderecoLocal(endereco, bairro, cidade) {
-  let end = endereco.trim();
-  end = end.replace(/CPF[\s:]*[\d.\-]+/gi, '');
-  end = end.replace(/(portão|portao|branco|preto|amarelo|azul|verde|fundo|frente|lateral|bloco|lote|lt|qd|quadra|A\/C)[^,\d]*/gi, ' ');
-  end = end.replace(/\s{2,}/g, ' ').trim();
-  const numMatch = end.match(/(\d{1,5})/);
-  const numero = numMatch ? numMatch[1] : '';
-  let rua = end.replace(/\d{1,5}/, '').replace(/\s{2,}/g, ' ').trim();
-  if (!/^(rua|av|avenida|travessa|alameda|estrada|rodovia|trav|servidão|servidao|sc-|br-)/i.test(rua) && rua.length > 3) {
-    rua = 'Rua ' + rua;
-  }
-  return [rua, numero, bairro, cidade, 'SC', 'Brasil'].filter(Boolean).join(', ');
-}
+// ─── PASSO 1: busca rua pelo CEP via Google Maps ──────────────────────────────
+async function ruaPeloCep(cep) {
+  const cepCache = loadJSON(CEP_CACHE_FILE);
+  if (cepCache[cep]) return cepCache[cep];
 
-async function normalizarEndereco(endereco, bairro, cidade, cep) {
-  if (!ANTHROPIC_KEY) {
-    const norm = normalizarEnderecoLocal(endereco, bairro, cidade);
-    console.log(`[local] ${endereco.substring(0,35)} → ${norm.substring(0,50)}`);
-    return { query: norm, usarCepFallback: false };
-  }
-
-  // extrai número do endereço para usar no fallback
-  const numMatch = endereco.match(/(\d{1,5})/);
-  const numero = numMatch ? numMatch[1] : '';
-
-  const prompt = `Você é um especialista em endereços brasileiros para geocodificação.
-
-Analise este endereço bruto de transportadora:
-- Endereço/Complemento: "${endereco}"
-- Bairro informado: "${bairro}"
-- Cidade: "${cidade}"
-- CEP: "${cep}"
-
-Tarefas:
-1. Normalize o endereço: remova CPF, cores de portão, observações irrelevantes. Se for nome de pessoa sem "Rua", adicione "Rua". Mantenha o número do imóvel.
-2. Verifique se o nome da rua é compatível com o bairro "${bairro}" em "${cidade}". Se parecer inconsistente ou o endereço for muito vago (ex: "casa qd 30 lt 18", só nome de pessoa sem rua), marque para usar CEP.
-
-Responda APENAS com JSON neste formato exato:
-{"enderecoNormalizado": "Rua Nome, Número, Bairro, Cidade, SC, Brasil", "usarCepFallback": false, "motivo": "ok"}
-
-Se for usar fallback de CEP: {"enderecoNormalizado": "", "usarCepFallback": true, "motivo": "endereço vago"}`;
+  const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
+  const query = encodeURIComponent(`${cepFmt}, Brasil`);
+  const reqPath = `/maps/api/geocode/json?address=${query}&key=${GOOGLE_KEY}&language=pt-BR&region=BR`;
 
   try {
-    const result = await httpsPost('api.anthropic.com', '/v1/messages',
-      { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-      JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 200, messages: [{ role: 'user', content: prompt }] })
-    );
-    const texto = result.content?.[0]?.text?.trim() || '';
-    // extrai JSON da resposta
-    const jsonMatch = texto.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.usarCepFallback) {
-        // fallback: CEP formatado + número extraído
-        const cepFmt = cep.length >= 8 ? cep.substring(0,5) + '-' + cep.substring(5) : cep;
-        const queryFallback = numero ? `${cepFmt}, ${numero}, Brasil` : `${cepFmt}, Brasil`;
-        console.log(`[IA-fallback] ${endereco.substring(0,30)} → CEP ${queryFallback} (${parsed.motivo})`);
-        return { query: queryFallback, usarCepFallback: true };
-      }
-      if (parsed.enderecoNormalizado && parsed.enderecoNormalizado.length > 10) {
-        console.log(`[IA] ${endereco.substring(0,30)} → ${parsed.enderecoNormalizado.substring(0,50)}`);
-        return { query: parsed.enderecoNormalizado, usarCepFallback: false };
-      }
+    const d = await httpsGet('maps.googleapis.com', reqPath);
+    if (d.status === 'OK' && d.results[0]) {
+      const comps = d.results[0].address_components;
+      const get = type => (comps.find(c => c.types.includes(type)) || {}).long_name || '';
+      const resultado = {
+        rua: get('route'),
+        bairro: get('sublocality_level_1') || get('sublocality') || get('neighborhood'),
+        cidade: get('administrative_area_level_2'),
+        lat: d.results[0].geometry.location.lat,
+        lng: d.results[0].geometry.location.lng
+      };
+      cepCache[cep] = resultado;
+      saveJSON(CEP_CACHE_FILE, cepCache);
+      console.log(`[cep] ${cep} → ${resultado.rua}, ${resultado.cidade}`);
+      return resultado;
     }
   } catch(e) {
-    console.error('Claude error:', e.message);
+    console.error(`[cep] erro ${cep}: ${e.message}`);
   }
-
-  // fallback local
-  const norm = normalizarEnderecoLocal(endereco, bairro, cidade);
-  console.log(`[local] ${endereco.substring(0,30)} → ${norm.substring(0,50)}`);
-  return { query: norm, usarCepFallback: false };
+  return { rua: '', bairro: '', cidade: '' };
 }
 
-// ─── GEOCODIFICAR VIA GOOGLE ──────────────────────────────────────────────────
-async function geocodificar(enderecoNormalizado) {
-  const query = encodeURIComponent(enderecoNormalizado);
-  const result = await httpsGet('maps.googleapis.com',
-    `/maps/api/geocode/json?address=${query}&key=${GOOGLE_MAPS_KEY}&language=pt-BR&region=BR`
-  );
-  if (result.status !== 'OK' || !result.results[0]) {
-    return null;
+// ─── PASSO 2: IA extrai número/complemento relevante do campo bruto ───────────
+async function extrairNumeroIA(complemento, ruaCep) {
+  if (!ANTHROPIC_KEY) return extrairNumeroLocal(complemento);
+
+  const prompt = `Do complemento de entrega abaixo, extraia APENAS o número/identificador necessário para localizar o imóvel.
+
+Rua (já conhecida): "${ruaCep}"
+Complemento bruto: "${complemento}"
+
+Extraia:
+- Número da casa/prédio: "158 casa 2" → "158, Casa 2"  
+- Apartamento: "3147 ap 201 bloco 23" → "3147, Ap 201, Bloco 23"
+- Lote/Quadra: "lote 24 quadra 10" → "Quadra 10, Lote 24"
+- Condomínio: "1290 bloco L 207" → "1290, Bloco L, Ap 207"
+- Se o complemento JÁ TEM a rua repetida (ex: "Rua X Rua X 94"), extraia só o número: "94"
+
+Remova: cores de portão, referências ("ao lado do bar"), CPF, nomes de pessoas, "casa", "subindo o morro"
+
+Responda APENAS com o número/complemento extraído, uma linha, sem explicação.`;
+
+  try {
+    const result = await httpsPost(
+      'api.anthropic.com', '/v1/messages',
+      { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+      JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 80, messages: [{ role: 'user', content: prompt }] })
+    );
+    const texto = result.content?.[0]?.text?.trim() || '';
+    if (texto && texto.length < 60) {
+      console.log(`[ia] "${complemento.substring(0,30)}" → "${texto}"`);
+      return texto;
+    }
+  } catch(e) {
+    console.error('[ia] erro:', e.message);
   }
-  const r = result.results[0];
-  const loc = r.geometry.location;
+  return extrairNumeroLocal(complemento);
+}
+
+function extrairNumeroLocal(complemento) {
+  // remove lixo
+  let c = complemento
+    .replace(/\b(portão|portao|branco|preto|amarelo|azul|verde|fundo|frente|lateral|casa|subindo|descendo|referencia|ref\.?|obs\.?|entregar|fachada)\b[^,\d]*/gi, ' ')
+    .replace(/CPF[\s:]*[\d.\-]+/gi, '')
+    .replace(/\s{2,}/g, ' ').trim();
+  // se começa com nome de rua, remove a rua e fica só número
+  c = c.replace(/^(Rua|Av|Avenida|Travessa|Alameda)\s+[^,\d]+[,\s]+/i, '').trim();
+  // extrai número principal + apto/bloco
+  const nums = c.match(/\d[\d\s]*(?:ap(?:to)?\.?\s*\d+)?(?:\s*bloco\s*\w+)?/i);
+  return nums ? nums[0].trim() : c.substring(0, 20);
+}
+
+// ─── PASSO 3: geocodifica o endereço completo ─────────────────────────────────
+async function geocodificarEndereco(enderecoCompleto) {
+  const query = encodeURIComponent(enderecoCompleto);
+  const reqPath = `/maps/api/geocode/json?address=${query}&key=${GOOGLE_KEY}&language=pt-BR&region=BR`;
+  const d = await httpsGet('maps.googleapis.com', reqPath);
+  if (d.status !== 'OK' || !d.results[0]) return null;
+  const r = d.results[0];
   const comps = r.address_components;
-  const getComp = (type) => (comps.find(c => c.types.includes(type)) || {}).long_name || '';
+  const get = type => (comps.find(c => c.types.includes(type)) || {}).long_name || '';
   return {
-    lat: loc.lat,
-    lng: loc.lng,
+    lat: r.geometry.location.lat,
+    lng: r.geometry.location.lng,
     enderecoFormatado: r.formatted_address,
-    logradouro: getComp('route'),
-    numero: getComp('street_number'),
-    bairro: getComp('sublocality_level_1') || getComp('sublocality') || getComp('neighborhood'),
-    cidade: getComp('administrative_area_level_2'),
-    estado: getComp('administrative_area_level_1'),
-    precisao: r.geometry.location_type // ROOFTOP, RANGE_INTERPOLATED, GEOMETRIC_CENTER, APPROXIMATE
+    logradouro: get('route'),
+    bairro: get('sublocality_level_1') || get('sublocality') || get('neighborhood'),
+    cidade: get('administrative_area_level_2'),
+    precisao: r.geometry.location_type
   };
 }
 
@@ -166,7 +171,7 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
 
-  // ─── PÁGINA PRINCIPAL ──────────────────────────────────────────────────────
+  // página principal
   if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
     fs.readFile(path.join(__dirname, 'packscan.html'), (err, data) => {
       if (err) { res.writeHead(404); res.end('Not found'); return; }
@@ -176,55 +181,95 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // ─── NORMALIZAR + GEOCODIFICAR (com cache) ────────────────────────────────
-  // POST /api/geocode  body: { endereco, bairro, cidade, cep }
+  // ─── POST /api/geocode ────────────────────────────────────────────────────
+  // body: { tracking, endereco, bairro, cidade, cep }
   if (req.method === 'POST' && pathname === '/api/geocode') {
     const body = await readBody(req);
     const { endereco, bairro, cidade, cep } = body;
-    if (!endereco) return json(res, 400, { error: 'endereco obrigatório' });
+    if (!endereco && !cep) return json(res, 400, { error: 'endereco ou cep obrigatório' });
 
-    // chave do cache = endereço bruto normalizado
-    const cacheKey = `${endereco}|${bairro}|${cidade}`.toLowerCase().trim();
-    const cache = loadCache();
-
-    if (cache[cacheKey]) {
-      console.log(`[cache] ${endereco.substring(0,40)}`);
-      return json(res, 200, { ...cache[cacheKey], fromCache: true });
+    // chave do cache = endereco bruto + cep
+    const cacheKey = `${cep}|${endereco}`.toLowerCase().trim();
+    const geoCache = loadJSON(GEO_CACHE_FILE);
+    if (geoCache[cacheKey]) {
+      console.log(`[cache] ${endereco.substring(0,35)}`);
+      return json(res, 200, { ...geoCache[cacheKey], fromCache: true });
     }
 
-    // normaliza com IA
-    console.log(`[normalizar] ${endereco.substring(0,50)}`);
-    const { query: endNorm, usarCepFallback } = await normalizarEndereco(endereco, bairro, cidade, cep);
-
-    // geocodifica
     try {
-      const coord = await geocodificar(endNorm);
-      if (!coord) {
-        console.log(`[geocode] não encontrado: ${endNorm}`);
-        return json(res, 404, { error: 'Endereço não encontrado', enderecoNormalizado: endNorm });
+      // PASSO 1: pega rua pelo CEP via Google
+      const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,'')) : { rua: '', bairro: '', cidade: '' };
+      const ruaCep = cepInfo.rua;
+
+      // PASSO 2: IA extrai número/complemento relevante
+      const numeroExtraido = await extrairNumeroIA(endereco, ruaCep);
+
+      // PASSO 3: monta endereço e geocodifica
+      let enderecoFinal, coord;
+
+      if (ruaCep && numeroExtraido) {
+        // melhor caso: rua do CEP + número extraído
+        enderecoFinal = `${ruaCep}, ${numeroExtraido}, ${cepInfo.cidade || cidade || 'São José'}, SC, Brasil`;
+        coord = await geocodificarEndereco(enderecoFinal);
       }
 
-      const resultado = { ...coord, enderecoNormalizado: endNorm, usarCepFallback, fromCache: false };
-      cache[cacheKey] = resultado;
-      saveCache(cache);
-      console.log(`[geocode] ok: ${coord.enderecoFormatado} (${coord.precisao})`);
+      // fallback 1: endereço bruto completo se tiver nome de rua
+      if (!coord && /^(rua|av|avenida|travessa|alameda|estrada)/i.test(endereco)) {
+        const endLimpo = endereco
+          .replace(/\b(portão|portao|branco|preto|referencia|ref\.|obs\.|entregar|fachada|descendo|subindo|casa)\b[^,\d]*/gi, '')
+          .replace(/\s{2,}/g, ' ').trim();
+        enderecoFinal = `${endLimpo}, ${cidade || 'São José'}, SC, Brasil`;
+        coord = await geocodificarEndereco(enderecoFinal);
+      }
+
+      // fallback 2: só CEP + número
+      if (!coord && cep && numeroExtraido) {
+        const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
+        enderecoFinal = `${cepFmt}, ${numeroExtraido}, Brasil`;
+        coord = await geocodificarEndereco(enderecoFinal);
+      }
+
+      // fallback 3: só CEP
+      if (!coord && cepInfo.lat) {
+        coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE' };
+        enderecoFinal = `CEP ${cep}`;
+      }
+
+      if (!coord) {
+        console.log(`[geocode] não encontrado: ${endereco.substring(0,40)}`);
+        return json(res, 404, { error: 'Endereço não encontrado', enderecoFinal });
+      }
+
+      const resultado = {
+        ...coord,
+        enderecoNormalizado: enderecoFinal,
+        ruaCep,
+        numeroExtraido,
+        fromCache: false
+      };
+
+      geoCache[cacheKey] = resultado;
+      saveJSON(GEO_CACHE_FILE, geoCache);
+      console.log(`[geocode] ✓ ${enderecoFinal.substring(0,55)} (${coord.precisao})`);
       return json(res, 200, resultado);
 
     } catch(e) {
       console.error(`[geocode] erro: ${e.message}`);
-      return json(res, 500, { error: e.message, enderecoNormalizado: endNorm });
+      return json(res, 500, { error: e.message });
     }
   }
 
-  // ─── VER CACHE ────────────────────────────────────────────────────────────
+  // status do cache
   if (req.method === 'GET' && pathname === '/api/cache') {
-    const cache = loadCache();
-    return json(res, 200, { total: Object.keys(cache).length });
+    const geo = loadJSON(GEO_CACHE_FILE);
+    const cep = loadJSON(CEP_CACHE_FILE);
+    return json(res, 200, { enderecos: Object.keys(geo).length, ceps: Object.keys(cep).length });
   }
 
-  // ─── LIMPAR CACHE ─────────────────────────────────────────────────────────
+  // limpar cache
   if (req.method === 'POST' && pathname === '/api/cache/clear') {
-    saveCache({});
+    saveJSON(GEO_CACHE_FILE, {});
+    saveJSON(CEP_CACHE_FILE, {});
     return json(res, 200, { ok: true });
   }
 
