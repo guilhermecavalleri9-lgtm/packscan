@@ -153,7 +153,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="card-title">geocodificar endereços</div>
       <div style="margin-bottom:.75rem;font-size:13px;color:var(--text2)" id="geo-info">Importe os pacotes primeiro.</div>
       <div class="btn-row" style="margin-bottom:1rem">
-        <button class="btn btn-primary" id="btn-geo" onclick="iniciarGeo()">▶ Iniciar geocodificação</button>
+        <button class="btn btn-primary" id="btn-geo" onclick="iniciarGeo(false)">▶ Iniciar geocodificação</button>
+        <button class="btn btn-amber" id="btn-geo-force" onclick="iniciarGeo(true)" style="background:#3a2800;border-color:var(--amber);color:var(--amber)">↺ Forçar reprocessar todos</button>
         <button class="btn btn-green" id="btn-ver-mapa" style="display:none" onclick="goTab(2)">→ Ver no mapa</button>
         <button class="btn btn-red btn-sm" id="btn-parar" style="display:none" onclick="geoParar=true">⏹ Parar</button>
       </div>
@@ -162,6 +163,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <span id="geo-pct" style="font-family:var(--mono);color:var(--accent)">0%</span>
       </div>
       <div class="progress-wrap"><div class="progress-fill" id="geo-prog" style="width:0%"></div></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.75rem;margin-bottom:4px">
+        <span style="font-size:11px;color:var(--text3);font-family:var(--mono)">log</span>
+        <button class="btn btn-sm" onclick="document.getElementById('geo-log').innerHTML=''">🗑 Limpar log</button>
+      </div>
       <div class="geo-log" id="geo-log"></div>
     </div>
   </div>
@@ -380,11 +385,18 @@ function atualizarGeoInfo() {
 }
 
 // ─── GEOCODIFICAR ─────────────────────────────────────────────────────────────
-async function iniciarGeo() {
+async function iniciarGeo(forcar = false) {
   if (!pacotes.length) { alert('Importe os pacotes primeiro.'); return; }
+  if (forcar) {
+    // limpa coords de todos os pacotes para reprocessar
+    pacotes.forEach(p => { p.lat = null; p.lng = null; p.enderecoNorm = null; p.precisao = null; });
+    // limpa cache do servidor
+    try { await fetch(`${BACKEND}/api/cache/clear`, {method:'POST'}); } catch(e) {}
+  }
   geoParar = false;
   const btn = document.getElementById('btn-geo');
   btn.disabled = true; btn.textContent = '⏳ Geocodificando...';
+  document.getElementById('btn-geo-force').disabled = true;
   document.getElementById('btn-parar').style.display = 'inline-flex';
   const log = document.getElementById('geo-log'); log.innerHTML = '';
 
@@ -431,6 +443,7 @@ async function iniciarGeo() {
       log.innerHTML = `<span class="err">⚠ ${p.endereco.substring(0,30)} → erro: ${e.message}</span><br>` + log.innerHTML;
     }
 
+    await new Promise(r => setTimeout(r, 150)); // pausa entre requisições
     const done = i + 1;
     const pct = Math.round(done / total * 100);
     document.getElementById('geo-prog').style.width = pct + '%';
@@ -445,7 +458,8 @@ async function iniciarGeo() {
   document.getElementById('geo-status').textContent = `concluído — ${comCoord}/${pacotes.length} com coordenadas`;
   document.getElementById('geo-prog').style.width = '100%';
   document.getElementById('geo-pct').textContent = '100%';
-  btn.disabled = false; btn.textContent = '↺ Repetir';
+  btn.disabled = false; btn.textContent = '▶ Iniciar geocodificação';
+  document.getElementById('btn-geo-force').disabled = false;
   document.getElementById('btn-parar').style.display = 'none';
   document.getElementById('btn-ver-mapa').style.display = 'inline-flex';
 
