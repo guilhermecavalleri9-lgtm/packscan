@@ -320,19 +320,7 @@ function limparCache(){
   localStorage.removeItem(CACHE_KEY);atualizarCacheUI();
 }
 
-// ─── API KEY ──────────────────────────────────────────────────────────────────
-  const st=document.getElementById('key-status');
-  st.textContent='⏳ testando...';st.style.color='var(--amber)';
-  try{
-    const r=await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=Florianopolis,SC,Brasil&key=${key}`);
-    const d=await r.json();
-    if(d.status==='OK'){st.textContent='✓ Chave válida! Pronta para usar.';st.style.color='var(--green)';}
-    else if(d.status==='REQUEST_DENIED'){st.textContent='✗ Chave inválida ou sem permissão para Geocoding API.';st.style.color='var(--red)';}
-    else{st.textContent=`Status: ${d.status}`;st.style.color='var(--amber)';}
-  }catch(e){st.textContent='✗ Erro de rede: '+e.message;st.style.color='var(--red)';}
-}
-
-// ─── STATE ────────────────────────────────────────────────────────────────────
+// ─── STATE ───────────────────────────────────────────────────────────────────
 let pacotes=[],rotas=[],bipados={},motAtivo=null;
 let map,drawnItems,drawControl,mapaInit=false;
 let corAtiva='#4f8ef7',geoParar=false;
