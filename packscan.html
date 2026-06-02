@@ -430,10 +430,11 @@ async function iniciarGeo(forcar = false) {
         if (d.bairro && !p.bairro) p.bairro = d.bairro;
         if (d.cidade && !p.cidade) p.cidade = d.cidade;
         const icone = d.fromCache ? '⚡' : '✓';
-        const cor = d.precisao === 'ROOFTOP' ? 'ok' : d.precisao === 'RANGE_INTERPOLATED' ? 'warn' : 'warn';
         const prec = d.precisao === 'ROOFTOP' ? '📍' : d.precisao === 'RANGE_INTERPOLATED' ? '~' : '≈';
+        const fallbackTag = d.usarCepFallback ? ' <span style="color:var(--amber)">[CEP]</span>' : '';
+        const cor = d.precisao === 'ROOFTOP' ? 'ok' : 'warn';
         if (d.fromCache) cntCache++; else cntOk++;
-        log.innerHTML = `<span class="${cor}">${icone}${prec} ${p.endereco.substring(0,35)} → ${d.enderecoFormatado||d.enderecoNormalizado||''}</span><br>` + log.innerHTML;
+        log.innerHTML = `<span class="${cor}">${icone}${prec} ${p.endereco.substring(0,35)} → ${d.enderecoFormatado||d.enderecoNormalizado||''}${fallbackTag}</span><br>` + log.innerHTML;
       } else {
         cntErr++;
         log.innerHTML = `<span class="err">✗ ${p.endereco.substring(0,40)} → ${d.error||'não encontrado'}</span><br>` + log.innerHTML;

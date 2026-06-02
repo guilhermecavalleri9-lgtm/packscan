@@ -55,67 +55,79 @@ function httpsPost(hostname, path, headers, payload) {
   });
 }
 
-// ─── NORMALIZAR ENDEREÇO (regras + IA opcional) ──────────────────────────────
+// ─── NORMALIZAR ENDEREÇO COM IA + VERIFICAÇÃO + FALLBACK CEP ────────────────
 function normalizarEnderecoLocal(endereco, bairro, cidade) {
   let end = endereco.trim();
-
-  // remove lixo comum
-  end = end.replace(/CPF[\s\S]*?(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/gi, '');
-  end = end.replace(/(casa|portão|portao|branco|preto|amarelo|azul|verde|fundo|frente|lateral|apto|apartamento|bloco|lote|lt|qd|quadra|A\/C|a\/c)[^,\d]*/gi, ' ');
+  end = end.replace(/CPF[\s:]*[\d.\-]+/gi, '');
+  end = end.replace(/(portão|portao|branco|preto|amarelo|azul|verde|fundo|frente|lateral|bloco|lote|lt|qd|quadra|A\/C)[^,\d]*/gi, ' ');
   end = end.replace(/\s{2,}/g, ' ').trim();
-
-  // extrai número: pega a primeira sequência de dígitos com 1-5 chars
   const numMatch = end.match(/(\d{1,5})/);
   const numero = numMatch ? numMatch[1] : '';
-
-  // extrai o nome da rua: tira o número e palavras soltas
-  let rua = end.replace(/\d{1,5}/, '').trim();
-  rua = rua.replace(/^(rua|av|avenida|travessa|alameda|estrada|rod|rodovia|trav)\.?\s*/i, match => match);
-
-  // se não começa com tipo de logradouro e parece nome de pessoa, adiciona Rua
-  if (!/^(rua|av|avenida|travessa|alameda|estrada|rod|trav|servidão|servidao|sc-|br-)/i.test(rua) && rua.length > 3) {
+  let rua = end.replace(/\d{1,5}/, '').replace(/\s{2,}/g, ' ').trim();
+  if (!/^(rua|av|avenida|travessa|alameda|estrada|rodovia|trav|servidão|servidao|sc-|br-)/i.test(rua) && rua.length > 3) {
     rua = 'Rua ' + rua;
   }
-
-  rua = rua.replace(/\s{2,}/g, ' ').trim();
-
-  // monta query para Google — formato mais eficaz
-  const partes = [rua];
-  if (numero) partes.push(numero);
-  partes.push(bairro || '');
-  partes.push(cidade || '');
-  partes.push('SC');
-  partes.push('Brasil');
-
-  return partes.filter(Boolean).join(', ');
+  return [rua, numero, bairro, cidade, 'SC', 'Brasil'].filter(Boolean).join(', ');
 }
 
 async function normalizarEndereco(endereco, bairro, cidade, cep) {
-  // Tenta IA se tiver chave
-  if (ANTHROPIC_KEY) {
-    const prompt = `Normalize este endereço bruto de transportadora para geocodificação Google Maps.
-Endereço: "${endereco}"
-Bairro: "${bairro}", Cidade: "${cidade}", CEP: "${cep}"
-
-Retorne APENAS uma linha no formato: "Rua Nome, Número, Bairro, Cidade, SC, Brasil"
-Regras: remova CPF/observações/cores de portão; se não tiver "Rua" e for nome de pessoa adicione "Rua"; mantenha o número.`;
-    try {
-      const result = await httpsPost('api.anthropic.com', '/v1/messages',
-        { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-        JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 150, messages: [{ role: 'user', content: prompt }] })
-      );
-      const texto = result.content?.[0]?.text?.trim() || '';
-      if (texto && texto.length > 10) {
-        console.log(`[IA] ${endereco.substring(0,30)} → ${texto.substring(0,50)}`);
-        return texto;
-      }
-    } catch(e) { console.error('Claude error:', e.message); }
+  if (!ANTHROPIC_KEY) {
+    const norm = normalizarEnderecoLocal(endereco, bairro, cidade);
+    console.log(`[local] ${endereco.substring(0,35)} → ${norm.substring(0,50)}`);
+    return { query: norm, usarCepFallback: false };
   }
 
-  // fallback: normalização local por regras
+  // extrai número do endereço para usar no fallback
+  const numMatch = endereco.match(/(\d{1,5})/);
+  const numero = numMatch ? numMatch[1] : '';
+
+  const prompt = `Você é um especialista em endereços brasileiros para geocodificação.
+
+Analise este endereço bruto de transportadora:
+- Endereço/Complemento: "${endereco}"
+- Bairro informado: "${bairro}"
+- Cidade: "${cidade}"
+- CEP: "${cep}"
+
+Tarefas:
+1. Normalize o endereço: remova CPF, cores de portão, observações irrelevantes. Se for nome de pessoa sem "Rua", adicione "Rua". Mantenha o número do imóvel.
+2. Verifique se o nome da rua é compatível com o bairro "${bairro}" em "${cidade}". Se parecer inconsistente ou o endereço for muito vago (ex: "casa qd 30 lt 18", só nome de pessoa sem rua), marque para usar CEP.
+
+Responda APENAS com JSON neste formato exato:
+{"enderecoNormalizado": "Rua Nome, Número, Bairro, Cidade, SC, Brasil", "usarCepFallback": false, "motivo": "ok"}
+
+Se for usar fallback de CEP: {"enderecoNormalizado": "", "usarCepFallback": true, "motivo": "endereço vago"}`;
+
+  try {
+    const result = await httpsPost('api.anthropic.com', '/v1/messages',
+      { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+      JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 200, messages: [{ role: 'user', content: prompt }] })
+    );
+    const texto = result.content?.[0]?.text?.trim() || '';
+    // extrai JSON da resposta
+    const jsonMatch = texto.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.usarCepFallback) {
+        // fallback: CEP formatado + número extraído
+        const cepFmt = cep.length >= 8 ? cep.substring(0,5) + '-' + cep.substring(5) : cep;
+        const queryFallback = numero ? `${cepFmt}, ${numero}, Brasil` : `${cepFmt}, Brasil`;
+        console.log(`[IA-fallback] ${endereco.substring(0,30)} → CEP ${queryFallback} (${parsed.motivo})`);
+        return { query: queryFallback, usarCepFallback: true };
+      }
+      if (parsed.enderecoNormalizado && parsed.enderecoNormalizado.length > 10) {
+        console.log(`[IA] ${endereco.substring(0,30)} → ${parsed.enderecoNormalizado.substring(0,50)}`);
+        return { query: parsed.enderecoNormalizado, usarCepFallback: false };
+      }
+    }
+  } catch(e) {
+    console.error('Claude error:', e.message);
+  }
+
+  // fallback local
   const norm = normalizarEnderecoLocal(endereco, bairro, cidade);
   console.log(`[local] ${endereco.substring(0,30)} → ${norm.substring(0,50)}`);
-  return norm;
+  return { query: norm, usarCepFallback: false };
 }
 
 // ─── GEOCODIFICAR VIA GOOGLE ──────────────────────────────────────────────────
@@ -182,8 +194,7 @@ const server = http.createServer(async (req, res) => {
 
     // normaliza com IA
     console.log(`[normalizar] ${endereco.substring(0,50)}`);
-    const endNorm = await normalizarEndereco(endereco, bairro, cidade, cep);
-    console.log(`[normalizado] ${endNorm}`);
+    const { query: endNorm, usarCepFallback } = await normalizarEndereco(endereco, bairro, cidade, cep);
 
     // geocodifica
     try {
@@ -193,7 +204,7 @@ const server = http.createServer(async (req, res) => {
         return json(res, 404, { error: 'Endereço não encontrado', enderecoNormalizado: endNorm });
       }
 
-      const resultado = { ...coord, enderecoNormalizado: endNorm, fromCache: false };
+      const resultado = { ...coord, enderecoNormalizado: endNorm, usarCepFallback, fromCache: false };
       cache[cacheKey] = resultado;
       saveCache(cache);
       console.log(`[geocode] ok: ${coord.enderecoFormatado} (${coord.precisao})`);
