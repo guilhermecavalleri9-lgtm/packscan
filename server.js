@@ -55,45 +55,67 @@ function httpsPost(hostname, path, headers, payload) {
   });
 }
 
-// ─── NORMALIZAR ENDEREÇO VIA CLAUDE ──────────────────────────────────────────
+// ─── NORMALIZAR ENDEREÇO (regras + IA opcional) ──────────────────────────────
+function normalizarEnderecoLocal(endereco, bairro, cidade) {
+  let end = endereco.trim();
+
+  // remove lixo comum
+  end = end.replace(/CPF[\s\S]*?(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/gi, '');
+  end = end.replace(/(casa|portão|portao|branco|preto|amarelo|azul|verde|fundo|frente|lateral|apto|apartamento|bloco|lote|lt|qd|quadra|A\/C|a\/c)[^,\d]*/gi, ' ');
+  end = end.replace(/\s{2,}/g, ' ').trim();
+
+  // extrai número: pega a primeira sequência de dígitos com 1-5 chars
+  const numMatch = end.match(/(\d{1,5})/);
+  const numero = numMatch ? numMatch[1] : '';
+
+  // extrai o nome da rua: tira o número e palavras soltas
+  let rua = end.replace(/\d{1,5}/, '').trim();
+  rua = rua.replace(/^(rua|av|avenida|travessa|alameda|estrada|rod|rodovia|trav)\.?\s*/i, match => match);
+
+  // se não começa com tipo de logradouro e parece nome de pessoa, adiciona Rua
+  if (!/^(rua|av|avenida|travessa|alameda|estrada|rod|trav|servidão|servidao|sc-|br-)/i.test(rua) && rua.length > 3) {
+    rua = 'Rua ' + rua;
+  }
+
+  rua = rua.replace(/\s{2,}/g, ' ').trim();
+
+  // monta query para Google — formato mais eficaz
+  const partes = [rua];
+  if (numero) partes.push(numero);
+  partes.push(bairro || '');
+  partes.push(cidade || '');
+  partes.push('SC');
+  partes.push('Brasil');
+
+  return partes.filter(Boolean).join(', ');
+}
+
 async function normalizarEndereco(endereco, bairro, cidade, cep) {
-  if (!ANTHROPIC_KEY) {
-    // sem IA: retorna o endereço como está + cidade/bairro
-    return `${endereco}, ${bairro}, ${cidade}, SC, Brasil`;
+  // Tenta IA se tiver chave
+  if (ANTHROPIC_KEY) {
+    const prompt = `Normalize este endereço bruto de transportadora para geocodificação Google Maps.
+Endereço: "${endereco}"
+Bairro: "${bairro}", Cidade: "${cidade}", CEP: "${cep}"
+
+Retorne APENAS uma linha no formato: "Rua Nome, Número, Bairro, Cidade, SC, Brasil"
+Regras: remova CPF/observações/cores de portão; se não tiver "Rua" e for nome de pessoa adicione "Rua"; mantenha o número.`;
+    try {
+      const result = await httpsPost('api.anthropic.com', '/v1/messages',
+        { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+        JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 150, messages: [{ role: 'user', content: prompt }] })
+      );
+      const texto = result.content?.[0]?.text?.trim() || '';
+      if (texto && texto.length > 10) {
+        console.log(`[IA] ${endereco.substring(0,30)} → ${texto.substring(0,50)}`);
+        return texto;
+      }
+    } catch(e) { console.error('Claude error:', e.message); }
   }
-  const prompt = `Você é um normalizador de endereços brasileiros para geocodificação.
 
-Dado o seguinte endereço bruto de uma transportadora:
-- Complemento/endereço: "${endereco}"
-- Bairro: "${bairro}"
-- Cidade: "${cidade}"
-- CEP: "${cep}"
-
-Retorne APENAS o endereço normalizado em uma linha, no formato:
-"Rua/Av [nome], [número], [bairro], [cidade], SC, Brasil"
-
-Regras:
-- Se o endereço contiver nome de pessoa sem "Rua", adicione "Rua" antes
-- Remova informações irrelevantes (CPF, observações, "casa portão branco", etc.)
-- Mantenha o número do imóvel
-- Se não houver número claro, use apenas rua + bairro + cidade
-- Retorne SOMENTE o endereço normalizado, sem explicações`;
-
-  try {
-    const result = await httpsPost('api.anthropic.com', '/v1/messages',
-      { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-      JSON.stringify({
-        model: 'claude-haiku-4-5',
-        max_tokens: 150,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    );
-    const texto = result.content?.[0]?.text?.trim() || '';
-    return texto || `${endereco}, ${bairro}, ${cidade}, SC, Brasil`;
-  } catch(e) {
-    console.error('Claude error:', e.message);
-    return `${endereco}, ${bairro}, ${cidade}, SC, Brasil`;
-  }
+  // fallback: normalização local por regras
+  const norm = normalizarEnderecoLocal(endereco, bairro, cidade);
+  console.log(`[local] ${endereco.substring(0,30)} → ${norm.substring(0,50)}`);
+  return norm;
 }
 
 // ─── GEOCODIFICAR VIA GOOGLE ──────────────────────────────────────────────────
