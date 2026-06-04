@@ -155,6 +155,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="btn-row" style="margin-bottom:1rem">
         <button class="btn btn-primary" id="btn-geo" onclick="iniciarGeo(false)">▶ Iniciar geocodificação</button>
         <button class="btn btn-amber" id="btn-geo-force" onclick="iniciarGeo(true)" style="background:#3a2800;border-color:var(--amber);color:var(--amber)">↺ Forçar reprocessar todos</button>
+        <button class="btn btn-red btn-sm" onclick="limparCacheServidor()">🗑 Limpar cache servidor</button>
         <button class="btn btn-green" id="btn-ver-mapa" style="display:none" onclick="goTab(2)">→ Ver no mapa</button>
         <button class="btn btn-red btn-sm" id="btn-parar" style="display:none" onclick="geoParar=true">⏹ Parar</button>
       </div>
@@ -385,6 +386,16 @@ function atualizarGeoInfo() {
 }
 
 // ─── GEOCODIFICAR ─────────────────────────────────────────────────────────────
+async function limparCacheServidor() {
+  if (!confirm('Limpar todo o cache do servidor? Os endereços serão reprocessados na próxima geocodificação.')) return;
+  try {
+    await fetch(`${BACKEND}/api/cache/clear`, { method: 'POST' });
+    alert('✓ Cache do servidor limpo!');
+  } catch(e) {
+    alert('Erro ao limpar cache: ' + e.message);
+  }
+}
+
 async function iniciarGeo(forcar = false) {
   if (!pacotes.length) { alert('Importe os pacotes primeiro.'); return; }
   if (forcar) {
