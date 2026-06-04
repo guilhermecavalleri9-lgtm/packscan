@@ -100,6 +100,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <button class="tab" onclick="goTab(1)"><span class="tab-num">02</span> Geocodificar</button>
   <button class="tab" onclick="goTab(2)"><span class="tab-num">03</span> Desenhar Rotas</button>
   <button class="tab" onclick="goTab(3)"><span class="tab-num">04</span> Bipar</button>
+  <button class="tab" onclick="goTab(6)"><span class="tab-num">⚠</span> Corrigir</button>
+  <button class="tab" onclick="goTab(7)"><span class="tab-num">07</span> Regiões CEP</button>
   <button class="tab" onclick="goTab(4)"><span class="tab-num">05</span> Etiquetas</button>
   <button class="tab" onclick="goTab(5)"><span class="tab-num">06</span> Motoristas</button>
 </div>
@@ -189,7 +191,13 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div id="rotas-lista"></div>
         <div id="rotas-vazio" style="font-size:12px;color:var(--text3);font-family:var(--mono)">nenhuma ainda</div>
       </div>
-      <button class="btn btn-green" style="justify-content:center" onclick="finalizarRotas()">✓ Finalizar e calcular</button>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button class="btn btn-green" style="justify-content:center" onclick="finalizarRotas()">✓ Finalizar e calcular</button>
+        <button class="btn btn-primary" style="justify-content:center" onclick="salvarRotas()">💾 Salvar rotas no servidor</button>
+        <button class="btn" style="justify-content:center" onclick="carregarRotas()">📂 Carregar rotas salvas</button>
+        <button class="btn btn-red btn-sm" style="justify-content:center" onclick="apagarRotasSalvas()">🗑 Apagar rotas salvas</button>
+      </div>
+      <div id="rotas-save-status" style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:4px;text-align:center"></div>
     </div>
     <div>
       <div id="map"></div>
@@ -552,6 +560,79 @@ function ativarDesenho() {
   document.querySelector('.leaflet-draw-draw-polygon')?.click();
 }
 
+async function salvarRotas() {
+  if (!rotas.length) { alert('Nenhuma rota para salvar.'); return; }
+  const st = document.getElementById('rotas-save-status');
+  st.textContent = '⏳ Salvando...'; st.style.color = 'var(--amber)';
+  // serializa rotas sem a layer do Leaflet (não serializável)
+  const rotasData = rotas.map(r => ({
+    id: r.id,
+    motorista: r.motorista,
+    cor: r.cor,
+    latlngs: r.layer.getLatLngs()[0].map(ll => [ll.lat, ll.lng])
+  }));
+  try {
+    const res = await fetch(`${BACKEND}/api/rotas/salvar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rotas: rotasData })
+    });
+    const d = await res.json();
+    if (d.ok) {
+      st.textContent = `✓ ${d.total} rotas salvas no servidor`;
+      st.style.color = 'var(--green)';
+    }
+  } catch(e) {
+    st.textContent = '✗ Erro ao salvar: ' + e.message;
+    st.style.color = 'var(--red)';
+  }
+}
+
+async function carregarRotas() {
+  const st = document.getElementById('rotas-save-status');
+  st.textContent = '⏳ Carregando...'; st.style.color = 'var(--amber)';
+  try {
+    const res = await fetch(`${BACKEND}/api/rotas/carregar`);
+    const d = await res.json();
+    if (!d.rotas || !d.rotas.length) {
+      st.textContent = 'Nenhuma rota salva no servidor.';
+      st.style.color = 'var(--text3)';
+      return;
+    }
+    // garante que o mapa está iniciado
+    if (!mapaInit) initMap();
+    // remove rotas atuais
+    rotas.forEach(r => { try { map.removeLayer(r.layer); } catch(e) {} });
+    rotas = [];
+    drawnItems.clearLayers();
+    // recria as rotas a partir dos polígonos salvos
+    d.rotas.forEach(r => {
+      const latlngs = r.latlngs.map(([lat, lng]) => L.latLng(lat, lng));
+      const layer = L.polygon(latlngs, { color: r.cor, fillColor: r.cor, fillOpacity: .15, weight: 2 });
+      layer.bindTooltip(`<b>${r.motorista}</b>`, { permanent: true, direction: 'center' });
+      drawnItems.addLayer(layer);
+      rotas.push({ id: r.id, motorista: r.motorista, cor: r.cor, layer, pkgs: [] });
+    });
+    renderRotasList();
+    plotarPontos();
+    const dt = d.salvoEm ? new Date(d.salvoEm).toLocaleString('pt-BR') : '';
+    st.textContent = `✓ ${d.rotas.length} rotas carregadas (salvas em ${dt})`;
+    st.style.color = 'var(--green)';
+  } catch(e) {
+    st.textContent = '✗ Erro ao carregar: ' + e.message;
+    st.style.color = 'var(--red)';
+  }
+}
+
+async function apagarRotasSalvas() {
+  if (!confirm('Apagar as rotas salvas no servidor?')) return;
+  try {
+    await fetch(`${BACKEND}/api/rotas/apagar`, { method: 'POST' });
+    document.getElementById('rotas-save-status').textContent = '✓ Rotas apagadas do servidor.';
+    document.getElementById('rotas-save-status').style.color = 'var(--text3)';
+  } catch(e) {}
+}
+
 function renderRotasList() {
   const el = document.getElementById('rotas-lista'), vazio = document.getElementById('rotas-vazio');
   if (!rotas.length) { el.innerHTML = ''; vazio.style.display = 'block'; return; }
@@ -736,5 +817,74 @@ function downloadTodos() {
   XLSX.writeFile(wb, 'PackScan_Rotas.xlsx');
 }
 </script>
+<!-- TAB 6: CORRIGIR -->
+<div class="page" id="p6">
+  <div style="max-width:900px">
+    <div class="alert alert-amber">⚠ <div>Pacotes com localização imprecisa (APPROXIMATE) ou fora da região de entrega. Clique em um pacote para corrigir manualmente o endereço ou as coordenadas.</div></div>
+    <div class="card" id="corrigir-lista">
+      <div class="card-title">pacotes para corrigir</div>
+      <div id="corrigir-content"><p style="color:var(--text3);font-family:var(--mono);font-size:12px">Geocodifique os pacotes primeiro.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- TAB 7: REGIÕES CEP -->
+<div class="page" id="p7">
+  <div style="max-width:800px">
+    <div class="alert alert-blue">ℹ <div>Defina os intervalos de CEP para cada bairro/região. O sistema usa isso para validar automaticamente se a geocodificação ficou dentro da região correta — caso contrário, o pacote aparece na aba <strong>⚠ Corrigir</strong>.</div></div>
+    <div class="card">
+      <div class="card-title">adicionar região</div>
+      <div class="grid-2" style="margin-bottom:1rem">
+        <div><label>Nome da região / bairro</label><input type="text" id="reg-nome" placeholder="Ex: Forquilhas"></div>
+        <div class="grid-2">
+          <div><label>CEP início</label><input type="text" id="reg-ini" placeholder="88106000" maxlength="8"></div>
+          <div><label>CEP fim</label><input type="text" id="reg-fim" placeholder="88109999" maxlength="8"></div>
+        </div>
+      </div>
+      <button class="btn btn-primary" onclick="adicionarRegiao()">+ Adicionar</button>
+    </div>
+    <div class="card">
+      <div class="card-title">regiões cadastradas</div>
+      <div id="regioes-lista"></div>
+      <div id="regioes-vazio" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Nenhuma região cadastrada ainda.</div>
+    </div>
+    <div class="card" style="background:var(--bg3)">
+      <div class="card-title">como funciona</div>
+      <p style="font-size:13px;color:var(--text2);line-height:1.6">
+        Depois de cadastrar as regiões, os pacotes geocodificados são validados automaticamente.<br>
+        Se um CEP de <strong>Forquilhas (88106-000 a 88109-999)</strong> retornar uma coordenada em outro bairro → marcado como incorreto na aba <strong>⚠ Corrigir</strong>.<br>
+        As regiões ficam salvas no seu navegador.
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CORREÇÃO -->
+<div id="modal-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;width:500px;max-width:95vw">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text3);margin-bottom:1rem;text-transform:uppercase;letter-spacing:1px">Corrigir endereço</div>
+    <div style="margin-bottom:.75rem;font-size:13px;color:var(--text2)">Tracking: <strong id="modal-tracking" style="color:var(--text);font-family:var(--mono)"></strong></div>
+    <div style="margin-bottom:.5rem;font-size:12px;color:var(--text2)">Endereço original:</div>
+    <div id="modal-original" style="font-size:12px;color:var(--text3);font-family:var(--mono);margin-bottom:1rem;padding:6px 10px;background:var(--bg3);border-radius:var(--radius)"></div>
+    <div style="margin-bottom:1rem">
+      <label>Endereço corrigido (Google vai geocodificar)</label>
+      <input type="text" id="modal-endereco" placeholder="Rua Exemplo, 123, Forquilhas, São José, SC, Brasil" style="margin-bottom:.5rem">
+      <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+        <button class="btn btn-sm" onclick="buscarEnderecoModal()" style="white-space:nowrap">🔍 Buscar no Google</button>
+        <span style="font-size:11px;color:var(--text3)">ou cole as coordenadas diretamente:</span>
+      </div>
+    </div>
+    <div class="grid-2" style="margin-bottom:1rem">
+      <div><label>Latitude</label><input type="text" id="modal-lat" placeholder="-27.6136"></div>
+      <div><label>Longitude</label><input type="text" id="modal-lng" placeholder="-48.6400"></div>
+    </div>
+    <div id="modal-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);margin-bottom:1rem;min-height:18px"></div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="salvarCorrecao()">💾 Salvar correção</button>
+      <button class="btn" onclick="fecharModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

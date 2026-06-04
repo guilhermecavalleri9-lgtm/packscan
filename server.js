@@ -9,6 +9,7 @@ const GOOGLE_KEY = process.env.GOOGLE_MAPS_KEY || 'AIzaSyCHRl5eRHAfw0-WVEBj0wC5t
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const GEO_CACHE_FILE = path.join(__dirname, 'geo_cache.json');
 const CEP_CACHE_FILE = path.join(__dirname, 'cep_cache.json');
+const ROTAS_FILE = path.join(__dirname, 'rotas_salvas.json');
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function readBody(req) {
@@ -181,6 +182,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ─── SALVAR CORREÇÃO MANUAL ──────────────────────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/geocode/correcao') {
+    const body = await readBody(req);
+    const { cacheKey, lat, lng, enderecoNormalizado, precisao, enderecoFormatado } = body;
+    if (!cacheKey || !lat || !lng) return json(res, 400, { error: 'cacheKey, lat, lng obrigatórios' });
+    const geoCache = loadJSON(GEO_CACHE_FILE);
+    geoCache[cacheKey] = { lat, lng, enderecoNormalizado, enderecoFormatado, precisao: precisao||'MANUAL', fromCache: false };
+    saveJSON(GEO_CACHE_FILE, geoCache);
+    console.log(`[correcao] ${cacheKey.substring(0,40)} → ${lat},${lng}`);
+    return json(res, 200, { ok: true });
+  }
+
   // ─── POST /api/geocode ────────────────────────────────────────────────────
   // body: { tracking, endereco, bairro, cidade, cep }
   if (req.method === 'POST' && pathname === '/api/geocode') {
@@ -197,6 +210,13 @@ const server = http.createServer(async (req, res) => {
     }
 
     try {
+      // se forcarEndereco=true, geocodifica direto o endereço sem passar pelo CEP
+      if (body.forcarEndereco && endereco) {
+        const coord = await geocodificarEndereco(`${endereco}, SC, Brasil`);
+        if (coord) return json(res, 200, { ...coord, enderecoNormalizado: endereco, fromCache: false });
+        return json(res, 404, { error: 'Endereço não encontrado' });
+      }
+
       // PASSO 1: pega rua pelo CEP via Google
       const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,'')) : { rua: '', bairro: '', cidade: '' };
       const ruaCep = cepInfo.rua;
@@ -222,10 +242,17 @@ const server = http.createServer(async (req, res) => {
         coord = await geocodificarEndereco(enderecoFinal);
       }
 
-      // fallback 2: só CEP + número
+      // fallback 2: CEP + número + cidade explícita para forçar SC
       if (!coord && cep && numeroExtraido) {
         const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
-        enderecoFinal = `${cepFmt}, ${numeroExtraido}, Brasil`;
+        enderecoFinal = `${cepFmt}, ${numeroExtraido}, ${cidade || 'São José'}, SC, Brasil`;
+        coord = await geocodificarEndereco(enderecoFinal);
+      }
+
+      // fallback 3: CEP + cidade
+      if (!coord && cep) {
+        const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
+        enderecoFinal = `${cepFmt}, ${cidade || 'São José'}, SC, Brasil`;
         coord = await geocodificarEndereco(enderecoFinal);
       }
 
@@ -270,6 +297,27 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/cache/clear') {
     saveJSON(GEO_CACHE_FILE, {});
     saveJSON(CEP_CACHE_FILE, {});
+    return json(res, 200, { ok: true });
+  }
+
+  // ─── SALVAR ROTAS ────────────────────────────────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/rotas/salvar') {
+    const body = await readBody(req);
+    if (!body || !body.rotas) return json(res, 400, { error: 'rotas obrigatório' });
+    saveJSON(ROTAS_FILE, { rotas: body.rotas, salvoEm: new Date().toISOString() });
+    console.log(`[rotas] ${body.rotas.length} rotas salvas`);
+    return json(res, 200, { ok: true, total: body.rotas.length });
+  }
+
+  // ─── CARREGAR ROTAS ───────────────────────────────────────────────────────
+  if (req.method === 'GET' && pathname === '/api/rotas/carregar') {
+    const data = loadJSON(ROTAS_FILE);
+    return json(res, 200, data.rotas ? data : { rotas: [], salvoEm: null });
+  }
+
+  // ─── APAGAR ROTAS ─────────────────────────────────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/rotas/apagar') {
+    saveJSON(ROTAS_FILE, { rotas: [], salvoEm: null });
     return json(res, 200, { ok: true });
   }
 
