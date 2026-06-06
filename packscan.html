@@ -100,10 +100,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <button class="tab" onclick="goTab(1)"><span class="tab-num">02</span> Geocodificar</button>
   <button class="tab" onclick="goTab(2)"><span class="tab-num">03</span> Desenhar Rotas</button>
   <button class="tab" onclick="goTab(3)"><span class="tab-num">04</span> Bipar</button>
-  <button class="tab" onclick="goTab(6)"><span class="tab-num">⚠</span> Corrigir</button>
-  <button class="tab" onclick="goTab(7)"><span class="tab-num">07</span> Regiões CEP</button>
   <button class="tab" onclick="goTab(4)"><span class="tab-num">05</span> Etiquetas</button>
   <button class="tab" onclick="goTab(5)"><span class="tab-num">06</span> Motoristas</button>
+  <button class="tab" onclick="goTab(6)"><span class="tab-num">⚠</span> Corrigir</button>
+  <button class="tab" onclick="goTab(7)"><span class="tab-num">07</span> Regiões CEP</button>
 </div>
 
 <!-- TAB 0: IMPORTAR -->
@@ -300,13 +300,18 @@ const DEMO = [
 
 // ─── TABS ─────────────────────────────────────────────────────────────────────
 function goTab(n) {
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', i===n));
-  document.querySelectorAll('.page').forEach((p,i) => p.classList.toggle('active', i===n));
-  if (n===2) { if (!mapaInit) initMap(); else { setTimeout(() => map.invalidateSize(), 100); plotarPontos(); } }
+  document.querySelectorAll('.tab').forEach(function(t,i){ t.classList.toggle('active', i===n); });
+  document.querySelectorAll('.page').forEach(function(p,i){ p.classList.toggle('active', i===n); });
+  if (n===1) atualizarGeoInfo();
+  if (n===2) {
+    if (!mapaInit) { initMap(); setTimeout(function(){ carregarRotas(); }, 800); }
+    else { setTimeout(function(){ map.invalidateSize(); }, 100); plotarPontos(); }
+  }
   if (n===3) renderMotList();
   if (n===4) renderEtSelect();
   if (n===5) renderMotDownload();
-  if (n===1) atualizarGeoInfo();
+  if (n===6) goTabCorrigir();
+  if (n===7) renderRegioes();
 }
 
 // ─── IMPORTAR ─────────────────────────────────────────────────────────────────
@@ -816,6 +821,180 @@ function downloadTodos() {
   });
   XLSX.writeFile(wb, 'PackScan_Rotas.xlsx');
 }
+
+// ─── REGIÕES CEP ──────────────────────────────────────────────────────────────
+let regioesCep = JSON.parse(localStorage.getItem('packscan_regioes') || '[]');
+
+function salvarRegioes() {
+  localStorage.setItem('packscan_regioes', JSON.stringify(regioesCep));
+}
+
+function renderRegioes() {
+  const el = document.getElementById('regioes-lista');
+  const vazio = document.getElementById('regioes-vazio');
+  if (!regioesCep.length) { el.innerHTML = ''; vazio.style.display='block'; return; }
+  vazio.style.display = 'none'; el.innerHTML = '';
+  regioesCep.forEach((r, i) => {
+    const ini = r.ini.substring(0,5)+'-'+r.ini.substring(5);
+    const fim = r.fim.substring(0,5)+'-'+r.fim.substring(5);
+    const d = document.createElement('div');
+    d.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;background:var(--bg3)';
+    d.innerHTML = '<div style="flex:1"><div style="font-weight:500;font-size:13px">'+r.nome+'</div><div style="font-size:11px;font-family:var(--mono);color:var(--text3)">'+ini+' → '+fim+'</div></div><span class="badge b-blue">'+(r.total||0)+' CEPs</span><button class="btn btn-red btn-sm" onclick="removerRegiao('+i+')">✕</button>';
+    el.appendChild(d);
+  });
+}
+
+function adicionarRegiao() {
+  const nome = document.getElementById('reg-nome').value.trim();
+  const ini = document.getElementById('reg-ini').value.trim().replace(/[^0-9]/g,'');
+  const fim = document.getElementById('reg-fim').value.trim().replace(/[^0-9]/g,'');
+  if (!nome || !ini || !fim) { alert('Preencha nome, CEP início e CEP fim.'); return; }
+  if (ini.length < 8 || fim.length < 8) { alert('CEP deve ter 8 dígitos sem hífen. Ex: 88106000'); return; }
+  if (parseInt(ini) > parseInt(fim)) { alert('CEP início deve ser menor que o CEP fim.'); return; }
+  regioesCep.push({ nome, ini, fim, total: parseInt(fim)-parseInt(ini)+1 });
+  salvarRegioes();
+  renderRegioes();
+  document.getElementById('reg-nome').value = '';
+  document.getElementById('reg-ini').value = '';
+  document.getElementById('reg-fim').value = '';
+}
+
+function removerRegiao(i) {
+  if (!confirm('Remover região "'+regioesCep[i].nome+'"?')) return;
+  regioesCep.splice(i, 1);
+  salvarRegioes();
+  renderRegioes();
+}
+
+function validarCoordRegiao(cep, lat, lng) {
+  if (!regioesCep.length || !cep || !lat || !lng) return null;
+  const cepNum = parseInt((cep+'').replace(/[^0-9]/g,''));
+  const regiao = regioesCep.find(r => cepNum >= parseInt(r.ini) && cepNum <= parseInt(r.fim));
+  if (!regiao) return null;
+  const pontosRegiao = pacotes.filter(p => {
+    const pCep = parseInt((p.cep||'').replace(/[^0-9]/g,''));
+    return pCep >= parseInt(regiao.ini) && pCep <= parseInt(regiao.fim) && p.lat && p.precisao === 'ROOFTOP';
+  });
+  if (pontosRegiao.length < 3) return null;
+  const lats = pontosRegiao.map(p => p.lat);
+  const lngs = pontosRegiao.map(p => p.lng);
+  const dentro = lat >= Math.min(...lats)-0.02 && lat <= Math.max(...lats)+0.02 &&
+                 lng >= Math.min(...lngs)-0.02 && lng <= Math.max(...lngs)+0.02;
+  return { regiao: regiao.nome, dentro };
+}
+
+// ─── CORRIGIR ─────────────────────────────────────────────────────────────────
+function goTabCorrigir() {
+  const problemas = pacotes.filter(p => {
+    if (!p.lat || !p.lng) return true;
+    if (p.lat < -28.5 || p.lat > -26.5 || p.lng < -49.5 || p.lng > -47.5) return true;
+    if (p.precisao === 'APPROXIMATE' || p.precisao === 'GEOMETRIC_CENTER') return true;
+    const v = validarCoordRegiao(p.cep, p.lat, p.lng);
+    if (v && !v.dentro) return true;
+    return false;
+  });
+  const el = document.getElementById('corrigir-content');
+  if (!problemas.length) {
+    el.innerHTML = '<p style="color:var(--green);font-family:var(--mono);font-size:13px">✓ Nenhum pacote com problema!</p>';
+    return;
+  }
+  let html = '<p style="font-size:12px;color:var(--text2);margin-bottom:.75rem">'+problemas.length+' pacote(s) para corrigir:</p><div style="overflow-x:auto"><table><thead><tr><th>Tracking</th><th>Endereço</th><th>Precisão</th><th>Problema</th><th></th></tr></thead><tbody>';
+  problemas.forEach(p => {
+    const precBadge = !p.lat ? 'b-red' : (p.precisao==='ROOFTOP'||p.precisao==='MANUAL') ? 'b-green' : 'b-red';
+    const v = p.lat ? validarCoordRegiao(p.cep, p.lat, p.lng) : null;
+    const problema = !p.lat ? 'Sem coord' :
+      (p.lat < -28.5||p.lat > -26.5||p.lng < -49.5||p.lng > -47.5) ? 'Fora de SC' :
+      (p.precisao==='APPROXIMATE'||p.precisao==='GEOMETRIC_CENTER') ? 'Impreciso' :
+      (v&&!v.dentro) ? 'Fora de '+v.regiao : 'Verificar';
+    html += '<tr><td style="font-family:var(--mono);font-size:11px">'+p.tracking+'</td>'
+          + '<td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+p.endereco+'">'+p.endereco+'</td>'
+          + '<td><span class="badge '+precBadge+'">'+(p.precisao||'N/A')+'</span></td>'
+          + '<td><span class="badge b-red">'+problema+'</span></td>'
+          + '<td><button class="btn btn-primary btn-sm" onclick="abrirModal(''+p.tracking+'')">✏ Corrigir</button></td></tr>';
+  });
+  html += '</tbody></table></div>';
+  el.innerHTML = html;
+}
+
+// ─── MODAL ────────────────────────────────────────────────────────────────────
+let _modalTracking = null;
+
+function abrirModal(tracking) {
+  const p = pacotes.find(x => x.tracking === tracking);
+  if (!p) return;
+  _modalTracking = tracking;
+  document.getElementById('modal-tracking').textContent = tracking;
+  document.getElementById('modal-original').textContent = p.endereco + (p.enderecoNorm ? ' → ' + p.enderecoNorm : '');
+  document.getElementById('modal-endereco').value = p.enderecoNorm || p.endereco;
+  document.getElementById('modal-lat').value = p.lat ? p.lat.toFixed(6) : '';
+  document.getElementById('modal-lng').value = p.lng ? p.lng.toFixed(6) : '';
+  document.getElementById('modal-status').textContent = '';
+  document.getElementById('modal-bg').style.display = 'flex';
+}
+
+function fecharModal() {
+  document.getElementById('modal-bg').style.display = 'none';
+  _modalTracking = null;
+}
+
+async function buscarEnderecoModal() {
+  const end = document.getElementById('modal-endereco').value.trim();
+  if (!end) return;
+  const st = document.getElementById('modal-status');
+  st.textContent = 'Buscando...'; st.style.color = 'var(--amber)';
+  try {
+    const p = pacotes.find(x => x.tracking === _modalTracking);
+    const r = await fetch(BACKEND+'/api/geocode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endereco: end, bairro: p ? p.bairro : '', cidade: p ? p.cidade : 'São José', cep: p ? p.cep : '', forcarEndereco: true })
+    });
+    const d = await r.json();
+    if (r.ok && d.lat) {
+      document.getElementById('modal-lat').value = d.lat.toFixed(6);
+      document.getElementById('modal-lng').value = d.lng.toFixed(6);
+      st.textContent = '✓ ' + (d.enderecoFormatado||end) + ' (' + (d.precisao||'') + ')';
+      st.style.color = d.precisao === 'ROOFTOP' ? 'var(--green)' : 'var(--amber)';
+    } else {
+      st.textContent = 'Não encontrado. Cole as coordenadas manualmente.';
+      st.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    st.textContent = 'Erro: ' + e.message;
+    st.style.color = 'var(--red)';
+  }
+}
+
+async function salvarCorrecao() {
+  const p = pacotes.find(x => x.tracking === _modalTracking);
+  if (!p) return;
+  const lat = parseFloat(document.getElementById('modal-lat').value);
+  const lng = parseFloat(document.getElementById('modal-lng').value);
+  const endCorrigido = document.getElementById('modal-endereco').value.trim();
+  const st = document.getElementById('modal-status');
+  if (isNaN(lat) || isNaN(lng)) { st.textContent = 'Preencha latitude e longitude.'; st.style.color='var(--red)'; return; }
+  p.lat = lat; p.lng = lng; p.enderecoNorm = endCorrigido; p.precisao = 'MANUAL';
+  st.textContent = 'Salvando...'; st.style.color = 'var(--amber)';
+  try {
+    await fetch(BACKEND+'/api/geocode/correcao', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cacheKey: (p.cep+'|'+p.endereco).toLowerCase().trim(), lat, lng, enderecoNormalizado: endCorrigido, precisao: 'MANUAL', enderecoFormatado: endCorrigido })
+    });
+    st.textContent = 'Correção salva!'; st.style.color = 'var(--green)';
+    setTimeout(function() { fecharModal(); goTabCorrigir(); plotarPontos(); }, 1000);
+  } catch(e) {
+    st.textContent = 'Salvo em memória. Erro servidor: ' + e.message; st.style.color = 'var(--amber)';
+    setTimeout(function() { fecharModal(); goTabCorrigir(); plotarPontos(); }, 1500);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  var bg = document.getElementById('modal-bg');
+  if (bg) bg.addEventListener('click', function(e) { if (e.target === this) fecharModal(); });
+  renderRegioes();
+});
+
 </script>
 <!-- TAB 6: CORRIGIR -->
 <div class="page" id="p6">
@@ -885,6 +1064,5 @@ function downloadTodos() {
     </div>
   </div>
 </div>
-
 </body>
 </html>
