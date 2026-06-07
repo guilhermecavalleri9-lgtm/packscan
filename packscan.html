@@ -104,6 +104,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <button class="tab" onclick="goTab(4)">05 Etiquetas</button>
   <button class="tab" onclick="goTab(5)">06 Motoristas</button>
   <button class="tab" onclick="goTab(6)">⚠ Corrigir</button>
+  <button class="tab" onclick="goTab(8)">⚡ Auto Rotas</button>
   <button class="tab" onclick="goTab(7)">07 Regiões CEP</button>
 </div>
 
@@ -303,6 +304,37 @@ tr:hover td{background:rgba(255,255,255,.02)}
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 8 — AUTO ROTAS
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="page" id="p8">
+  <div style="max-width:700px">
+    <div class="alert alert-blue">⚡ <div>Defina quantas rotas e quantos pacotes cada uma terá. O sistema agrupa automaticamente por <strong>proximidade geográfica</strong> usando K-Means — pacotes próximos ficam na mesma rota, sem misturar regiões distantes.</div></div>
+    <div class="card">
+      <div class="card-title">configurar rotas</div>
+      <div style="margin-bottom:1rem;font-size:13px;color:var(--text2)">
+        Pacotes geocodificados: <strong id="ar-total" style="color:var(--text)">0</strong>
+      </div>
+      <div id="ar-rotas-config">
+        <!-- linhas de configuração geradas dinamicamente -->
+      </div>
+      <div class="btn-row" style="margin-top:.75rem">
+        <button class="btn" onclick="arAddRota()">+ Adicionar rota</button>
+        <button class="btn btn-p" onclick="arGerar()">⚡ Gerar rotas automaticamente</button>
+        <button class="btn btn-sm" onclick="arLimpar()">✕ Limpar</button>
+      </div>
+      <div id="ar-aviso" style="font-size:12px;color:var(--amber);margin-top:.5rem"></div>
+    </div>
+    <div class="card" id="ar-resultado" style="display:none">
+      <div class="card-title">resultado</div>
+      <div id="ar-resultado-content"></div>
+      <div class="btn-row" style="margin-top:1rem">
+        <button class="btn btn-g" onclick="arAplicarNoMapa()">→ Aplicar no mapa e finalizar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
      MODAL — CORREÇÃO MANUAL
      ═══════════════════════════════════════════════════════════════════════════ -->
 <div id="modal-bg" onclick="if(event.target===this)fecharModal()">
@@ -373,6 +405,7 @@ function goTab(n) {
   if (n===5) renderMotDownload();
   if (n===6) goTabCorrigir();
   if (n===7) renderRegioes();
+  if (n===8) arRenderConfig();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -957,8 +990,235 @@ async function salvarCorrecao() {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUTO ROTAS — K-Means geográfico
+// ═══════════════════════════════════════════════════════════════════════════════
+var _arConfig = []; // [{nome, qtd, cor}]
+var _arRotasGeradas = []; // resultado do K-Means
+
+function arAddRota() {
+  var idx = _arConfig.length + 1;
+  var cor = CORES[(_arConfig.length) % CORES.length];
+  _arConfig.push({ nome: 'Rota ' + idx, qtd: '', cor: cor });
+  arRenderConfig();
+}
+
+function arLimpar() {
+  _arConfig = [];
+  _arRotasGeradas = [];
+  arRenderConfig();
+  document.getElementById('ar-resultado').style.display = 'none';
+  document.getElementById('ar-aviso').textContent = '';
+}
+
+function arRenderConfig() {
+  var geo = pacotes.filter(function(p){ return p.lat && p.lng; });
+  document.getElementById('ar-total').textContent = geo.length;
+  var el = document.getElementById('ar-rotas-config');
+  if (!_arConfig.length) {
+    el.innerHTML = '<p style="font-size:12px;color:var(--text3);font-family:var(--mono)">Clique em "+ Adicionar rota" para começar.</p>';
+    return;
+  }
+  var html = '<div style="display:grid;grid-template-columns:1fr 120px 80px 36px;gap:8px;margin-bottom:6px"><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">NOME DA ROTA</span><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">PACOTES</span><span style="font-size:11px;color:var(--text3);font-family:var(--mono)">COR</span><span></span></div>';
+  _arConfig.forEach(function(r, i) {
+    html += '<div style="display:grid;grid-template-columns:1fr 120px 80px 36px;gap:8px;align-items:center;margin-bottom:6px">'
+      + '<input type="text" value="'+r.nome+'" onchange="_arConfig['+i+'].nome=this.value" style="padding:6px 10px">'
+      + '<input type="number" value="'+r.qtd+'" placeholder="qtd" min="1" onchange="_arConfig['+i+'].qtd=parseInt(this.value)||0" style="padding:6px 10px">'
+      + '<input type="color" value="'+r.cor+'" onchange="_arConfig['+i+'].cor=this.value" style="width:100%;height:34px;border-radius:var(--radius);border:1px solid var(--border);cursor:pointer;padding:2px">'
+      + '<button class="btn btn-r btn-sm" onclick="arRemoverRota('+i+')">✕</button>'
+      + '</div>';
+  });
+  // mostra total configurado vs disponível
+  var totalConf = _arConfig.reduce(function(s,r){ return s+(parseInt(r.qtd)||0); }, 0);
+  var geo2 = pacotes.filter(function(p){ return p.lat && p.lng; }).length;
+  var diff = geo2 - totalConf;
+  html += '<div style="font-size:12px;font-family:var(--mono);color:var(--text2);margin-top:6px">Total configurado: <strong style="color:'+(diff===0?'var(--green)':diff>0?'var(--amber)':'var(--red)')+'">'+totalConf+'</strong> / '+geo2+' disponíveis'+(diff>0?' ('+diff+' sem rota)':diff<0?' (excede em '+Math.abs(diff)+')':'')+'</div>';
+  el.innerHTML = html;
+}
+
+function arRemoverRota(i) {
+  _arConfig.splice(i, 1);
+  arRenderConfig();
+}
+
+// K-Means geográfico
+function kMeans(pontos, k, maxIter) {
+  if (!pontos.length || k <= 0) return [];
+  maxIter = maxIter || 50;
+  // inicializa centróides com K-Means++ (melhor distribuição)
+  var centroides = [pontos[Math.floor(Math.random() * pontos.length)]];
+  while (centroides.length < k) {
+    var dists = pontos.map(function(p) {
+      var minD = Infinity;
+      centroides.forEach(function(c) {
+        var d = Math.pow(p.lat-c.lat,2) + Math.pow(p.lng-c.lng,2);
+        if (d < minD) minD = d;
+      });
+      return minD;
+    });
+    var soma = dists.reduce(function(a,b){ return a+b; }, 0);
+    var r = Math.random() * soma;
+    var acum = 0;
+    for (var i = 0; i < pontos.length; i++) {
+      acum += dists[i];
+      if (acum >= r) { centroides.push(pontos[i]); break; }
+    }
+  }
+  var clusters = new Array(pontos.length).fill(0);
+  for (var iter = 0; iter < maxIter; iter++) {
+    // atribui cada ponto ao centróide mais próximo
+    var mudou = false;
+    pontos.forEach(function(p, i) {
+      var bestK = 0, bestD = Infinity;
+      centroides.forEach(function(c, ki) {
+        var d = Math.pow(p.lat-c.lat,2) + Math.pow(p.lng-c.lng,2);
+        if (d < bestD) { bestD = d; bestK = ki; }
+      });
+      if (clusters[i] !== bestK) { clusters[i] = bestK; mudou = true; }
+    });
+    if (!mudou) break;
+    // recalcula centróides
+    centroides = centroides.map(function(_, ki) {
+      var pts = pontos.filter(function(_, i){ return clusters[i] === ki; });
+      if (!pts.length) return centroides[ki];
+      return {
+        lat: pts.reduce(function(s,p){ return s+p.lat; },0) / pts.length,
+        lng: pts.reduce(function(s,p){ return s+p.lng; },0) / pts.length
+      };
+    });
+  }
+  return clusters;
+}
+
+function arGerar() {
+  var geo = pacotes.filter(function(p){ return p.lat && p.lng; });
+  if (!geo.length) { alert('Geocodifique os pacotes primeiro.'); return; }
+  if (!_arConfig.length) { alert('Adicione pelo menos uma rota.'); return; }
+
+  var totalConf = _arConfig.reduce(function(s,r){ return s+(parseInt(r.qtd)||0); }, 0);
+  if (totalConf === 0) { alert('Defina a quantidade de pacotes em cada rota.'); return; }
+
+  var aviso = document.getElementById('ar-aviso');
+
+  // Passo 1: K-Means com k = número de rotas
+  var k = _arConfig.length;
+  var clusters = kMeans(geo, k, 100);
+
+  // Passo 2: ordena os clusters por longitude (oeste→leste) para melhor distribuição geográfica
+  var centros = [];
+  for (var ki = 0; ki < k; ki++) {
+    var pts = geo.filter(function(_, i){ return clusters[i] === ki; });
+    if (pts.length) {
+      centros.push({
+        ki: ki,
+        lng: pts.reduce(function(s,p){ return s+p.lng; },0)/pts.length,
+        lat: pts.reduce(function(s,p){ return s+p.lat; },0)/pts.length
+      });
+    }
+  }
+  // ordena por posição geográfica (latitude desc, longitude asc)
+  centros.sort(function(a,b){ return a.lng - b.lng; });
+
+  // Passo 3: associa cada cluster K-Means a uma rota configurada
+  // e ajusta a quantidade de pacotes
+  _arRotasGeradas = _arConfig.map(function(conf, ri) {
+    return { conf: conf, pkgs: [] };
+  });
+
+  centros.forEach(function(centro, ri) {
+    if (ri >= _arConfig.length) return;
+    var pts = geo.filter(function(_, i){ return clusters[i] === centro.ki; });
+    _arRotasGeradas[ri].pkgs = pts;
+  });
+
+  // Passo 4: ajusta para respeitar as quantidades configuradas
+  // redistribui excesso/déficit entre rotas vizinhas
+  _arConfig.forEach(function(conf, ri) {
+    var qtd = parseInt(conf.qtd) || 0;
+    if (!qtd) return;
+    var rota = _arRotasGeradas[ri];
+    if (rota.pkgs.length > qtd) {
+      // devolve excesso para a próxima rota
+      var excesso = rota.pkgs.splice(qtd);
+      var prox = _arRotasGeradas[ri+1];
+      if (prox) prox.pkgs = excesso.concat(prox.pkgs);
+    }
+  });
+
+  // Passo 5: reordena cada rota por vizinho mais próximo
+  _arRotasGeradas.forEach(function(r) {
+    r.pkgs = reordenarNN(r.pkgs);
+    r.pkgs.forEach(function(p, i){ p._previewNum = i+1; });
+  });
+
+  // Mostra resultado
+  var html = '<table><thead><tr><th>Rota</th><th>Motorista</th><th>Pacotes</th><th>Cor</th></tr></thead><tbody>';
+  _arRotasGeradas.forEach(function(r, i) {
+    html += '<tr><td><span class="badge b-blue">R'+String(i+1).padStart(2,'0')+'</span></td>'
+      + '<td style="font-weight:500">'+r.conf.nome+'</td>'
+      + '<td>'+ r.pkgs.length +'</td>'
+      + '<td><div style="width:20px;height:20px;border-radius:50%;background:'+r.conf.cor+'"></div></td></tr>';
+  });
+  var semRota = geo.filter(function(p) {
+    return !_arRotasGeradas.some(function(r){ return r.pkgs.includes(p); });
+  });
+  html += '</tbody></table>';
+  if (semRota.length) {
+    html += '<div class="alert alert-amber" style="margin-top:.75rem">⚠ '+semRota.length+' pacotes sem rota (total configurado menor que disponível).</div>';
+  }
+  document.getElementById('ar-resultado-content').innerHTML = html;
+  document.getElementById('ar-resultado').style.display = 'block';
+  aviso.textContent = '';
+}
+
+function arAplicarNoMapa() {
+  if (!_arRotasGeradas.length) { alert('Gere as rotas primeiro.'); return; }
+  if (!mapaInit) initMap();
+  // limpa rotas existentes
+  rotas.forEach(function(r){ try{ map.removeLayer(r.layer); }catch(e){} });
+  rotas = []; drawnItems.clearLayers();
+  // remove atribuições anteriores
+  pacotes.forEach(function(p){ p.rota=null; p.numNaRota=null; });
+
+  _arRotasGeradas.forEach(function(r, i) {
+    if (!r.pkgs.length) return;
+    var cor = r.conf.cor;
+    var nome = r.conf.nome;
+    // atribui pacotes
+    r.pkgs.forEach(function(p, j){ p.rota=i+1; p.numNaRota=j+1; });
+    // cria polígono convex hull dos pontos
+    var latlngs = convexHull(r.pkgs).map(function(p){ return [p.lat, p.lng]; });
+    if (latlngs.length < 3) {
+      // menos de 3 pontos: cria círculo ao redor
+      var c = r.pkgs[0];
+      latlngs = [[c.lat+0.005,c.lng],[c.lat,c.lng+0.008],[c.lat-0.005,c.lng],[c.lat,c.lng-0.008]];
+    }
+    var layer = L.polygon(latlngs, {color:cor,fillColor:cor,fillOpacity:.12,weight:2});
+    layer.bindTooltip('<b>'+nome+'</b> ('+r.pkgs.length+')',{permanent:true,direction:'center'});
+    drawnItems.addLayer(layer);
+    rotas.push({id:i+1, motorista:nome, cor:cor, layer:layer, pkgs:r.pkgs});
+  });
+
+  renderRotasList(); renderMotList(); renderEtSelect(); renderMotDownload();
+  goTab(2); // vai para o mapa
+}
+
+// Convex Hull (Graham scan) para criar polígono ao redor dos pontos
+function convexHull(pts) {
+  if (pts.length <= 3) return pts;
+  var sorted = pts.slice().sort(function(a,b){ return a.lng===b.lng ? a.lat-b.lat : a.lng-b.lng; });
+  var cross = function(O,A,B){ return (A.lat-O.lat)*(B.lng-O.lng)-(A.lng-O.lng)*(B.lat-O.lat); };
+  var lower = [];
+  sorted.forEach(function(p){ while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],p)<=0)lower.pop(); lower.push(p); });
+  var upper = [];
+  sorted.slice().reverse().forEach(function(p){ while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],p)<=0)upper.pop(); upper.push(p); });
+  lower.pop(); upper.pop();
+  return lower.concat(upper);
+}
+
 // init
 renderRegioes();
+// adiciona goTab para aba 8
 </script>
 </body>
 </html>
