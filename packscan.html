@@ -365,6 +365,7 @@ function esc(v) {
 var pacotes = [], rotas = [], bipados = {}, motAtivo = null;
 var map, drawnItems, drawControl, mapaInit = false;
 var corAtiva = '#4f8ef7', geoParar = false;
+var _arquivoNome = '', _rotasPendentes = null;
 var CORES = ['#4f8ef7','#34c97e','#f5a623','#f05252','#a78bfa','#38bdf8','#fb923c','#e879f9','#4ade80','#facc15','#f472b6','#22d3ee'];
 
 var DEMO = [
@@ -388,7 +389,7 @@ function goTab(n) {
   document.querySelectorAll('.page').forEach(function(p,i){ p.classList.toggle('active', i===n); });
   if (n===0) { atualizarGeoInfo(); goTabCorrigir(); }
   if (n===1) {
-    if (!mapaInit) { initMap(); setTimeout(carregarRotas, 800); }
+    if (!mapaInit) { initMap(); setTimeout(function(){ if (_rotasPendentes) reconstruirRotasLocais(); else carregarRotas(); }, 800); }
     else { setTimeout(function(){ map.invalidateSize(); }, 100); plotarPontos(); }
     arRenderConfig();
   }
@@ -468,6 +469,8 @@ function finImport() {
   html+='</tbody></table></div>';
   document.getElementById('preview-tabela').innerHTML = html;
   document.getElementById('gm-total').textContent = pacotes.length;
+  if (_pFile) _arquivoNome = _pFile.name;
+  persistirLocal();
 }
 
 function atualizarGeoInfo() {
@@ -545,6 +548,7 @@ async function iniciarGeo(forcar) {
   document.getElementById('btn-geo-force').disabled=false;
   document.getElementById('btn-parar').style.display='none';
   document.getElementById('btn-ver-mapa').style.display='inline-flex';
+  persistirLocal();
   if (!mapaInit) initMap(); else plotarPontos();
 }
 
@@ -654,7 +658,7 @@ function renderRotasList() {
   });
 }
 
-function removerRota(i) { map.removeLayer(rotas[i].layer); rotas.splice(i,1); rotas.forEach(function(r,j){ r.id=j+1; }); renderRotasList(); }
+function removerRota(i) { map.removeLayer(rotas[i].layer); rotas.splice(i,1); rotas.forEach(function(r,j){ r.id=j+1; }); renderRotasList(); persistirLocal(); }
 
 function reordenarNN(pkgs) {
   if (pkgs.length<=1) return pkgs;
@@ -694,6 +698,7 @@ function finalizarRotas() {
   if (semRota.length) alert('Rotas calculadas!\n'+resumo+'\n\n⚠ '+semRota.length+' pacotes fora dos polígonos.');
   else alert('✓ Rotas calculadas!\n'+resumo);
   renderMotList(); renderEtSelect(); renderMotDownload();
+  persistirLocal();
 }
 
 // Salvar/Carregar Rotas
@@ -724,7 +729,7 @@ async function carregarRotas() {
       drawnItems.addLayer(layer);
       rotas.push({id:r.id,motorista:r.motorista,cor:r.cor,layer:layer,pkgs:[]});
     });
-    renderRotasList(); plotarPontos();
+    renderRotasList(); plotarPontos(); persistirLocal();
     var dt=d.salvoEm?new Date(d.salvoEm).toLocaleString('pt-BR'):'';
     st.textContent='✓ '+d.rotas.length+' rotas carregadas ('+dt+')'; st.style.color='var(--green)';
   } catch(e) { st.textContent='✗ Erro: '+e.message; st.style.color='var(--red)'; }
@@ -780,6 +785,7 @@ function handleBip(e) {
   tb.insertBefore(tr,tb.firstChild);
   if (tb.children.length>15) tb.removeChild(tb.lastChild);
   atualizarProg(); renderMotList();
+  persistirLocal();
 }
 
 function showFb(msg,tipo) {
@@ -986,6 +992,7 @@ function excluirPacoteDoMapa(tracking) {
   atualizarGeoInfo();
   document.getElementById('gm-total').textContent = pacotes.length;
   renderMotList(); renderRotasList();
+  persistirLocal();
 }
 
 async function buscarEnderecoModal() {
@@ -1013,6 +1020,7 @@ async function salvarCorrecao() {
   var st=document.getElementById('modal-status');
   if (isNaN(lat)||isNaN(lng)) { st.textContent='Preencha latitude e longitude.'; st.style.color='var(--red)'; return; }
   p.lat=lat; p.lng=lng; p.enderecoNorm=endCorrigido; p.precisao='MANUAL';
+  persistirLocal();
   st.textContent='Salvando...'; st.style.color='var(--amber)';
   try {
     await fetch(BACKEND+'/api/geocode/correcao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cacheKey:(p.cep+'|'+p.endereco).toLowerCase().trim(),lat:lat,lng:lng,enderecoNormalizado:endCorrigido,precisao:'MANUAL',enderecoFormatado:endCorrigido})});
@@ -1180,6 +1188,7 @@ function arAplicarNoMapa() {
   });
 
   renderRotasList(); renderMotList(); renderEtSelect(); renderMotDownload();
+  persistirLocal();
   goTab(1); // vai para o mapa
 }
 
@@ -1262,22 +1271,86 @@ async function carregarSessao() {
 }
 
 async function apagarSessao() {
-  if (!confirm('Apagar a importação salva no servidor? Os pacotes em memória não serão afetados.')) return;
+  if (!confirm('Apagar a importação? Isso zera os pacotes, rotas e bipagens deste navegador. Não pode ser desfeito.')) return;
   var el = document.getElementById('sessao-info');
+  // limpa memória
+  if (map) { rotas.forEach(function(r){ try{ map.removeLayer(r.layer); }catch(e){} }); if (drawnItems) drawnItems.clearLayers(); }
+  pacotes = []; rotas = []; bipados = {}; motAtivo = null; _arquivoNome = ''; _rotasPendentes = null;
+  try { localStorage.removeItem('packscan_estado'); } catch(e){}
+  // limpa UI
+  document.getElementById('import-msg').innerHTML = '';
+  document.getElementById('preview-tabela').innerHTML = '';
+  ['gm-total','gm-cache','gm-ok','gm-err'].forEach(function(id){ document.getElementById(id).textContent='0'; });
+  atualizarGeoInfo(); goTabCorrigir();
+  if (map) plotarPontos();
+  renderRotasList(); renderMotList(); renderEtSelect(); renderMotDownload();
+  // limpa servidor também
+  try { await fetch(BACKEND + '/api/pacotes/apagar', { method: 'POST' }); } catch(e){}
+  el.textContent = '✓ Importação apagada (navegador e servidor).';
+  el.style.color = 'var(--text3)';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PERSISTÊNCIA LOCAL — salva tudo no navegador e restaura ao recarregar
+// ═══════════════════════════════════════════════════════════════════════════════
+function snapshotRotas() {
+  return rotas.map(function(r){
+    return {
+      id: r.id, motorista: r.motorista, cor: r.cor,
+      latlngs: r.layer.getLatLngs()[0].map(function(ll){ return [ll.lat, ll.lng]; }),
+      trackings: r.pkgs.map(function(p){ return p.tracking; })
+    };
+  });
+}
+
+function persistirLocal() {
   try {
-    await fetch(BACKEND + '/api/pacotes/apagar', { method: 'POST' });
-    el.textContent = '✓ Importação apagada do servidor.';
-    el.style.color = 'var(--text3)';
-  } catch(e) {
-    el.textContent = 'Erro: ' + e.message;
-    el.style.color = 'var(--red)';
+    var rotasData = (rotas.length && map) ? snapshotRotas() : (_rotasPendentes || []);
+    localStorage.setItem('packscan_estado', JSON.stringify({
+      pacotes: pacotes, bipados: bipados, arquivo: _arquivoNome, rotas: rotasData
+    }));
+  } catch(e) { /* localStorage cheio ou indisponível */ }
+}
+
+function restaurarLocal() {
+  var raw;
+  try { raw = localStorage.getItem('packscan_estado'); } catch(e){ return; }
+  if (!raw) return;
+  var s;
+  try { s = JSON.parse(raw); } catch(e){ return; }
+  if (s.pacotes && s.pacotes.length) {
+    pacotes = s.pacotes;
+    _arquivoNome = s.arquivo || '';
+    finImport();
+    atualizarGeoInfo();
   }
+  if (s.bipados) bipados = s.bipados;
+  if (s.rotas && s.rotas.length) _rotasPendentes = s.rotas;
+}
+
+function reconstruirRotasLocais() {
+  if (!_rotasPendentes || !map) return;
+  rotas.forEach(function(r){ try{ map.removeLayer(r.layer); }catch(e){} });
+  rotas = []; drawnItems.clearLayers();
+  _rotasPendentes.forEach(function(r) {
+    var latlngs = r.latlngs.map(function(ll){ return L.latLng(ll[0], ll[1]); });
+    var layer = L.polygon(latlngs, {color:r.cor,fillColor:r.cor,fillOpacity:.15,weight:2});
+    layer.bindTooltip('<b>'+esc(r.motorista)+'</b>',{permanent:true,direction:'center'});
+    drawnItems.addLayer(layer);
+    var pkgs = (r.trackings||[]).map(function(t){
+      return pacotes.find(function(p){ return p.tracking===t; });
+    }).filter(Boolean);
+    pkgs.forEach(function(p,i){ p.rota=r.id; p.numNaRota=i+1; });
+    rotas.push({id:r.id, motorista:r.motorista, cor:r.cor, layer:layer, pkgs:pkgs});
+  });
+  _rotasPendentes = null;
+  renderRotasList(); plotarPontos(); renderMotList(); renderEtSelect(); renderMotDownload();
 }
 
 // init
+restaurarLocal();
 renderRegioes();
 verificarSessao();
-// adiciona goTab para aba 8
 </script>
 </body>
 </html>
