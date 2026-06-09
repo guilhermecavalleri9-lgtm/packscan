@@ -362,13 +362,6 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { memoriaCache: total, supabase: !!SUPABASE_URL });
   }
 
-  // ─── DEBUG SUPABASE (temporário) ───────────────────────────────────────────
-  if (req.method === 'GET' && pathname === '/api/debug/supabase') {
-    if (!SUPABASE_URL || !SUPABASE_KEY) return json(res, 200, { configured: false });
-    const del = await supabaseRequest('DELETE', '/rest/v1/geo_cache?cache_key=eq.debug:teste');
-    return json(res, 200, { limpou: del.status });
-  }
-
   // ─── LIMPAR CACHE ─────────────────────────────────────────────────────────
   if (req.method === 'POST' && pathname === '/api/cache/clear') {
     await supabaseClear();
