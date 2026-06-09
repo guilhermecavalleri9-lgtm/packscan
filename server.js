@@ -352,6 +352,46 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
+  // ─── PACOTES ──────────────────────────────────────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/pacotes/salvar') {
+    const body = await readBody(req);
+    if (!body || !body.pacotes) return json(res, 400, { error: 'pacotes obrigatório' });
+    try {
+      // salva como um único registro no Supabase
+      await supabaseRequest('DELETE', '/rest/v1/pacotes_dia?id=neq.0');
+      await supabaseRequest('POST', '/rest/v1/pacotes_dia', {
+        dados: body.pacotes,
+        arquivo: body.arquivo || '',
+        total: body.pacotes.length,
+        salvo_em: new Date().toISOString()
+      });
+      console.log(`[pacotes] ${body.pacotes.length} pacotes salvos`);
+      return json(res, 200, { ok: true, total: body.pacotes.length });
+    } catch(e) {
+      console.error('[pacotes save]', e.message);
+      return json(res, 500, { error: e.message });
+    }
+  }
+
+  if (req.method === 'GET' && pathname === '/api/pacotes/carregar') {
+    try {
+      const result = await supabaseRequest('GET', '/rest/v1/pacotes_dia?select=*&limit=1&order=salvo_em.desc');
+      if (result && result[0]) return json(res, 200, { pacotes: result[0].dados, arquivo: result[0].arquivo, salvoEm: result[0].salvo_em, total: result[0].total });
+      return json(res, 200, { pacotes: [], salvoEm: null });
+    } catch(e) {
+      return json(res, 500, { error: e.message });
+    }
+  }
+
+  if (req.method === 'POST' && pathname === '/api/pacotes/apagar') {
+    try {
+      await supabaseRequest('DELETE', '/rest/v1/pacotes_dia?id=neq.0');
+      return json(res, 200, { ok: true });
+    } catch(e) {
+      return json(res, 500, { error: e.message });
+    }
+  }
+
   // ─── ROTAS ────────────────────────────────────────────────────────────────
   if (req.method === 'POST' && pathname === '/api/rotas/salvar') {
     const body = await readBody(req);

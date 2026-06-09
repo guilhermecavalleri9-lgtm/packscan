@@ -133,6 +133,15 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <button class="btn" onclick="carregarDemo()">⚡ Demo</button>
       </div>
     </div>
+    <div class="card" style="margin-top:1rem">
+      <div class="card-title">sessão salva no servidor</div>
+      <div id="sessao-info" style="font-size:13px;color:var(--text2);margin-bottom:.75rem">Verificando...</div>
+      <div class="btn-row">
+        <button class="btn btn-g" onclick="salvarSessao()">💾 Salvar importação no servidor</button>
+        <button class="btn" onclick="carregarSessao()">📂 Carregar sessão salva</button>
+        <button class="btn btn-r btn-sm" onclick="apagarSessao()">🗑 Apagar importação</button>
+      </div>
+    </div>
     <div id="import-msg"></div>
     <div id="preview-tabela" style="overflow-x:auto"></div>
   </div>
@@ -1216,8 +1225,87 @@ function convexHull(pts) {
   return lower.concat(upper);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SESSÃO — salvar/carregar pacotes no servidor
+// ═══════════════════════════════════════════════════════════════════════════════
+async function verificarSessao() {
+  var el = document.getElementById('sessao-info');
+  if (!el) return;
+  try {
+    var r = await fetch(BACKEND + '/api/pacotes/carregar');
+    var d = await r.json();
+    if (d.pacotes && d.pacotes.length) {
+      var dt = d.salvoEm ? new Date(d.salvoEm).toLocaleString('pt-BR') : '';
+      el.innerHTML = '<span style="color:var(--green)">✓ ' + d.total + ' pacotes salvos</span> · ' + (d.arquivo ? '<strong>' + d.arquivo + '</strong> · ' : '') + dt;
+    } else {
+      el.textContent = 'Nenhuma importação salva no servidor.';
+    }
+  } catch(e) {
+    el.textContent = 'Não foi possível verificar o servidor.';
+  }
+}
+
+async function salvarSessao() {
+  if (!pacotes.length) { alert('Importe os pacotes primeiro.'); return; }
+  var el = document.getElementById('sessao-info');
+  el.textContent = '⏳ Salvando...'; el.style.color = 'var(--amber)';
+  try {
+    var arquivo = _pFile ? _pFile.name : 'demo';
+    var r = await fetch(BACKEND + '/api/pacotes/salvar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pacotes: pacotes, arquivo: arquivo })
+    });
+    var d = await r.json();
+    if (d.ok) {
+      el.innerHTML = '<span style="color:var(--green)">✓ ' + d.total + ' pacotes salvos no servidor!</span>';
+    } else {
+      el.textContent = 'Erro: ' + (d.error || 'desconhecido');
+      el.style.color = 'var(--red)';
+    }
+  } catch(e) {
+    el.textContent = 'Erro: ' + e.message;
+    el.style.color = 'var(--red)';
+  }
+}
+
+async function carregarSessao() {
+  var el = document.getElementById('sessao-info');
+  el.textContent = '⏳ Carregando...'; el.style.color = 'var(--amber)';
+  try {
+    var r = await fetch(BACKEND + '/api/pacotes/carregar');
+    var d = await r.json();
+    if (!d.pacotes || !d.pacotes.length) {
+      el.textContent = 'Nenhuma importação salva no servidor.';
+      el.style.color = 'var(--text2)';
+      return;
+    }
+    pacotes = d.pacotes;
+    finImport();
+    var dt = d.salvoEm ? new Date(d.salvoEm).toLocaleString('pt-BR') : '';
+    el.innerHTML = '<span style="color:var(--green)">✓ ' + pacotes.length + ' pacotes carregados</span>' + (d.arquivo ? ' · <strong>' + d.arquivo + '</strong>' : '') + ' · ' + dt;
+  } catch(e) {
+    el.textContent = 'Erro: ' + e.message;
+    el.style.color = 'var(--red)';
+  }
+}
+
+async function apagarSessao() {
+  if (!confirm('Apagar a importação salva no servidor? Os pacotes em memória não serão afetados.')) return;
+  var el = document.getElementById('sessao-info');
+  try {
+    await fetch(BACKEND + '/api/pacotes/apagar', { method: 'POST' });
+    el.textContent = '✓ Importação apagada do servidor.';
+    el.style.color = 'var(--text3)';
+  } catch(e) {
+    el.textContent = 'Erro: ' + e.message;
+    el.style.color = 'var(--red)';
+  }
+}
+
 // init
 renderRegioes();
+verificarSessao();
 // adiciona goTab para aba 8
 </script>
 </body>
