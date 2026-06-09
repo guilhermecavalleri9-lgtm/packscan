@@ -365,8 +365,13 @@ const server = http.createServer(async (req, res) => {
   // ─── DEBUG SUPABASE (temporário) ───────────────────────────────────────────
   if (req.method === 'GET' && pathname === '/api/debug/supabase') {
     if (!SUPABASE_URL || !SUPABASE_KEY) return json(res, 200, { configured: false });
-    const r = await supabaseRequest('GET', '/rest/v1/geo_cache?select=*&limit=5&order=criado_em.desc');
-    return json(res, 200, { status: r.status, body: r.body });
+    const get = await supabaseRequest('GET', '/rest/v1/geo_cache?select=*&limit=5&order=criado_em.desc');
+    const ins = await supabaseRequest('POST', '/rest/v1/geo_cache',
+      { cache_key: 'debug:teste', coord_data: { teste: true }, criado_em: new Date().toISOString() },
+      { 'Prefer': 'return=representation' }
+    );
+    const get2 = await supabaseRequest('GET', '/rest/v1/geo_cache?cache_key=eq.debug:teste&select=*');
+    return json(res, 200, { get: { status: get.status, body: get.body }, insert: { status: ins.status, body: ins.body }, getAfter: { status: get2.status, body: get2.body } });
   }
 
   // ─── LIMPAR CACHE ─────────────────────────────────────────────────────────
