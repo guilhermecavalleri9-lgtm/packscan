@@ -846,9 +846,9 @@ function previewMot(rid) {
 }
 
 function gerarExcel(r) {
-  var data=[['Nº na rota','Tracking','Endereço normalizado','Endereço original','Bairro','CEP','Cidade']].concat(r.pkgs.map(function(p){ return ['P'+String(p.numNaRota).padStart(3,'0'),p.tracking,p.enderecoNorm||p.endereco,p.endereco,p.bairro,p.cep,p.cidade||'']; }));
+  var data=[['Nº na rota','Tracking','Endereço','Bairro','CEP','Cidade']].concat(r.pkgs.map(function(p){ return ['P'+String(p.numNaRota).padStart(3,'0'),p.tracking,p.enderecoNorm||p.endereco,p.bairro,p.cep,p.cidade||'']; }));
   var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(data);
-  ws['!cols']=[{wch:10},{wch:20},{wch:35},{wch:35},{wch:16},{wch:12},{wch:14}];
+  ws['!cols']=[{wch:10},{wch:20},{wch:35},{wch:16},{wch:12},{wch:14}];
   XLSX.utils.book_append_sheet(wb,ws,'Rota');
   XLSX.writeFile(wb,'Rota_'+String(r.id).padStart(2,'0')+'_'+r.motorista.replace(/ /g,'_')+'.xlsx');
 }
@@ -863,8 +863,8 @@ function downloadTodos() {
   if (!rotas.length) { alert('Finalize as rotas primeiro.'); return; }
   var wb=XLSX.utils.book_new();
   rotas.forEach(function(r) {
-    var data=[['Nº na rota','Tracking','Endereço normalizado','Endereço original','Bairro','CEP','Cidade']].concat(r.pkgs.map(function(p){ return ['P'+String(p.numNaRota).padStart(3,'0'),p.tracking,p.enderecoNorm||p.endereco,p.endereco,p.bairro,p.cep,p.cidade||'']; }));
-    var ws=XLSX.utils.aoa_to_sheet(data); ws['!cols']=[{wch:10},{wch:20},{wch:35},{wch:35},{wch:16},{wch:12},{wch:14}];
+    var data=[['Nº na rota','Tracking','Endereço','Bairro','CEP','Cidade']].concat(r.pkgs.map(function(p){ return ['P'+String(p.numNaRota).padStart(3,'0'),p.tracking,p.enderecoNorm||p.endereco,p.bairro,p.cep,p.cidade||'']; }));
+    var ws=XLSX.utils.aoa_to_sheet(data); ws['!cols']=[{wch:10},{wch:20},{wch:35},{wch:16},{wch:12},{wch:14}];
     XLSX.utils.book_append_sheet(wb,ws,'R'+String(r.id).padStart(2,'0')+'_'+r.motorista.split(' ')[0]);
   });
   XLSX.writeFile(wb,'PackScan_Rotas.xlsx');
