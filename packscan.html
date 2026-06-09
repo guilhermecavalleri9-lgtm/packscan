@@ -1075,53 +1075,30 @@ function arRemoverRota(i) {
   arRenderConfig();
 }
 
-// K-Means geográfico
-function kMeans(pontos, k, maxIter) {
-  if (!pontos.length || k <= 0) return [];
-  maxIter = maxIter || 50;
-  // inicializa centróides com K-Means++ (melhor distribuição)
-  var centroides = [pontos[Math.floor(Math.random() * pontos.length)]];
-  while (centroides.length < k) {
-    var dists = pontos.map(function(p) {
-      var minD = Infinity;
-      centroides.forEach(function(c) {
-        var d = Math.pow(p.lat-c.lat,2) + Math.pow(p.lng-c.lng,2);
-        if (d < minD) minD = d;
-      });
-      return minD;
-    });
-    var soma = dists.reduce(function(a,b){ return a+b; }, 0);
-    var r = Math.random() * soma;
-    var acum = 0;
-    for (var i = 0; i < pontos.length; i++) {
-      acum += dists[i];
-      if (acum >= r) { centroides.push(pontos[i]); break; }
-    }
-  }
-  var clusters = new Array(pontos.length).fill(0);
-  for (var iter = 0; iter < maxIter; iter++) {
-    // atribui cada ponto ao centróide mais próximo
-    var mudou = false;
-    pontos.forEach(function(p, i) {
-      var bestK = 0, bestD = Infinity;
-      centroides.forEach(function(c, ki) {
-        var d = Math.pow(p.lat-c.lat,2) + Math.pow(p.lng-c.lng,2);
-        if (d < bestD) { bestD = d; bestK = ki; }
-      });
-      if (clusters[i] !== bestK) { clusters[i] = bestK; mudou = true; }
-    });
-    if (!mudou) break;
-    // recalcula centróides
-    centroides = centroides.map(function(_, ki) {
-      var pts = pontos.filter(function(_, i){ return clusters[i] === ki; });
-      if (!pts.length) return centroides[ki];
-      return {
-        lat: pts.reduce(function(s,p){ return s+p.lat; },0) / pts.length,
-        lng: pts.reduce(function(s,p){ return s+p.lng; },0) / pts.length
-      };
-    });
-  }
-  return clusters;
+// Separação geográfica sem sobreposição via PCA + faixas sequenciais.
+// Encontra o eixo principal da nuvem de pontos (direção de maior variância),
+// projeta cada ponto nesse eixo e ordena — o resultado é uma fila de pontos
+// do extremo A ao extremo B da cidade. Atribuir sequencialmente garante
+// que cada rota ocupe uma faixa contígua, sem misturar com as outras.
+function separarPorEixo(pontos) {
+  var n = pontos.length;
+  var mlat = pontos.reduce(function(s,p){return s+p.lat;},0)/n;
+  var mlng = pontos.reduce(function(s,p){return s+p.lng;},0)/n;
+  // matriz de covariância 2x2
+  var vll=0, vgg=0, vlg=0;
+  pontos.forEach(function(p){
+    var dl=p.lat-mlat, dg=p.lng-mlng;
+    vll+=dl*dl; vgg+=dg*dg; vlg+=dl*dg;
+  });
+  // ângulo do autovetor do maior autovalor
+  var ang = 0.5*Math.atan2(2*vlg, vgg-vll);
+  var ax = Math.cos(ang), ay = Math.sin(ang);
+  // ordena pela projeção no eixo principal
+  return pontos.slice().sort(function(a,b){
+    var pa=(a.lat-mlat)*ay+(a.lng-mlng)*ax;
+    var pb=(b.lat-mlat)*ay+(b.lng-mlng)*ax;
+    return pa-pb;
+  });
 }
 
 function arGerar() {
@@ -1134,51 +1111,21 @@ function arGerar() {
 
   var aviso = document.getElementById('ar-aviso');
 
-  // Passo 1: K-Means com k = número de rotas
-  var k = _arConfig.length;
-  var clusters = kMeans(geo, k, 100);
+  // Ordena todos os pontos ao longo do eixo geográfico principal
+  // (a direção em que a nuvem de pontos é mais "alongada")
+  var ordenados = separarPorEixo(geo);
 
-  // Passo 2: ordena os clusters por longitude (oeste→leste) para melhor distribuição geográfica
-  var centros = [];
-  for (var ki = 0; ki < k; ki++) {
-    var pts = geo.filter(function(_, i){ return clusters[i] === ki; });
-    if (pts.length) {
-      centros.push({
-        ki: ki,
-        lng: pts.reduce(function(s,p){ return s+p.lng; },0)/pts.length,
-        lat: pts.reduce(function(s,p){ return s+p.lat; },0)/pts.length
-      });
-    }
-  }
-  // ordena por posição geográfica (latitude desc, longitude asc)
-  centros.sort(function(a,b){ return a.lng - b.lng; });
-
-  // Passo 3: associa cada cluster K-Means a uma rota configurada
-  // e ajusta a quantidade de pacotes
-  _arRotasGeradas = _arConfig.map(function(conf, ri) {
-    return { conf: conf, pkgs: [] };
-  });
-
-  centros.forEach(function(centro, ri) {
-    if (ri >= _arConfig.length) return;
-    var pts = geo.filter(function(_, i){ return clusters[i] === centro.ki; });
-    _arRotasGeradas[ri].pkgs = pts;
-  });
-
-  // Passo 4: respeita as quantidades configuradas sem perder pacotes.
-  // Junta todos os pacotes na ordem dos clusters (oeste→leste) e preenche
-  // cada rota com a quantidade configurada. Sobras (config < disponível)
-  // ficam sem rota e aparecem no aviso; déficit deixa as últimas menores.
-  var pool = [];
-  _arRotasGeradas.forEach(function(r){ pool = pool.concat(r.pkgs); });
+  // Atribui sequencialmente — cada rota recebe uma faixa contígua,
+  // garantindo separação geográfica sem sobreposição
+  _arRotasGeradas = _arConfig.map(function(conf){ return { conf: conf, pkgs: [] }; });
   var pos = 0;
   _arConfig.forEach(function(conf, ri) {
     var qtd = parseInt(conf.qtd) || 0;
-    _arRotasGeradas[ri].pkgs = pool.slice(pos, pos + qtd);
+    _arRotasGeradas[ri].pkgs = ordenados.slice(pos, pos + qtd);
     pos += qtd;
   });
 
-  // Passo 5: reordena cada rota por vizinho mais próximo
+  // Reordena cada rota internamente por vizinho mais próximo
   _arRotasGeradas.forEach(function(r) {
     r.pkgs = reordenarNN(r.pkgs);
     r.pkgs.forEach(function(p, i){ p._previewNum = i+1; });
