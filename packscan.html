@@ -622,7 +622,18 @@ function plotarPontos() {
     var rotaCor = p.rota?(rotas.find(function(r){ return r.id===p.rota; })||{}).cor||'#888':null;
     var cor = rotaCor||(p.precisao==='ROOFTOP'?'#34c97e':p.precisao==='RANGE_INTERPOLATED'?'#f5a623':'#f05252');
     var m = L.circleMarker([p.lat,p.lng],{radius:5,color:cor,fillColor:cor,fillOpacity:.85,weight:1});
-    m.bindPopup('<b>'+esc(p.tracking)+'</b><br><small>'+esc(p.enderecoNorm||p.endereco)+'</small><br>'+esc(p.precisao||''));
+    var precCor = p.precisao==='ROOFTOP'||p.precisao==='MANUAL' ? 'var(--green)' : p.precisao==='RANGE_INTERPOLATED' ? 'var(--amber)' : 'var(--red)';
+    var popHtml =
+      '<div style="font-family:var(--sans);min-width:220px">'
+      + '<div style="font-family:var(--mono);font-size:11px;color:var(--text2);margin-bottom:4px">'+esc(p.tracking)+'</div>'
+      + '<div style="font-size:12px;margin-bottom:4px;line-height:1.4">'+esc(p.enderecoNorm||p.endereco)+'</div>'
+      + (p.bairro ? '<div style="font-size:11px;color:var(--text2);margin-bottom:2px">'+esc(p.bairro)+(p.cidade?', '+esc(p.cidade):'')+'</div>' : '')
+      + '<div style="font-size:11px;margin-bottom:8px"><span style="color:'+precCor+'">● '+(p.precisao||'N/A')+'</span>'+(p.cep ? '<span style="color:var(--text2);margin-left:8px">'+esc(p.cep)+'</span>' : '')+'</div>'
+      + '<div style="display:flex;gap:6px">'
+      + '<button onclick="abrirModalDoMapa(\''+esc(p.tracking)+'\')" style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--accent);background:var(--accent2);color:#fff;cursor:pointer;font-size:12px">✏ Editar</button>'
+      + '<button onclick="excluirPacoteDoMapa(\''+esc(p.tracking)+'\')" style="padding:5px 8px;border-radius:6px;border:1px solid var(--red);background:#3a1a1a;color:var(--red);cursor:pointer;font-size:12px">🗑</button>'
+      + '</div></div>';
+    m.bindPopup(popHtml, {maxWidth:300});
     m.addTo(map); marcadores.push(m);
   });
   var lats=geo.map(function(p){ return p.lat; }), lngs=geo.map(function(p){ return p.lng; });
@@ -968,6 +979,32 @@ function abrirModal(tracking) {
 function fecharModal() {
   document.getElementById('modal-bg').classList.remove('show');
   _modalTracking=null;
+}
+
+function abrirModalDoMapa(tracking) {
+  map.closePopup();
+  abrirModal(tracking);
+}
+
+function excluirPacoteDoMapa(tracking) {
+  if (!confirm('Excluir o pacote ' + tracking + '?\nEssa ação não pode ser desfeita.')) return;
+  map.closePopup();
+  var idx = pacotes.findIndex(function(p){ return p.tracking === tracking; });
+  if (idx === -1) return;
+  // remove da rota, se estiver em alguma
+  var p = pacotes[idx];
+  if (p.rota) {
+    var rota = rotas.find(function(r){ return r.id === p.rota; });
+    if (rota) {
+      rota.pkgs = rota.pkgs.filter(function(x){ return x.tracking !== tracking; });
+      rota.pkgs.forEach(function(x, i){ x.numNaRota = i+1; });
+    }
+  }
+  pacotes.splice(idx, 1);
+  plotarPontos();
+  atualizarGeoInfo();
+  document.getElementById('gm-total').textContent = pacotes.length;
+  renderMotList(); renderRotasList();
 }
 
 async function buscarEnderecoModal() {
