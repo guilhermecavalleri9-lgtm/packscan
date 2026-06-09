@@ -68,9 +68,11 @@ async function supabaseGet(cacheKey) {
   if (!SUPABASE_URL || !SUPABASE_KEY) return null;
   try {
     const keyEnc = encodeURIComponent(cacheKey);
-    const result = await supabaseRequest('GET',
+    const r = await supabaseRequest('GET',
       `/rest/v1/geo_cache?cache_key=eq.${keyEnc}&select=*&limit=1`
     );
+    if (r.status >= 300) { console.error('[supabase get]', r.status, JSON.stringify(r.body)); return null; }
+    const result = r.body;
     if (result && result[0]) {
       const coord = result[0].coord_data;
       memoriaCache[cacheKey] = coord;
@@ -88,20 +90,23 @@ async function supabaseSet(cacheKey, coordData) {
   // (e falhava silenciosamente, não persistindo nada entre reinícios do servidor).
   try {
     const keyEnc = encodeURIComponent(cacheKey);
-    const existing = await supabaseRequest('GET',
+    const get = await supabaseRequest('GET',
       `/rest/v1/geo_cache?cache_key=eq.${keyEnc}&select=cache_key&limit=1`);
-    if (existing && existing[0]) {
-      await supabaseRequest('PATCH', `/rest/v1/geo_cache?cache_key=eq.${keyEnc}`, {
+    if (get.status >= 300) { console.error('[supabase set/get]', get.status, JSON.stringify(get.body)); return; }
+    let r;
+    if (get.body && get.body[0]) {
+      r = await supabaseRequest('PATCH', `/rest/v1/geo_cache?cache_key=eq.${keyEnc}`, {
         coord_data: coordData,
         criado_em: new Date().toISOString()
       });
     } else {
-      await supabaseRequest('POST', '/rest/v1/geo_cache', {
+      r = await supabaseRequest('POST', '/rest/v1/geo_cache', {
         cache_key: cacheKey,
         coord_data: coordData,
         criado_em: new Date().toISOString()
       });
     }
+    if (r.status >= 300) console.error('[supabase set]', r.status, JSON.stringify(r.body));
   } catch(e) { console.error('[supabase set]', e.message); }
 }
 
@@ -129,8 +134,10 @@ function supabaseRequest(method, path, body, extraHeaders) {
       let data = '';
       r.on('data', c => data += c);
       r.on('end', () => {
-        try { resolve(data ? JSON.parse(data) : {}); }
-        catch(e) { resolve({}); }
+        let parsed;
+        try { parsed = data ? JSON.parse(data) : {}; }
+        catch(e) { parsed = data; }
+        resolve({ status: r.statusCode, body: parsed });
       });
     });
     req.on('error', reject);
@@ -355,6 +362,13 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { memoriaCache: total, supabase: !!SUPABASE_URL });
   }
 
+  // ─── DEBUG SUPABASE (temporário) ───────────────────────────────────────────
+  if (req.method === 'GET' && pathname === '/api/debug/supabase') {
+    if (!SUPABASE_URL || !SUPABASE_KEY) return json(res, 200, { configured: false });
+    const r = await supabaseRequest('GET', '/rest/v1/geo_cache?select=*&limit=5&order=criado_em.desc');
+    return json(res, 200, { status: r.status, body: r.body });
+  }
+
   // ─── LIMPAR CACHE ─────────────────────────────────────────────────────────
   if (req.method === 'POST' && pathname === '/api/cache/clear') {
     await supabaseClear();
@@ -384,7 +398,8 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === 'GET' && pathname === '/api/pacotes/carregar') {
     try {
-      const result = await supabaseRequest('GET', '/rest/v1/pacotes_dia?select=*&limit=1&order=salvo_em.desc');
+      const r = await supabaseRequest('GET', '/rest/v1/pacotes_dia?select=*&limit=1&order=salvo_em.desc');
+      const result = r.body;
       if (result && result[0]) return json(res, 200, { pacotes: result[0].dados, arquivo: result[0].arquivo, salvoEm: result[0].salvo_em, total: result[0].total });
       return json(res, 200, { pacotes: [], salvoEm: null });
     } catch(e) {
