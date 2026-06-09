@@ -83,12 +83,25 @@ async function supabaseGet(cacheKey) {
 async function supabaseSet(cacheKey, coordData) {
   memoriaCache[cacheKey] = coordData;
   if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  // Upsert manual (GET → PATCH ou POST). Funciona com ou sem constraint UNIQUE
+  // em cache_key, ao contrário de Prefer:merge-duplicates que exige a constraint
+  // (e falhava silenciosamente, não persistindo nada entre reinícios do servidor).
   try {
-    await supabaseRequest('POST', '/rest/v1/geo_cache', {
-      cache_key: cacheKey,
-      coord_data: coordData,
-      criado_em: new Date().toISOString()
-    }, { 'Prefer': 'resolution=merge-duplicates' });
+    const keyEnc = encodeURIComponent(cacheKey);
+    const existing = await supabaseRequest('GET',
+      `/rest/v1/geo_cache?cache_key=eq.${keyEnc}&select=cache_key&limit=1`);
+    if (existing && existing[0]) {
+      await supabaseRequest('PATCH', `/rest/v1/geo_cache?cache_key=eq.${keyEnc}`, {
+        coord_data: coordData,
+        criado_em: new Date().toISOString()
+      });
+    } else {
+      await supabaseRequest('POST', '/rest/v1/geo_cache', {
+        cache_key: cacheKey,
+        coord_data: coordData,
+        criado_em: new Date().toISOString()
+      });
+    }
   } catch(e) { console.error('[supabase set]', e.message); }
 }
 
