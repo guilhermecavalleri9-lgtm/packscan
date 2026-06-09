@@ -68,11 +68,6 @@ async function supabaseGet(cacheKey) {
   if (!SUPABASE_URL || !SUPABASE_KEY) return null;
   try {
     const keyEnc = encodeURIComponent(cacheKey);
-    const host = SUPABASE_URL.replace('https://','');
-    const d = await httpsGet(host,
-      `/rest/v1/geo_cache?cache_key=eq.${keyEnc}&select=*&limit=1`
-    );
-    // httpsGet não passa headers de auth — usar httpsPost adaptado
     const result = await supabaseRequest('GET',
       `/rest/v1/geo_cache?cache_key=eq.${keyEnc}&select=*&limit=1`
     );
@@ -133,6 +128,7 @@ function supabaseRequest(method, path, body, extraHeaders) {
 
 // ─── PASSO 1: rua pelo CEP via Google ────────────────────────────────────────
 async function ruaPeloCep(cep) {
+  if (!cep || cep.length !== 8) return { rua: '', bairro: '', cidade: '' };
   const cepKey = 'cep:' + cep;
   const cached = await supabaseGet(cepKey);
   if (cached) { console.log(`[cep-cache] ${cep}`); return cached; }
@@ -274,7 +270,7 @@ const server = http.createServer(async (req, res) => {
     // verifica cache Supabase
     const cached = await supabaseGet(cacheKey);
     if (cached) {
-      console.log(`[cache] ${endereco.substring(0,35)}`);
+      console.log(`[cache] ${(endereco||cep||'').substring(0,35)}`);
       return json(res, 200, { ...cached, fromCache: true });
     }
 

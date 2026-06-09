@@ -377,6 +377,13 @@ tr:hover td{background:rgba(255,255,255,.02)}
 // ═══════════════════════════════════════════════════════════════════════════════
 var BACKEND = '';
 
+// escapa dados vindos de arquivos importados / digitados antes de inserir via innerHTML
+function esc(v) {
+  return String(v==null?'':v).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -475,7 +482,7 @@ function carregarDemo() {
 function finImport() {
   document.getElementById('import-msg').innerHTML = '<div class="alert alert-green">✓ <strong>'+pacotes.length.toLocaleString('pt-BR')+' pacotes importados.</strong> Vá para Geocodificar.</div>';
   var html = '<div class="card" style="overflow-x:auto"><div class="card-title">prévia</div><table><thead><tr><th>Tracking</th><th>Endereço</th><th>Bairro</th><th>CEP</th></tr></thead><tbody>';
-  pacotes.slice(0,5).forEach(function(p){ html+='<tr><td style="font-family:var(--mono);font-size:11px">'+p.tracking+'</td><td>'+p.endereco+'</td><td>'+p.bairro+'</td><td style="font-family:var(--mono)">'+p.cep+'</td></tr>'; });
+  pacotes.slice(0,5).forEach(function(p){ html+='<tr><td style="font-family:var(--mono);font-size:11px">'+esc(p.tracking)+'</td><td>'+esc(p.endereco)+'</td><td>'+esc(p.bairro)+'</td><td style="font-family:var(--mono)">'+esc(p.cep)+'</td></tr>'; });
   if (pacotes.length>5) html+='<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:8px;font-family:var(--mono)">... +'+( pacotes.length-5)+' pacotes</td></tr>';
   html+='</tbody></table></div>';
   document.getElementById('preview-tabela').innerHTML = html;
@@ -615,7 +622,7 @@ function plotarPontos() {
     var rotaCor = p.rota?(rotas.find(function(r){ return r.id===p.rota; })||{}).cor||'#888':null;
     var cor = rotaCor||(p.precisao==='ROOFTOP'?'#34c97e':p.precisao==='RANGE_INTERPOLATED'?'#f5a623':'#f05252');
     var m = L.circleMarker([p.lat,p.lng],{radius:5,color:cor,fillColor:cor,fillOpacity:.85,weight:1});
-    m.bindPopup('<b>'+p.tracking+'</b><br><small>'+(p.enderecoNorm||p.endereco)+'</small><br>'+(p.precisao||''));
+    m.bindPopup('<b>'+esc(p.tracking)+'</b><br><small>'+esc(p.enderecoNorm||p.endereco)+'</small><br>'+esc(p.precisao||''));
     m.addTo(map); marcadores.push(m);
   });
   var lats=geo.map(function(p){ return p.lat; }), lngs=geo.map(function(p){ return p.lng; });
@@ -650,7 +657,7 @@ function renderRotasList() {
   vz.style.display='none'; el.innerHTML='';
   rotas.forEach(function(r,i) {
     var d=document.createElement('div'); d.className='rot-item';
-    d.innerHTML='<div class="dot" style="background:'+r.cor+'"></div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.motorista+'</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">R'+String(r.id).padStart(2,'0')+' · '+r.pkgs.length+' pkg</div></div><button class="btn btn-r btn-sm" onclick="removerRota('+i+')">✕</button>';
+    d.innerHTML='<div class="dot" style="background:'+r.cor+'"></div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.motorista)+'</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">R'+String(r.id).padStart(2,'0')+' · '+r.pkgs.length+' pkg</div></div><button class="btn btn-r btn-sm" onclick="removerRota('+i+')">✕</button>';
     el.appendChild(d);
   });
 }
@@ -748,7 +755,7 @@ function renderMotList() {
     var d=document.createElement('div');
     d.className='mot-card'+(motAtivo===r.id?' sel':'');
     d.onclick=function(){ motAtivo=r.id;document.getElementById('mot-ativo').textContent=r.motorista+' — R'+String(r.id).padStart(2,'0');document.getElementById('bip').focus();renderMotList();atualizarProg(); };
-    d.innerHTML='<div class="av" style="background:'+r.cor+'22;color:'+r.cor+'">'+ini+'</div><div style="flex:1;min-width:0"><div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+r.motorista+'</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">R'+String(r.id).padStart(2,'0')+' · '+r.pkgs.length+' pkg</div><div class="pb-wrap" style="margin-top:4px"><div class="pb-fill'+(bip===r.pkgs.length&&bip>0?' g':'')+'" style="width:'+(r.pkgs.length?Math.round(bip/r.pkgs.length*100):0)+'%"></div></div></div><span class="badge '+(bip===r.pkgs.length&&bip>0?'b-green':'b-gray')+'">'+bip+'/'+r.pkgs.length+'</span>';
+    d.innerHTML='<div class="av" style="background:'+r.cor+'22;color:'+r.cor+'">'+esc(ini)+'</div><div style="flex:1;min-width:0"><div style="font-weight:500;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.motorista)+'</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">R'+String(r.id).padStart(2,'0')+' · '+r.pkgs.length+' pkg</div><div class="pb-wrap" style="margin-top:4px"><div class="pb-fill'+(bip===r.pkgs.length&&bip>0?' g':'')+'" style="width:'+(r.pkgs.length?Math.round(bip/r.pkgs.length*100):0)+'%"></div></div></div><span class="badge '+(bip===r.pkgs.length&&bip>0?'b-green':'b-gray')+'">'+bip+'/'+r.pkgs.length+'</span>';
     el.appendChild(d);
   });
 }
@@ -777,7 +784,7 @@ function handleBip(e) {
   if (document.getElementById('auto-print').checked) imprimirEtiqueta(pacote,rota);
   var tb=document.getElementById('bip-tbody');
   var tr=document.createElement('tr');
-  tr.innerHTML='<td style="font-family:var(--mono);font-size:11px">'+pacote.tracking+'</td><td title="'+(pacote.enderecoNorm||'')+'">'+(pacote.enderecoNorm||pacote.endereco).substring(0,35)+'</td><td><span class="badge b-blue">P'+String(pacote.numNaRota).padStart(3,'0')+'</span></td><td><button class="btn btn-sm" onclick="imprimirEtiquetaManual(\''+pacote.tracking+'\')">🖨</button></td>';
+  tr.innerHTML='<td style="font-family:var(--mono);font-size:11px">'+esc(pacote.tracking)+'</td><td title="'+esc(pacote.enderecoNorm||'')+'">'+esc((pacote.enderecoNorm||pacote.endereco).substring(0,35))+'</td><td><span class="badge b-blue">P'+String(pacote.numNaRota).padStart(3,'0')+'</span></td><td><button class="btn btn-sm" onclick="imprimirEtiquetaManual(\''+esc(pacote.tracking)+'\')">🖨</button></td>';
   tb.insertBefore(tr,tb.firstChild);
   if (tb.children.length>15) tb.removeChild(tb.lastChild);
   atualizarProg(); renderMotList();
@@ -806,7 +813,7 @@ function imprimirEtiquetaManual(tracking) {
 
 function renderEtSelect() {
   var s=document.getElementById('et-rota'); s.innerHTML='<option value="">— todas —</option>';
-  rotas.forEach(function(r){ s.innerHTML+='<option value="'+r.id+'">R'+String(r.id).padStart(2,'0')+' — '+r.motorista+' ('+r.pkgs.length+')</option>'; });
+  rotas.forEach(function(r){ s.innerHTML+='<option value="'+r.id+'">R'+String(r.id).padStart(2,'0')+' — '+esc(r.motorista)+' ('+r.pkgs.length+')</option>'; });
 }
 
 function imprimirLote() {
@@ -827,14 +834,14 @@ function imprimirLote() {
 // ═══════════════════════════════════════════════════════════════════════════════
 function renderMotDownload() {
   var s=document.getElementById('mot-dl'); s.innerHTML='<option value="">— selecione —</option>';
-  rotas.forEach(function(r){ s.innerHTML+='<option value="'+r.id+'">R'+String(r.id).padStart(2,'0')+' — '+r.motorista+' ('+r.pkgs.length+' pkg)</option>'; });
+  rotas.forEach(function(r){ s.innerHTML+='<option value="'+r.id+'">R'+String(r.id).padStart(2,'0')+' — '+esc(r.motorista)+' ('+r.pkgs.length+' pkg)</option>'; });
 }
 
 function previewMot(rid) {
   if (!rid) { document.getElementById('mot-preview').innerHTML=''; return; }
   var r=rotas.find(function(r){ return r.id==rid; }); if (!r) return;
   var html='<table><thead><tr><th>Nº</th><th>Tracking</th><th>Endereço</th><th>Bairro</th><th>CEP</th></tr></thead><tbody>';
-  r.pkgs.slice(0,10).forEach(function(p){ html+='<tr><td><span class="badge b-blue">P'+String(p.numNaRota).padStart(3,'0')+'</span></td><td style="font-family:var(--mono);font-size:11px">'+p.tracking+'</td><td>'+(p.enderecoNorm||p.endereco)+'</td><td>'+p.bairro+'</td><td style="font-family:var(--mono)">'+p.cep+'</td></tr>'; });
+  r.pkgs.slice(0,10).forEach(function(p){ html+='<tr><td><span class="badge b-blue">P'+String(p.numNaRota).padStart(3,'0')+'</span></td><td style="font-family:var(--mono);font-size:11px">'+esc(p.tracking)+'</td><td>'+esc(p.enderecoNorm||p.endereco)+'</td><td>'+esc(p.bairro)+'</td><td style="font-family:var(--mono)">'+esc(p.cep)+'</td></tr>'; });
   if (r.pkgs.length>10) html+='<tr><td colspan="5" style="color:var(--text3);text-align:center;padding:10px;font-family:var(--mono)">... +'+(r.pkgs.length-10)+' no Excel</td></tr>';
   html+='</tbody></table>';
   document.getElementById('mot-preview').innerHTML=html;
@@ -935,7 +942,7 @@ function goTabCorrigir() {
     var precBadge=!p.lat?'b-red':(p.precisao==='ROOFTOP'||p.precisao==='MANUAL')?'b-green':'b-red';
     var v=p.lat?validarCoordRegiao(p.cep,p.lat,p.lng):null;
     var prob=!p.lat?'Sem coord':(p.lat<-28.5||p.lat>-26.5||p.lng<-49.5||p.lng>-47.5)?'Fora de SC':(p.precisao==='APPROXIMATE'||p.precisao==='GEOMETRIC_CENTER')?'Impreciso':(v&&!v.dentro)?'Fora de '+v.regiao:'Verificar';
-    html+='<tr><td style="font-family:var(--mono);font-size:11px">'+p.tracking+'</td><td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+p.endereco+'">'+p.endereco+'</td><td><span class="badge '+precBadge+'">'+(p.precisao||'N/A')+'</span></td><td><span class="badge b-red">'+prob+'</span></td><td><button class="btn btn-p btn-sm" onclick="abrirModal(\''+p.tracking+'\')">✏ Corrigir</button></td></tr>';
+    html+='<tr><td style="font-family:var(--mono);font-size:11px">'+esc(p.tracking)+'</td><td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(p.endereco)+'">'+esc(p.endereco)+'</td><td><span class="badge '+precBadge+'">'+esc(p.precisao||'N/A')+'</span></td><td><span class="badge b-red">'+esc(prob)+'</span></td><td><button class="btn btn-p btn-sm" onclick="abrirModal(\''+esc(p.tracking)+'\')">✏ Corrigir</button></td></tr>';
   });
   html+='</tbody></table></div>';
   el.innerHTML=html;
@@ -1140,18 +1147,17 @@ function arGerar() {
     _arRotasGeradas[ri].pkgs = pts;
   });
 
-  // Passo 4: ajusta para respeitar as quantidades configuradas
-  // redistribui excesso/déficit entre rotas vizinhas
+  // Passo 4: respeita as quantidades configuradas sem perder pacotes.
+  // Junta todos os pacotes na ordem dos clusters (oeste→leste) e preenche
+  // cada rota com a quantidade configurada. Sobras (config < disponível)
+  // ficam sem rota e aparecem no aviso; déficit deixa as últimas menores.
+  var pool = [];
+  _arRotasGeradas.forEach(function(r){ pool = pool.concat(r.pkgs); });
+  var pos = 0;
   _arConfig.forEach(function(conf, ri) {
     var qtd = parseInt(conf.qtd) || 0;
-    if (!qtd) return;
-    var rota = _arRotasGeradas[ri];
-    if (rota.pkgs.length > qtd) {
-      // devolve excesso para a próxima rota
-      var excesso = rota.pkgs.splice(qtd);
-      var prox = _arRotasGeradas[ri+1];
-      if (prox) prox.pkgs = excesso.concat(prox.pkgs);
-    }
+    _arRotasGeradas[ri].pkgs = pool.slice(pos, pos + qtd);
+    pos += qtd;
   });
 
   // Passo 5: reordena cada rota por vizinho mais próximo
@@ -1236,7 +1242,7 @@ async function verificarSessao() {
     var d = await r.json();
     if (d.pacotes && d.pacotes.length) {
       var dt = d.salvoEm ? new Date(d.salvoEm).toLocaleString('pt-BR') : '';
-      el.innerHTML = '<span style="color:var(--green)">✓ ' + d.total + ' pacotes salvos</span> · ' + (d.arquivo ? '<strong>' + d.arquivo + '</strong> · ' : '') + dt;
+      el.innerHTML = '<span style="color:var(--green)">✓ ' + d.total + ' pacotes salvos</span> · ' + (d.arquivo ? '<strong>' + esc(d.arquivo) + '</strong> · ' : '') + dt;
     } else {
       el.textContent = 'Nenhuma importação salva no servidor.';
     }
@@ -1283,7 +1289,7 @@ async function carregarSessao() {
     pacotes = d.pacotes;
     finImport();
     var dt = d.salvoEm ? new Date(d.salvoEm).toLocaleString('pt-BR') : '';
-    el.innerHTML = '<span style="color:var(--green)">✓ ' + pacotes.length + ' pacotes carregados</span>' + (d.arquivo ? ' · <strong>' + d.arquivo + '</strong>' : '') + ' · ' + dt;
+    el.innerHTML = '<span style="color:var(--green)">✓ ' + pacotes.length + ' pacotes carregados</span>' + (d.arquivo ? ' · <strong>' + esc(d.arquivo) + '</strong>' : '') + ' · ' + dt;
   } catch(e) {
     el.textContent = 'Erro: ' + e.message;
     el.style.color = 'var(--red)';
