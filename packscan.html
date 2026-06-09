@@ -63,7 +63,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .mot-card{border:1px solid var(--border);border-radius:var(--radius-lg);padding:.75rem 1rem;margin-bottom:6px;display:flex;align-items:center;gap:10px;background:var(--bg2);cursor:pointer;transition:all .15s}
 .mot-card:hover{border-color:var(--border2)}.mot-card.sel{border-color:var(--accent);background:rgba(79,142,247,.05)}
 .av{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;font-family:var(--mono);flex-shrink:0}
-#map{height:500px;border-radius:var(--radius-lg);border:1px solid var(--border)}
+#map{height:calc(100vh - 260px);min-height:420px;border-radius:var(--radius-lg);border:1px solid var(--border)}
 .rot-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg3);margin-bottom:6px}
 .dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .geo-log{font-family:var(--mono);font-size:11px;color:var(--text3);margin-top:8px;max-height:200px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:.5rem .75rem;line-height:1.8}
@@ -98,21 +98,19 @@ tr:hover td{background:rgba(255,255,255,.02)}
 
 <div class="tab-bar">
   <button class="tab active" onclick="goTab(0)">01 Importar</button>
-  <button class="tab" onclick="goTab(1)">02 Geocodificar</button>
-  <button class="tab" onclick="goTab(2)">03 Mapa / Rotas</button>
-  <button class="tab" onclick="goTab(3)">04 Bipar</button>
-  <button class="tab" onclick="goTab(4)">05 Etiquetas</button>
-  <button class="tab" onclick="goTab(5)">06 Motoristas</button>
-  <button class="tab" onclick="goTab(6)">⚠ Corrigir</button>
-  <button class="tab" onclick="goTab(8)">⚡ Auto Rotas</button>
-  <button class="tab" onclick="goTab(7)">07 Regiões CEP</button>
+  <button class="tab" onclick="goTab(1)">02 Mapa / Rotas</button>
+  <button class="tab" onclick="goTab(2)">03 Bipar</button>
+  <button class="tab" onclick="goTab(3)">04 Motoristas</button>
+  <button class="tab" onclick="goTab(4)">05 Regiões CEP</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
-     TAB 0 — IMPORTAR
+     TAB 0 — IMPORTAR + GEOCODIFICAR + CORRIGIR
      ═══════════════════════════════════════════════════════════════════════════ -->
 <div class="page active" id="p0">
-  <div style="max-width:820px">
+  <div style="max-width:880px">
+
+    <!-- IMPORTAR -->
     <div class="card">
       <div class="card-title">importar planilha</div>
       <div class="upload-zone" onclick="document.getElementById('fi').click()">
@@ -130,10 +128,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
       </div>
       <div class="btn-row">
         <button class="btn btn-p" onclick="confirmarImport()">✓ Confirmar importação</button>
-        <button class="btn" onclick="carregarDemo()">⚡ Demo</button>
       </div>
     </div>
-    <div class="card" style="margin-top:1rem">
+    <div class="card">
       <div class="card-title">sessão salva no servidor</div>
       <div id="sessao-info" style="font-size:13px;color:var(--text2);margin-bottom:.75rem">Verificando...</div>
       <div class="btn-row">
@@ -144,15 +141,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
     </div>
     <div id="import-msg"></div>
     <div id="preview-tabela" style="overflow-x:auto"></div>
-  </div>
-</div>
 
-<!-- ═══════════════════════════════════════════════════════════════════════════
-     TAB 1 — GEOCODIFICAR
-     ═══════════════════════════════════════════════════════════════════════════ -->
-<div class="page" id="p1">
-  <div style="max-width:860px">
-    <div class="g4" style="margin-bottom:1rem">
+    <!-- GEOCODIFICAR -->
+    <div class="g4" style="margin:1rem 0">
       <div class="metric"><div class="metric-label">total</div><div class="metric-value" id="gm-total">0</div></div>
       <div class="metric"><div class="metric-label">cache ⚡</div><div class="metric-value" style="color:var(--accent)" id="gm-cache">0</div></div>
       <div class="metric"><div class="metric-label">geocodificados</div><div class="metric-value" style="color:var(--green)" id="gm-ok">0</div></div>
@@ -165,7 +156,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <button class="btn btn-p" id="btn-geo" onclick="iniciarGeo(false)">▶ Iniciar</button>
         <button class="btn btn-a" id="btn-geo-force" onclick="iniciarGeo(true)">↺ Forçar reprocessar todos</button>
         <button class="btn btn-r btn-sm" onclick="limparCacheServidor()">🗑 Limpar cache servidor</button>
-        <button class="btn btn-g" id="btn-ver-mapa" style="display:none" onclick="goTab(2)">→ Ver no mapa</button>
+        <button class="btn btn-g" id="btn-ver-mapa" style="display:none" onclick="goTab(1)">→ Ver no mapa</button>
         <button class="btn btn-r btn-sm" id="btn-parar" style="display:none" onclick="geoParar=true">⏹ Parar</button>
       </div>
       <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:6px">
@@ -179,13 +170,23 @@ tr:hover td{background:rgba(255,255,255,.02)}
       </div>
       <div class="geo-log" id="geo-log"></div>
     </div>
+
+    <!-- CORRIGIR -->
+    <div style="margin-top:1rem">
+      <div class="alert alert-amber">⚠ <div>Pacotes com localização imprecisa ou fora da região esperada. Clique em <strong>✏ Corrigir</strong> para ajustar manualmente, ou edite diretamente pelo popup do mapa.</div></div>
+      <div class="card">
+        <div class="card-title">pacotes para corrigir</div>
+        <div id="corrigir-content"><p style="color:var(--text3);font-family:var(--mono);font-size:12px">Geocodifique os pacotes primeiro.</p></div>
+      </div>
+    </div>
+
   </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
-     TAB 2 — MAPA / ROTAS
+     TAB 1 — MAPA / ROTAS + AUTO ROTAS
      ═══════════════════════════════════════════════════════════════════════════ -->
-<div class="page" id="p2">
+<div class="page" id="p1">
   <div style="display:grid;grid-template-columns:230px 1fr;gap:1rem">
     <div style="display:flex;flex-direction:column;gap:.75rem">
       <div class="card" style="padding:1rem">
@@ -195,7 +196,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <button class="btn btn-p" style="width:100%;justify-content:center" onclick="ativarDesenho()">✏ Desenhar área</button>
         <p style="font-size:11px;color:var(--text3);margin-top:8px;font-family:var(--mono);line-height:1.6">Clique no mapa para criar vértices. Feche no primeiro ponto.</p>
       </div>
-      <div class="card" style="padding:1rem;overflow-y:auto;max-height:250px">
+      <div class="card" style="padding:1rem;overflow-y:auto;max-height:260px">
         <div class="card-title">rotas criadas</div>
         <div id="rotas-lista"></div>
         <div id="rotas-vazio" style="font-size:12px;color:var(--text3);font-family:var(--mono)">nenhuma ainda</div>
@@ -206,19 +207,60 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <button class="btn btn-r btn-sm" style="justify-content:center" onclick="apagarRotasSalvas()">🗑 Apagar rotas salvas</button>
       <div id="rotas-save-status" style="font-size:11px;font-family:var(--mono);color:var(--text3);text-align:center"></div>
     </div>
-    <div>
-      <div id="map"></div>
-      <p style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">🟢 ROOFTOP · 🟡 RANGE · 🔴 aproximado · clique para detalhes</p>
+    <div style="display:flex;flex-direction:column;gap:1rem">
+      <div>
+        <div id="map"></div>
+        <p style="font-size:11px;color:var(--text3);margin-top:6px;font-family:var(--mono)">🟢 ROOFTOP · 🟡 RANGE · 🔴 aproximado · clique para detalhes</p>
+      </div>
+      <!-- AUTO ROTAS (embutido) -->
+      <div class="card">
+        <div class="card-title" style="cursor:pointer" onclick="arToggle()">⚡ auto rotas — k-means <span id="ar-chevron" style="float:right;font-size:14px">▼</span></div>
+        <div id="ar-body">
+          <div class="alert alert-blue" style="margin-bottom:.75rem">⚡ <div>Agrupa automaticamente por <strong>proximidade geográfica</strong> (K-Means). Pacotes próximos ficam na mesma rota.</div></div>
+          <div style="margin-bottom:.75rem;font-size:13px;color:var(--text2)">
+            Pacotes geocodificados: <strong id="ar-total" style="color:var(--text)">0</strong>
+          </div>
+          <div id="ar-rotas-config"></div>
+          <div class="btn-row" style="margin-top:.75rem">
+            <button class="btn" onclick="arAddRota()">+ Adicionar rota</button>
+            <button class="btn btn-p" onclick="arGerar()">⚡ Gerar automaticamente</button>
+            <button class="btn btn-sm" onclick="arLimpar()">✕ Limpar</button>
+          </div>
+          <div id="ar-aviso" style="font-size:12px;color:var(--amber);margin-top:.5rem"></div>
+          <div class="card" id="ar-resultado" style="display:none;margin-top:.75rem;padding:.75rem">
+            <div class="card-title">resultado</div>
+            <div id="ar-resultado-content"></div>
+            <div class="btn-row" style="margin-top:1rem">
+              <button class="btn btn-g" onclick="arAplicarNoMapa()">→ Aplicar no mapa e finalizar</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
-     TAB 3 — BIPAR
+     TAB 2 — BIPAR + ETIQUETAS
      ═══════════════════════════════════════════════════════════════════════════ -->
-<div class="page" id="p3">
+<div class="page" id="p2">
   <div style="display:grid;grid-template-columns:230px 1fr;gap:1rem">
-    <div><div class="card" style="padding:1rem"><div class="card-title">motoristas</div><div id="mot-list"></div></div></div>
+    <div style="display:flex;flex-direction:column;gap:.75rem">
+      <div class="card" style="padding:1rem"><div class="card-title">motoristas</div><div id="mot-list"></div></div>
+      <!-- ETIQUETAS (lateral) -->
+      <div class="card" style="padding:1rem">
+        <div class="card-title">etiquetas</div>
+        <div class="et-prev" style="width:auto;margin:0 0 .75rem"><div class="main">R01 · P007</div><div class="bar">|||||||||||||||||||||</div></div>
+        <div style="margin-bottom:.5rem"><label>Rota</label><select id="et-rota"><option value="">— todas —</option></select></div>
+        <div style="margin-bottom:.75rem"><label>Formato</label>
+          <select id="et-tipo"><option value="termica">Térmica 100×25mm</option><option value="a4">A4 — 6 por folha</option></select>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-p btn-sm" onclick="imprimirLote()">🖨 Imprimir</button>
+          <button class="btn btn-g btn-sm" onclick="imprimirLote()">↓ PDF</button>
+        </div>
+      </div>
+    </div>
     <div>
       <div class="card">
         <div style="font-size:13px;color:var(--text2);margin-bottom:.75rem;font-family:var(--mono)">motorista: <span id="mot-ativo" style="color:var(--accent)">nenhum</span></div>
@@ -237,32 +279,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
-     TAB 4 — ETIQUETAS
+     TAB 3 — MOTORISTAS
      ═══════════════════════════════════════════════════════════════════════════ -->
-<div class="page" id="p4">
-  <div class="g2">
-    <div class="card">
-      <div class="card-title">preview 100×25mm</div>
-      <div class="et-prev"><div class="main">R01 · P007</div><div class="bar">|||||||||||||||||||||</div></div>
-    </div>
-    <div class="card">
-      <div class="card-title">imprimir em lote</div>
-      <div style="margin-bottom:.75rem"><label>Rota</label><select id="et-rota"><option value="">— todas —</option></select></div>
-      <div style="margin-bottom:1rem"><label>Formato</label>
-        <select id="et-tipo"><option value="termica">Térmica 100×25mm</option><option value="a4">A4 — 6 por folha</option></select>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-p" onclick="imprimirLote()">🖨 Imprimir</button>
-        <button class="btn btn-g" onclick="imprimirLote()">↓ PDF</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════
-     TAB 5 — MOTORISTAS
-     ═══════════════════════════════════════════════════════════════════════════ -->
-<div class="page" id="p5">
+<div class="page" id="p3">
   <div class="card">
     <div class="card-title">download por motorista</div>
     <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem">
@@ -275,22 +294,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
-     TAB 6 — CORRIGIR
+     TAB 4 — REGIÕES CEP
      ═══════════════════════════════════════════════════════════════════════════ -->
-<div class="page" id="p6">
-  <div style="max-width:900px">
-    <div class="alert alert-amber">⚠ <div>Pacotes com localização imprecisa ou fora da região esperada. Clique em <strong>✏ Corrigir</strong> para ajustar manualmente.</div></div>
-    <div class="card">
-      <div class="card-title">pacotes para corrigir</div>
-      <div id="corrigir-content"><p style="color:var(--text3);font-family:var(--mono);font-size:12px">Geocodifique os pacotes primeiro.</p></div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════
-     TAB 7 — REGIÕES CEP
-     ═══════════════════════════════════════════════════════════════════════════ -->
-<div class="page" id="p7">
+<div class="page" id="p4">
   <div style="max-width:700px">
     <div class="alert alert-blue">ℹ <div>Defina intervalos de CEP por bairro. O sistema valida se a geocodificação ficou dentro da região correta — se não, o pacote aparece na aba <strong>⚠ Corrigir</strong>. Salvo no seu navegador.</div></div>
     <div class="card">
@@ -308,37 +314,6 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="card-title">regiões cadastradas</div>
       <div id="regioes-lista"></div>
       <div id="regioes-vazio" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Nenhuma região cadastrada ainda.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════════════════════════════════════
-     TAB 8 — AUTO ROTAS
-     ═══════════════════════════════════════════════════════════════════════════ -->
-<div class="page" id="p8">
-  <div style="max-width:700px">
-    <div class="alert alert-blue">⚡ <div>Defina quantas rotas e quantos pacotes cada uma terá. O sistema agrupa automaticamente por <strong>proximidade geográfica</strong> usando K-Means — pacotes próximos ficam na mesma rota, sem misturar regiões distantes.</div></div>
-    <div class="card">
-      <div class="card-title">configurar rotas</div>
-      <div style="margin-bottom:1rem;font-size:13px;color:var(--text2)">
-        Pacotes geocodificados: <strong id="ar-total" style="color:var(--text)">0</strong>
-      </div>
-      <div id="ar-rotas-config">
-        <!-- linhas de configuração geradas dinamicamente -->
-      </div>
-      <div class="btn-row" style="margin-top:.75rem">
-        <button class="btn" onclick="arAddRota()">+ Adicionar rota</button>
-        <button class="btn btn-p" onclick="arGerar()">⚡ Gerar rotas automaticamente</button>
-        <button class="btn btn-sm" onclick="arLimpar()">✕ Limpar</button>
-      </div>
-      <div id="ar-aviso" style="font-size:12px;color:var(--amber);margin-top:.5rem"></div>
-    </div>
-    <div class="card" id="ar-resultado" style="display:none">
-      <div class="card-title">resultado</div>
-      <div id="ar-resultado-content"></div>
-      <div class="btn-row" style="margin-top:1rem">
-        <button class="btn btn-g" onclick="arAplicarNoMapa()">→ Aplicar no mapa e finalizar</button>
-      </div>
     </div>
   </div>
 </div>
@@ -411,17 +386,23 @@ var DEMO = [
 function goTab(n) {
   document.querySelectorAll('.tab').forEach(function(t,i){ t.classList.toggle('active', i===n); });
   document.querySelectorAll('.page').forEach(function(p,i){ p.classList.toggle('active', i===n); });
-  if (n===1) atualizarGeoInfo();
-  if (n===2) {
+  if (n===0) { atualizarGeoInfo(); goTabCorrigir(); }
+  if (n===1) {
     if (!mapaInit) { initMap(); setTimeout(carregarRotas, 800); }
     else { setTimeout(function(){ map.invalidateSize(); }, 100); plotarPontos(); }
+    arRenderConfig();
   }
-  if (n===3) renderMotList();
-  if (n===4) renderEtSelect();
-  if (n===5) renderMotDownload();
-  if (n===6) goTabCorrigir();
-  if (n===7) renderRegioes();
-  if (n===8) arRenderConfig();
+  if (n===2) { renderMotList(); renderEtSelect(); }
+  if (n===3) renderMotDownload();
+  if (n===4) renderRegioes();
+}
+
+function arToggle() {
+  var body = document.getElementById('ar-body');
+  var chev = document.getElementById('ar-chevron');
+  var hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  chev.textContent = hidden ? '▼' : '▶';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -622,7 +603,18 @@ function plotarPontos() {
     var rotaCor = p.rota?(rotas.find(function(r){ return r.id===p.rota; })||{}).cor||'#888':null;
     var cor = rotaCor||(p.precisao==='ROOFTOP'?'#34c97e':p.precisao==='RANGE_INTERPOLATED'?'#f5a623':'#f05252');
     var m = L.circleMarker([p.lat,p.lng],{radius:5,color:cor,fillColor:cor,fillOpacity:.85,weight:1});
-    m.bindPopup('<b>'+esc(p.tracking)+'</b><br><small>'+esc(p.enderecoNorm||p.endereco)+'</small><br>'+esc(p.precisao||''));
+    var precCor = p.precisao==='ROOFTOP'||p.precisao==='MANUAL' ? 'var(--green)' : p.precisao==='RANGE_INTERPOLATED' ? 'var(--amber)' : 'var(--red)';
+    var popHtml =
+      '<div style="font-family:var(--sans);min-width:220px">'
+      + '<div style="font-family:var(--mono);font-size:11px;color:var(--text2);margin-bottom:4px">'+esc(p.tracking)+'</div>'
+      + '<div style="font-size:12px;margin-bottom:4px;line-height:1.4">'+esc(p.enderecoNorm||p.endereco)+'</div>'
+      + (p.bairro ? '<div style="font-size:11px;color:var(--text2);margin-bottom:2px">'+esc(p.bairro)+(p.cidade?', '+esc(p.cidade):'')+'</div>' : '')
+      + '<div style="font-size:11px;margin-bottom:8px"><span style="color:'+precCor+'">● '+(p.precisao||'N/A')+'</span>'+(p.cep ? '<span style="color:var(--text2);margin-left:8px">'+esc(p.cep)+'</span>' : '')+'</div>'
+      + '<div style="display:flex;gap:6px">'
+      + '<button onclick="abrirModalDoMapa(\''+esc(p.tracking)+'\')" style="flex:1;padding:5px 8px;border-radius:6px;border:1px solid var(--accent);background:var(--accent2);color:#fff;cursor:pointer;font-size:12px">✏ Editar</button>'
+      + '<button onclick="excluirPacoteDoMapa(\''+esc(p.tracking)+'\')" style="padding:5px 8px;border-radius:6px;border:1px solid var(--red);background:#3a1a1a;color:var(--red);cursor:pointer;font-size:12px">🗑</button>'
+      + '</div></div>';
+    m.bindPopup(popHtml, {maxWidth:300});
     m.addTo(map); marcadores.push(m);
   });
   var lats=geo.map(function(p){ return p.lat; }), lngs=geo.map(function(p){ return p.lng; });
@@ -970,6 +962,32 @@ function fecharModal() {
   _modalTracking=null;
 }
 
+function abrirModalDoMapa(tracking) {
+  map.closePopup();
+  abrirModal(tracking);
+}
+
+function excluirPacoteDoMapa(tracking) {
+  if (!confirm('Excluir o pacote ' + tracking + '?\nEssa ação não pode ser desfeita.')) return;
+  map.closePopup();
+  var idx = pacotes.findIndex(function(p){ return p.tracking === tracking; });
+  if (idx === -1) return;
+  // remove da rota, se estiver em alguma
+  var p = pacotes[idx];
+  if (p.rota) {
+    var rota = rotas.find(function(r){ return r.id === p.rota; });
+    if (rota) {
+      rota.pkgs = rota.pkgs.filter(function(x){ return x.tracking !== tracking; });
+      rota.pkgs.forEach(function(x, i){ x.numNaRota = i+1; });
+    }
+  }
+  pacotes.splice(idx, 1);
+  plotarPontos();
+  atualizarGeoInfo();
+  document.getElementById('gm-total').textContent = pacotes.length;
+  renderMotList(); renderRotasList();
+}
+
 async function buscarEnderecoModal() {
   var end=document.getElementById('modal-endereco').value.trim(); if (!end) return;
   var st=document.getElementById('modal-status');
@@ -1215,7 +1233,7 @@ function arAplicarNoMapa() {
   });
 
   renderRotasList(); renderMotList(); renderEtSelect(); renderMotDownload();
-  goTab(2); // vai para o mapa
+  goTab(1); // vai para o mapa
 }
 
 // Convex Hull (Graham scan) para criar polígono ao redor dos pontos
