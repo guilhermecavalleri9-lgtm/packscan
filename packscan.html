@@ -845,11 +845,21 @@ function previewMot(rid) {
   document.getElementById('mot-preview').innerHTML=html;
 }
 
+function chaveEnderecoBase(end) {
+  // mantém só "Rua X, número" ignorando complementos (bloco/apto/etc)
+  var partes = String(end||'').split(',');
+  var base = (partes[0]||'').trim();
+  var numero = (partes[1]||'').trim().match(/^\d+/);
+  if (numero) base += ', ' + numero[0];
+  return base.toLowerCase();
+}
+
 function linhasExcelRota(pkgs) {
   var grupos=[], mapa={};
   pkgs.forEach(function(p){
-    var key=(p.enderecoNorm||p.endereco)+'|'+p.bairro+'|'+p.cep+'|'+(p.cidade||'');
-    if (!mapa[key]) { mapa[key]={ nums:[], endereco:p.enderecoNorm||p.endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'' }; grupos.push(mapa[key]); }
+    var endereco=p.enderecoNorm||p.endereco;
+    var key=chaveEnderecoBase(endereco)+'|'+p.cep+'|'+(p.cidade||'');
+    if (!mapa[key]) { mapa[key]={ nums:[], endereco:endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'' }; grupos.push(mapa[key]); }
     mapa[key].nums.push('P'+String(p.numNaRota).padStart(3,'0'));
   });
   return grupos.map(function(g){ return [g.nums.join(', '),g.endereco,g.bairro,g.cep,g.cidade]; });
