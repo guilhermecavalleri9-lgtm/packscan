@@ -486,7 +486,6 @@ async function iniciarGeo(forcar) {
   if (!pacotes.length) { alert('Importe os pacotes primeiro.'); return; }
   if (forcar) {
     pacotes.forEach(function(p){ p.lat=null;p.lng=null;p.enderecoNorm=null;p.precisao=null; });
-    try { await fetch(BACKEND+'/api/cache/clear',{method:'POST'}); } catch(e){}
   }
   geoParar = false;
   var btn = document.getElementById('btn-geo');
