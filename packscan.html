@@ -746,6 +746,13 @@ async function apagarRotasSalvas() {
 function renderMotList() {
   var el=document.getElementById('mot-list'); el.innerHTML='';
   if (!rotas.length) { el.innerHTML='<p style="font-size:12px;color:var(--text3);font-family:var(--mono)">finalize as rotas primeiro</p>'; return; }
+  var totPkg=rotas.reduce(function(s,r){ return s+r.pkgs.length; },0);
+  var totBip=rotas.reduce(function(s,r){ return s+r.pkgs.filter(function(p){ return bipados[p.tracking]; }).length; },0);
+  var dAll=document.createElement('div');
+  dAll.className='mot-card'+(motAtivo==='all'?' sel':'');
+  dAll.onclick=function(){ motAtivo='all';document.getElementById('mot-ativo').textContent='Todas as rotas';document.getElementById('bip').focus();renderMotList();atualizarProg(); };
+  dAll.innerHTML='<div class="av" style="background:var(--accent2);color:var(--accent)">∀</div><div style="flex:1;min-width:0"><div style="font-weight:500;font-size:13px">Todas as rotas</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">bipar geral</div><div class="pb-wrap" style="margin-top:4px"><div class="pb-fill'+(totBip===totPkg&&totBip>0?' g':'')+'" style="width:'+(totPkg?Math.round(totBip/totPkg*100):0)+'%"></div></div></div><span class="badge '+(totBip===totPkg&&totBip>0?'b-green':'b-gray')+'">'+totBip+'/'+totPkg+'</span>';
+  el.appendChild(dAll);
   rotas.forEach(function(r) {
     var bip=r.pkgs.filter(function(p){ return bipados[p.tracking]; }).length;
     var ini=r.motorista.split(' ').map(function(w){ return w[0]; }).join('').substring(0,2).toUpperCase();
@@ -759,10 +766,17 @@ function renderMotList() {
 
 function atualizarProg() {
   if (!motAtivo) return;
-  var r=rotas.find(function(r){ return r.id===motAtivo; }); if (!r) return;
-  var bip=r.pkgs.filter(function(p){ return bipados[p.tracking]; }).length;
-  var pct=r.pkgs.length?Math.round(bip/r.pkgs.length*100):0;
-  document.getElementById('bip-prog').innerHTML='<div style="display:flex;justify-content:space-between;font-size:12px;font-family:var(--mono);margin-bottom:6px"><span style="color:var(--text2)">'+bip+' de '+r.pkgs.length+'</span><span style="color:var(--accent)">'+pct+'%</span></div><div class="pb-wrap"><div class="pb-fill'+(pct===100?' g':'')+'" style="width:'+pct+'%"></div></div>';
+  var bip, total;
+  if (motAtivo==='all') {
+    total=rotas.reduce(function(s,r){ return s+r.pkgs.length; },0);
+    bip=rotas.reduce(function(s,r){ return s+r.pkgs.filter(function(p){ return bipados[p.tracking]; }).length; },0);
+  } else {
+    var r=rotas.find(function(r){ return r.id===motAtivo; }); if (!r) return;
+    total=r.pkgs.length;
+    bip=r.pkgs.filter(function(p){ return bipados[p.tracking]; }).length;
+  }
+  var pct=total?Math.round(bip/total*100):0;
+  document.getElementById('bip-prog').innerHTML='<div style="display:flex;justify-content:space-between;font-size:12px;font-family:var(--mono);margin-bottom:6px"><span style="color:var(--text2)">'+bip+' de '+total+'</span><span style="color:var(--accent)">'+pct+'%</span></div><div class="pb-wrap"><div class="pb-fill'+(pct===100?' g':'')+'" style="width:'+pct+'%"></div></div>';
 }
 
 function handleBip(e) {
@@ -771,10 +785,16 @@ function handleBip(e) {
   document.getElementById('bip').value='';
   if (!val) return;
   if (!motAtivo) { showFb('Selecione um motorista primeiro.','err'); return; }
-  var rota=rotas.find(function(r){ return r.id===motAtivo; });
   var pacote=pacotes.find(function(p){ return p.tracking===val; });
   if (!pacote) { showFb('Código não encontrado: '+val,'err'); return; }
-  if (pacote.rota!==motAtivo) { var or=rotas.find(function(r){ return r.id===pacote.rota; }); showFb('Pacote da Rota '+String(pacote.rota||'?').padStart(2,'0')+' — '+(or?or.motorista:'sem rota')+'!','warn'); return; }
+  var rota;
+  if (motAtivo==='all') {
+    rota=rotas.find(function(r){ return r.id===pacote.rota; });
+    if (!rota) { showFb('Pacote sem rota: '+val,'warn'); return; }
+  } else {
+    rota=rotas.find(function(r){ return r.id===motAtivo; });
+    if (pacote.rota!==motAtivo) { var or=rotas.find(function(r){ return r.id===pacote.rota; }); showFb('Pacote da Rota '+String(pacote.rota||'?').padStart(2,'0')+' — '+(or?or.motorista:'sem rota')+'!','warn'); return; }
+  }
   if (bipados[val]) { showFb('Já bipado: '+val,'warn'); return; }
   bipados[val]=true;
   showFb('✓ R'+String(rota.id).padStart(2,'0')+' · P'+String(pacote.numNaRota).padStart(3,'0')+' · '+(pacote.bairro||pacote.cidade),'ok');
