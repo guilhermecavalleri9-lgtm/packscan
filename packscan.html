@@ -344,6 +344,13 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <!-- botão câmera -->
     <button id="sc-btn" class="btn btn-p" style="width:100%;padding:14px;font-size:15px;margin-bottom:1rem" onclick="scToggle()">📷 Ativar câmera</button>
 
+    <!-- busca manual -->
+    <div class="card">
+      <div class="card-title">🔍 Buscar manualmente (código ou rua)</div>
+      <input type="text" id="sc-busca" placeholder="Digite o código de rastreio ou nome da rua..." oninput="scBuscar()" style="margin-bottom:.5rem">
+      <div id="sc-busca-resultados" style="max-height:280px;overflow-y:auto"></div>
+    </div>
+
     <!-- últimos 10 -->
     <div class="card" style="overflow:hidden">
       <div class="card-title">Últimos bipados</div>
@@ -1424,22 +1431,64 @@ function reconstruirRotasLocais() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SCANNER (câmera)
+// SCANNER (câmera) — usa BarcodeDetector nativo (rápido) com fallback pra zxing
 // ═══════════════════════════════════════════════════════════════════════════════
-var _scScanner = null, _scAtivo = false, _scUltCod = '', _scUltTs = 0, _scHist = [];
+var _scAtivo = false, _scUltCod = '', _scUltTs = 0, _scHist = [];
+var _scStream = null, _scNativeLoop = null, _scNativeDetector = null;
+var _scH5q = null; // fallback html5-qrcode
 
 function scToggle() { _scAtivo ? scParar() : scIniciar(); }
 
-function scIniciar() {
-  if (typeof Html5Qrcode === 'undefined') { alert('Biblioteca de câmera não carregou. Verifique a conexão.'); return; }
+async function scIniciar() {
   document.getElementById('sc-cam-wrap').style.display = 'block';
   document.getElementById('sc-btn').textContent = '⏹ Parar câmera';
   document.getElementById('sc-btn').className = 'btn';
   _scAtivo = true;
-  _scScanner = new Html5Qrcode('sc-reader');
-  _scScanner.start(
+
+  if ('BarcodeDetector' in window) {
+    try { await scIniciarNativo(); return; } catch(e) { console.warn('BarcodeDetector falhou, usando fallback', e); }
+  }
+  scIniciarFallback();
+}
+
+async function scIniciarNativo() {
+  var formatosDesejados = ['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf','data_matrix'];
+  var suportados = await BarcodeDetector.getSupportedFormats();
+  var formatos = formatosDesejados.filter(function(f){ return suportados.indexOf(f) !== -1; });
+  _scNativeDetector = new BarcodeDetector({ formats: formatos.length ? formatos : suportados });
+
+  var reader = document.getElementById('sc-reader');
+  reader.innerHTML = '<video id="sc-video" playsinline autoplay muted style="width:100%;display:block"></video>';
+  var video = document.getElementById('sc-video');
+
+  _scStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width:{ideal:1280}, height:{ideal:720} } });
+  video.srcObject = _scStream;
+  await video.play();
+
+  var loop = async function() {
+    if (!_scAtivo || !_scNativeDetector) return;
+    try {
+      var codigos = await _scNativeDetector.detect(video);
+      if (codigos.length) scOnLeitura(codigos[0].rawValue);
+    } catch(e) {}
+    _scNativeLoop = requestAnimationFrame(loop);
+  };
+  _scNativeLoop = requestAnimationFrame(loop);
+}
+
+function scIniciarFallback() {
+  if (typeof Html5Qrcode === 'undefined') { alert('Câmera não suportada neste navegador.'); scParar(); return; }
+  document.getElementById('sc-reader').innerHTML = '';
+  _scH5q = new Html5Qrcode('sc-reader');
+  var formatos = [
+    Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.CODE_128,
+    Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.EAN_13,
+    Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.UPC_A,
+    Html5QrcodeSupportedFormats.UPC_E, Html5QrcodeSupportedFormats.ITF
+  ];
+  _scH5q.start(
     { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 260, height: 110 } },
+    { fps: 20, qrbox: { width: 280, height: 140 }, formatsToSupport: formatos },
     scOnLeitura,
     function() {}
   ).catch(function(err) {
@@ -1449,11 +1498,68 @@ function scIniciar() {
 }
 
 function scParar() {
-  if (_scScanner) { _scScanner.stop().catch(function(){}).finally(function(){ _scScanner.clear(); _scScanner = null; }); }
+  _scAtivo = false;
+  if (_scNativeLoop) { cancelAnimationFrame(_scNativeLoop); _scNativeLoop = null; }
+  _scNativeDetector = null;
+  if (_scStream) { _scStream.getTracks().forEach(function(t){ t.stop(); }); _scStream = null; }
+  if (_scH5q) { _scH5q.stop().catch(function(){}).finally(function(){ _scH5q.clear(); _scH5q = null; }); }
+  document.getElementById('sc-reader').innerHTML = '';
   document.getElementById('sc-cam-wrap').style.display = 'none';
   document.getElementById('sc-btn').textContent = '📷 Ativar câmera';
   document.getElementById('sc-btn').className = 'btn btn-p';
-  _scAtivo = false;
+}
+
+// registra a bipagem de fato (compartilha estado com a aba Bipar)
+function scRegistrar(codigo) {
+  var pacote = pacotes.find(function(p) { return p.tracking === codigo; });
+  if (!pacote) return { tipo:'err', codigo: codigo };
+  var jaTinha = !!bipados[codigo];
+  bipados[codigo] = true;
+  renderMotList(); atualizarProg(); persistirLocal();
+  return { tipo: jaTinha ? 'warn' : 'ok', pacote: pacote, codigo: codigo };
+}
+
+function scMostrarResultado(r) {
+  var rotaEl = document.getElementById('sc-rota'), numEl = document.getElementById('sc-num'), subEl = document.getElementById('sc-sub');
+  if (r.tipo === 'err') {
+    rotaEl.textContent = '';
+    numEl.style.color = 'var(--red)'; numEl.style.fontSize = '32px';
+    numEl.textContent = 'NÃO ENCONTRADO';
+    subEl.textContent = r.codigo;
+    return;
+  }
+  var pacote = r.pacote;
+  var rNum = pacote.rota ? 'R' + String(pacote.rota).padStart(2,'0') : '??';
+  var pNum = pacote.numNaRota ? 'P' + String(pacote.numNaRota).padStart(3,'0') : '???';
+  rotaEl.textContent = rNum;
+  numEl.style.color = r.tipo === 'warn' ? 'var(--amber)' : 'var(--green)';
+  numEl.style.fontSize = '64px';
+  numEl.textContent = pNum;
+  subEl.textContent = (r.tipo === 'warn' ? '⚠ já tinha sido bipado · ' : '') + (pacote.enderecoNorm || pacote.endereco || '');
+}
+
+function scAdicionarHistorico(r) {
+  var hora = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  var item;
+  if (r.tipo === 'err') {
+    item = { badge:'??', cor:'var(--red)', tracking:r.codigo, info:'não encontrado', hora:hora };
+  } else {
+    var pacote = r.pacote;
+    var rNum = pacote.rota ? 'R' + String(pacote.rota).padStart(2,'0') : '??';
+    var pNum = pacote.numNaRota ? 'P' + String(pacote.numNaRota).padStart(3,'0') : '???';
+    item = { badge: rNum + ' · ' + pNum, cor: r.tipo === 'warn' ? 'var(--amber)' : 'var(--green)', tracking:r.codigo, info: pacote.enderecoNorm || pacote.endereco || '', hora:hora };
+  }
+  _scHist.unshift(item);
+  if (_scHist.length > 10) _scHist.pop();
+  var el = document.getElementById('sc-lista');
+  el.innerHTML = _scHist.map(function(h) {
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+      + '<span style="font-weight:700;color:'+h.cor+';white-space:nowrap;min-width:90px">'+esc(h.badge)+'</span>'
+      + '<div style="flex:1;min-width:0"><div style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(h.info)+'</div>'
+        + '<div style="font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(h.tracking)+'</div></div>'
+      + '<span style="font-size:11px;color:var(--text3);flex-shrink:0">'+h.hora+'</span>'
+    + '</div>';
+  }).join('');
 }
 
 function scOnLeitura(codigo) {
@@ -1461,35 +1567,44 @@ function scOnLeitura(codigo) {
   if (codigo === _scUltCod && agora - _scUltTs < 2000) return;
   _scUltCod = codigo; _scUltTs = agora;
   if (navigator.vibrate) navigator.vibrate(60);
-  var pacote = pacotes.find(function(p) { return p.tracking === codigo; });
-  var hora = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
-  if (!pacote) {
-    document.getElementById('sc-rota').textContent = '';
-    document.getElementById('sc-num').style.color = 'var(--red)';
-    document.getElementById('sc-num').style.fontSize = '32px';
-    document.getElementById('sc-num').textContent = 'NÃO ENCONTRADO';
-    document.getElementById('sc-sub').textContent = codigo;
-    _scHist.unshift({ badge:'??', cor:'var(--red)', tracking:codigo, info:'não encontrado', hora:hora });
-  } else {
-    var rNum = pacote.rota ? 'R' + String(pacote.rota).padStart(2,'0') : '??';
-    var pNum = pacote.numNaRota ? 'P' + String(pacote.numNaRota).padStart(3,'0') : '???';
-    document.getElementById('sc-rota').textContent = rNum;
-    document.getElementById('sc-num').style.color = 'var(--green)';
-    document.getElementById('sc-num').style.fontSize = '64px';
-    document.getElementById('sc-num').textContent = pNum;
-    document.getElementById('sc-sub').textContent = pacote.enderecoNorm || pacote.endereco || '';
-    _scHist.unshift({ badge: rNum + ' · ' + pNum, cor:'var(--green)', tracking:codigo, info: pacote.enderecoNorm || pacote.endereco || '', hora:hora });
-  }
-  if (_scHist.length > 10) _scHist.pop();
-  var el = document.getElementById('sc-lista');
-  el.innerHTML = _scHist.map(function(h) {
-    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
-      + '<span style="font-weight:700;color:'+h.cor+';white-space:nowrap;min-width:90px">'+h.badge+'</span>'
-      + '<div style="flex:1;min-width:0"><div style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+h.info+'</div>'
-        + '<div style="font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+h.tracking+'</div></div>'
-      + '<span style="font-size:11px;color:var(--text3);flex-shrink:0">'+h.hora+'</span>'
+  var r = scRegistrar(codigo);
+  scMostrarResultado(r);
+  scAdicionarHistorico(r);
+}
+
+// ── busca manual (código ou rua) ────────────────────────────────────────────
+function scNormaliza(s) {
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+}
+
+function scBuscar() {
+  var termo = scNormaliza(document.getElementById('sc-busca').value.trim());
+  var el = document.getElementById('sc-busca-resultados');
+  if (!termo) { el.innerHTML = ''; return; }
+  var encontrados = pacotes.filter(function(p) {
+    return scNormaliza(p.tracking).indexOf(termo) !== -1
+      || scNormaliza(p.endereco).indexOf(termo) !== -1
+      || scNormaliza(p.enderecoNorm).indexOf(termo) !== -1;
+  }).slice(0, 25);
+  if (!encontrados.length) { el.innerHTML = '<p style="font-size:12px;color:var(--text3);padding:8px 0">Nenhum resultado.</p>'; return; }
+  el.innerHTML = encontrados.map(function(p) {
+    var rNum = p.rota ? 'R' + String(p.rota).padStart(2,'0') : '??';
+    var pNum = p.numNaRota ? 'P' + String(p.numNaRota).padStart(3,'0') : '???';
+    var jaBip = bipados[p.tracking];
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">'
+      + '<span style="font-weight:700;color:'+(jaBip?'var(--text3)':'var(--accent)')+';white-space:nowrap;min-width:80px;font-family:var(--mono);font-size:12px">'+esc(rNum+' · '+pNum)+'</span>'
+      + '<div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(p.enderecoNorm||p.endereco)+'</div>'
+        + '<div style="font-size:10px;color:var(--text3);font-family:var(--mono)">'+esc(p.tracking)+'</div></div>'
+      + '<button class="btn btn-sm '+(jaBip?'':'btn-p')+'" onclick="scBiparManual(\''+esc(p.tracking)+'\')">'+(jaBip?'✓ Bipado':'Bipar')+'</button>'
     + '</div>';
   }).join('');
+}
+
+function scBiparManual(codigo) {
+  var r = scRegistrar(codigo);
+  scMostrarResultado(r);
+  scAdicionarHistorico(r);
+  scBuscar();
 }
 
 // init
