@@ -267,6 +267,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // página scanner (câmera mobile)
+  if (req.method === 'GET' && pathname === '/scanner') {
+    fs.readFile(path.join(__dirname, 'scanner.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(data);
+    });
+    return;
+  }
+
   // ─── SALVAR CORREÇÃO MANUAL ───────────────────────────────────────────────
   if (req.method === 'POST' && pathname === '/api/geocode/correcao') {
     const body = await readBody(req);

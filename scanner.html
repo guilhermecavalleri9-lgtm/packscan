@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>PackScan · Câmera</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--bg2:#1a1d27;--bg3:#22263a;
+  --text:#e8eaf0;--text2:#9ba3c0;--text3:#555e7a;
+  --accent:#6c8ef5;--green:#4ade80;--red:#f87171;--amber:#fbbf24;
+  --radius:10px;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;display:flex;flex-direction:column}
+
+/* ── header ── */
+.header{background:var(--bg2);border-bottom:1px solid #2a2f45;padding:12px 16px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.logo{font-size:15px;font-weight:700;letter-spacing:1px;color:var(--text)}
+.logo span{color:var(--accent)}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--text3);flex-shrink:0}
+.status-dot.ok{background:var(--green)}
+.status-dot.err{background:var(--red)}
+.pkg-count{font-size:11px;color:var(--text3);margin-left:auto}
+
+/* ── viewfinder ── */
+.cam-wrap{position:relative;background:#000;overflow:hidden}
+#reader{width:100%}
+#reader video{width:100%!important;display:block}
+/* remove html5-qrcode default scan region border color */
+#reader__scan_region img{display:none}
+#reader__dashboard{display:none!important}
+.cam-overlay{
+  position:absolute;top:0;left:0;right:0;bottom:0;
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:none;
+}
+.cam-frame{
+  width:240px;height:100px;border:2px solid var(--accent);border-radius:8px;
+  box-shadow:0 0 0 9999px rgba(0,0,0,.45);
+}
+
+/* ── resultado ── */
+.result-box{
+  padding:20px 16px 12px;text-align:center;
+  border-bottom:1px solid #2a2f45;min-height:120px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+.result-rota{font-size:14px;color:var(--text3);font-family:monospace;letter-spacing:2px;margin-bottom:4px}
+.result-num{font-size:56px;font-weight:800;letter-spacing:2px;line-height:1;font-family:monospace}
+.result-num.ok{color:var(--green)}
+.result-num.err{color:var(--red)}
+.result-num.warn{color:var(--amber)}
+.result-sub{font-size:12px;color:var(--text2);margin-top:8px;max-width:300px;text-align:center;line-height:1.4}
+
+/* ── lista bipados ── */
+.lista-header{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:1px;padding:10px 16px 6px}
+.lista{flex:1;overflow-y:auto}
+.bip-item{
+  display:flex;align-items:center;gap:10px;padding:9px 16px;
+  border-bottom:1px solid #1e2235;
+}
+.bip-item:first-child{background:var(--bg3)}
+.bip-badge{
+  font-size:13px;font-weight:700;font-family:monospace;
+  padding:3px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0;
+  background:var(--bg2);color:var(--accent);border:1px solid var(--accent)44;
+}
+.bip-badge.err{color:var(--red);border-color:var(--red)44}
+.bip-badge.warn{color:var(--amber);border-color:var(--amber)44}
+.bip-info{flex:1;min-width:0}
+.bip-track{font-size:10px;color:var(--text3);font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bip-end{font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:1px}
+.bip-time{font-size:10px;color:var(--text3);flex-shrink:0}
+
+/* ── btn câmera ── */
+.btn-cam{
+  display:block;width:calc(100% - 32px);margin:12px 16px;
+  padding:12px;border-radius:var(--radius);border:none;
+  background:var(--accent);color:#fff;font-size:15px;font-weight:600;cursor:pointer;
+}
+.btn-cam.stop{background:var(--bg3);color:var(--text2);border:1px solid #2a2f45}
+
+.empty{padding:24px 16px;text-align:center;color:var(--text3);font-size:13px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">PACK<span>SCAN</span> · câmera</div>
+  <div id="status-dot" class="status-dot"></div>
+  <div class="pkg-count" id="pkg-count">carregando...</div>
+</div>
+
+<div class="cam-wrap" id="cam-wrap" style="display:none">
+  <div id="reader"></div>
+  <div class="cam-overlay"><div class="cam-frame"></div></div>
+</div>
+
+<button class="btn-cam" id="btn-cam" onclick="toggleCam()">📷 Ativar câmera</button>
+
+<div class="result-box" id="result-box">
+  <div class="result-rota" id="result-rota" style="display:none"></div>
+  <div class="result-num" id="result-num" style="font-size:22px;color:var(--text3)">aguardando leitura</div>
+  <div class="result-sub" id="result-sub"></div>
+</div>
+
+<div class="lista-header">Últimos bipados</div>
+<div class="lista" id="lista">
+  <div class="empty">Nenhum código lido ainda.</div>
+</div>
+
+<script>
+var BACKEND = window.location.origin;
+var pacotes = [];
+var rotas = [];
+var historico = [];
+var scanner = null;
+var camAtiva = false;
+var ultimoCodigo = '';
+var ultimoTs = 0;
+
+// ── carrega pacotes do servidor ─────────────────────────────────────────────
+async function carregarDados() {
+  try {
+    var rp = await fetch(BACKEND + '/api/pacotes/carregar');
+    var dp = await rp.json();
+    if (dp.pacotes && dp.pacotes.length) {
+      pacotes = dp.pacotes;
+    }
+    var rr = await fetch(BACKEND + '/api/rotas/carregar');
+    var dr = await rr.json();
+    if (dr.rotas && dr.rotas.length) {
+      rotas = dr.rotas;
+    }
+    var total = pacotes.length;
+    document.getElementById('pkg-count').textContent = total + ' pacotes';
+    document.getElementById('status-dot').className = 'status-dot ' + (total ? 'ok' : 'err');
+    if (!total) {
+      document.getElementById('result-num').textContent = 'sem dados';
+      document.getElementById('result-sub').textContent = 'Finalize o import e as rotas no PackScan primeiro.';
+    }
+  } catch(e) {
+    document.getElementById('pkg-count').textContent = 'erro';
+    document.getElementById('status-dot').className = 'status-dot err';
+    document.getElementById('result-sub').textContent = 'Erro ao carregar dados do servidor.';
+  }
+}
+
+// ── lógica de scan ──────────────────────────────────────────────────────────
+function onScan(codigo) {
+  var agora = Date.now();
+  // debounce: ignora mesma leitura por 2s
+  if (codigo === ultimoCodigo && agora - ultimoTs < 2000) return;
+  ultimoCodigo = codigo;
+  ultimoTs = agora;
+
+  var pacote = pacotes.find(function(p) { return p.tracking === codigo; });
+  var hora = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+
+  var item;
+  if (!pacote) {
+    mostrarResultado('err', '', 'NÃO ENCONTRADO', 'Código não está na lista de pacotes do dia.');
+    item = { badge: '??', badgeClass: 'err', tracking: codigo, endereco: 'não encontrado', hora: hora };
+  } else {
+    var rota = rotas.find(function(r) { return r.id === pacote.rota; });
+    var rNum = pacote.rota ? 'R' + String(pacote.rota).padStart(2,'0') : '??';
+    var pNum = pacote.numNaRota ? 'P' + String(pacote.numNaRota).padStart(3,'0') : '???';
+    var motNome = rota ? rota.motorista : '';
+    mostrarResultado('ok', rNum + ' · ' + pNum, pNum, (motNome ? motNome + ' · ' : '') + (pacote.enderecoNorm || pacote.endereco || ''));
+    item = { badge: rNum + ' · ' + pNum, badgeClass: 'ok', tracking: codigo, endereco: pacote.enderecoNorm || pacote.endereco || '', hora: hora };
+  }
+
+  historico.unshift(item);
+  if (historico.length > 10) historico.pop();
+  renderLista();
+  vibrar();
+}
+
+function mostrarResultado(cls, rota, num, sub) {
+  var rotaEl = document.getElementById('result-rota');
+  var numEl = document.getElementById('result-num');
+  var subEl = document.getElementById('result-sub');
+  rotaEl.textContent = rota;
+  rotaEl.style.display = rota ? 'block' : 'none';
+  numEl.textContent = num;
+  numEl.className = 'result-num ' + cls;
+  numEl.style.fontSize = num.length > 8 ? '32px' : '56px';
+  subEl.textContent = sub;
+}
+
+function renderLista() {
+  var el = document.getElementById('lista');
+  if (!historico.length) { el.innerHTML = '<div class="empty">Nenhum código lido ainda.</div>'; return; }
+  el.innerHTML = historico.map(function(item, i) {
+    return '<div class="bip-item">'
+      + '<div class="bip-badge ' + item.badgeClass + '">' + item.badge + '</div>'
+      + '<div class="bip-info">'
+        + '<div class="bip-track">' + item.tracking + '</div>'
+        + '<div class="bip-end">' + item.endereco + '</div>'
+      + '</div>'
+      + '<div class="bip-time">' + item.hora + '</div>'
+    + '</div>';
+  }).join('');
+}
+
+function vibrar() {
+  if (navigator.vibrate) navigator.vibrate(60);
+}
+
+// ── câmera ──────────────────────────────────────────────────────────────────
+function toggleCam() {
+  if (camAtiva) pararCam(); else iniciarCam();
+}
+
+function iniciarCam() {
+  document.getElementById('cam-wrap').style.display = 'block';
+  document.getElementById('btn-cam').textContent = '⏹ Parar câmera';
+  document.getElementById('btn-cam').className = 'btn-cam stop';
+  camAtiva = true;
+
+  scanner = new Html5Qrcode('reader');
+  scanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 260, height: 110 }, supportedScanTypes: [
+        Html5QrcodeScanType.SCAN_TYPE_CAMERA
+      ]
+    },
+    onScan,
+    function() {}
+  ).catch(function(err) {
+    document.getElementById('result-sub').textContent = 'Erro ao acessar câmera: ' + err;
+    pararCam();
+  });
+}
+
+function pararCam() {
+  if (scanner) {
+    scanner.stop().catch(function(){}).finally(function(){
+      scanner.clear();
+      scanner = null;
+    });
+  }
+  document.getElementById('cam-wrap').style.display = 'none';
+  document.getElementById('btn-cam').textContent = '📷 Ativar câmera';
+  document.getElementById('btn-cam').className = 'btn-cam';
+  camAtiva = false;
+}
+
+carregarDados();
+</script>
+</body>
+</html>
