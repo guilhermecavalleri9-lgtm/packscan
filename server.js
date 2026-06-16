@@ -184,7 +184,7 @@ async function ruaPeloCep(cep) {
   return { rua: '', bairro: '', cidade: '' };
 }
 
-// ─── PASSO 2: IA extrai número/complemento ────────────────────────────────────
+// ─── PASSO 2: IA extrai rua bruta + número/complemento ────────────────────────
 function extrairNumeroLocal(complemento) {
   let c = complemento
     .replace(/portão|portao|branco|preto|amarelo|azul|verde|fundo|frente|lateral|descendo|subindo|referencia|ref\.|obs\.|entregar|fachada/gi, '')
@@ -192,39 +192,45 @@ function extrairNumeroLocal(complemento) {
     .replace(/\s{2,}/g, ' ').trim();
   c = c.replace(/^(Rua|Av|Avenida|Travessa|Alameda)\s+[^,\d]+[,\s]+/i, '').trim();
   const nums = c.match(/\d[\d\s]*(?:ap(?:to)?\.?\s*\d+)?(?:\s*bloco\s*\w+)?/i);
-  return nums ? nums[0].trim() : c.substring(0, 20);
+  return { rua: '', complemento: nums ? nums[0].trim() : (c.substring(0, 30) || 'S/N') };
 }
 
-async function extrairNumeroIA(complemento, ruaCep) {
-  if (!ANTHROPIC_KEY) return extrairNumeroLocal(complemento);
+async function extrairInfoIA(textoBruto, ruaCep) {
+  if (!ANTHROPIC_KEY) return extrairNumeroLocal(textoBruto);
 
-  const prompt = `Do complemento de entrega abaixo, extraia APENAS o número/identificador necessário para localizar o imóvel.
+  const prompt = `Você recebe o texto bruto de um endereço de entrega. Extraia duas coisas e responda em JSON.
 
-Rua (já conhecida): "${ruaCep}"
-Complemento bruto: "${complemento}"
+Rua já conhecida pelo CEP (pode estar errada ou vazia): "${ruaCep || ''}"
+Texto bruto do endereço: "${textoBruto}"
 
 Extraia:
-- Número da casa/prédio: "158 casa 2" → "158, Casa 2"
-- Apartamento: "3147 ap 201 bloco 23" → "3147, Ap 201, Bloco 23"
-- Lote/Quadra: "lote 24 quadra 10" → "Quadra 10, Lote 24"
-- Se o complemento JÁ TEM a rua, extraia só o número
+1. "rua": se o texto bruto MENCIONAR um nome de rua/avenida (ex: "Rua Antônio Jovita Duarte", "Av Lisboa"), copie esse nome exatamente como está escrito (mesmo com pequenos erros de digitação), SEM o número. Se o texto bruto não mencionar nenhuma rua, deixe "".
+2. "complemento": o identificador necessário para localizar o imóvel — NUNCA deixe vazio se houver QUALQUER informação útil. Use esta prioridade:
+   - Número da casa/prédio: "158 casa 2" → "158, Casa 2"
+   - Apartamento/Bloco: "3147 ap 201 bloco 23" → "3147, Ap 201, Bloco 23"
+   - Quadra/Lote (mesmo sem número de casa): "Q39" → "Quadra 39" | "s/n Q 49 LT 01" → "Quadra 49, Lote 1"
+   - Nome de comércio/loja/condomínio quando não há número: "Loja Space Car Filmes" → "Loja Space Car Filmes" | "Agropecuária da Família" → "Agropecuária da Família"
+   - Se realmente não houver nada aproveitável, use "S/N"
+   Remova: cores de portão, referências, CPF, nomes de pessoas, observações de entrega (ex: "deixar com vizinho").
 
-Remova: cores de portão, referências, CPF, nomes de pessoas, observações.
-Responda APENAS com o número/complemento extraído, uma linha, sem explicação.`;
+Responda APENAS com um JSON válido de uma linha, sem markdown: {"rua":"...","complemento":"..."}`;
 
   try {
     const result = await httpsPost('api.anthropic.com', '/v1/messages',
       { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
-      JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 80, messages: [{ role: 'user', content: prompt }] })
+      JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 150, messages: [{ role: 'user', content: prompt }] })
     );
     const texto = result.content?.[0]?.text?.trim() || '';
-    if (texto && texto.length < 60) {
-      console.log(`[ia] "${complemento.substring(0,30)}" → "${texto}"`);
-      return texto;
+    const match = texto.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      console.log(`[ia] "${textoBruto.substring(0,30)}" → rua:"${parsed.rua||''}" compl:"${parsed.complemento||''}"`);
+      return { rua: (parsed.rua || '').trim(), complemento: (parsed.complemento || 'S/N').trim() };
     }
   } catch(e) { console.error('[ia] erro:', e.message); }
-  return extrairNumeroLocal(complemento);
+  return extrairNumeroLocal(textoBruto);
 }
+
 
 // ─── PASSO 3: geocodifica endereço completo ───────────────────────────────────
 async function geocodificarEndereco(enderecoCompleto) {
@@ -315,39 +321,54 @@ const server = http.createServer(async (req, res) => {
         return json(res, 404, { error: 'Endereço não encontrado' });
       }
 
-      // fluxo normal: CEP → rua → IA extrai número → geocodifica
+      // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
       const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,'')) : { rua:'', bairro:'', cidade:'' };
       const ruaCep = cepInfo.rua;
-      const numeroExtraido = await extrairNumeroIA(endereco, ruaCep);
+      const info = await extrairInfoIA(endereco, ruaCep);
+      const complemento = info.complemento || 'S/N';
+      const cidadeFinal = cepInfo.cidade || cidade || 'São José';
 
       let enderecoFinal, coord;
 
-      // melhor caso: rua do CEP + número extraído
-      if (ruaCep && numeroExtraido) {
-        enderecoFinal = `${ruaCep}, ${numeroExtraido}, ${cepInfo.cidade||cidade||'São José'}, SC, Brasil`;
+      // melhor caso: rua MENCIONADA NO PRÓPRIO TEXTO (mais confiável que a rua do CEP,
+      // que é só uma aproximação do Google e pode estar errada para a região)
+      if (info.rua) {
+        enderecoFinal = `${info.rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
         coord = await geocodificarEndereco(enderecoFinal);
       }
 
-      // fallback 1: endereço bruto completo se tiver nome de rua
+      // fallback 1: rua do CEP + complemento (quando o texto não tinha nome de rua)
+      if (!coord && ruaCep) {
+        enderecoFinal = `${ruaCep}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
+        coord = await geocodificarEndereco(enderecoFinal);
+      }
+
+      // fallback 2: complemento contém nome de comércio/condomínio identificável — busca direto
+      if (!coord && complemento && complemento !== 'S/N' && !/^\d/.test(complemento)) {
+        enderecoFinal = `${complemento}, ${bairro||''}, ${cidadeFinal}, SC, Brasil`;
+        coord = await geocodificarEndereco(enderecoFinal);
+      }
+
+      // fallback 3: endereço bruto completo, limpo (cobre casos que a IA não capturou bem)
       if (!coord && /^(rua|av|avenida|travessa|alameda|estrada)/i.test(endereco)) {
         const endLimpo = endereco
           .replace(/portão|portao|branco|preto|referencia|ref\.|obs\.|entregar|fachada|descendo|subindo/gi, '')
           .replace(/\s{2,}/g,' ').trim();
-        enderecoFinal = `${endLimpo}, ${cidade||'São José'}, SC, Brasil`;
+        enderecoFinal = `${endLimpo}, ${cidadeFinal}, SC, Brasil`;
         coord = await geocodificarEndereco(enderecoFinal);
       }
 
-      // fallback 2: CEP + número + cidade
-      if (!coord && cep && numeroExtraido) {
+      // fallback 4: CEP + complemento
+      if (!coord && cep) {
         const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
-        enderecoFinal = `${cepFmt}, ${numeroExtraido}, ${cidade||'São José'}, SC, Brasil`;
+        enderecoFinal = `${cepFmt}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
         coord = await geocodificarEndereco(enderecoFinal);
       }
 
-      // fallback 3: coordenada do CEP
+      // fallback 5 (último recurso): coordenada aproximada do CEP — fica marcado pra corrigir
       if (!coord && cepInfo.lat) {
         coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE' };
-        enderecoFinal = `CEP ${cep}`;
+        enderecoFinal = `CEP ${cep} (sem rua/número identificado — corrigir manualmente)`;
       }
 
       if (!coord) {
@@ -355,7 +376,7 @@ const server = http.createServer(async (req, res) => {
         return json(res, 404, { error: 'Endereço não encontrado', enderecoFinal });
       }
 
-      const resultado = { ...coord, enderecoNormalizado: enderecoFinal, ruaCep, numeroExtraido, fromCache: false };
+      const resultado = { ...coord, enderecoNormalizado: enderecoFinal, ruaCep, ruaTexto: info.rua, complemento, fromCache: false };
       await supabaseSet(cacheKey, resultado);
       console.log(`[geocode] ✓ ${enderecoFinal.substring(0,55)} (${coord.precisao})`);
       return json(res, 200, resultado);
