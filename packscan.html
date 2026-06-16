@@ -102,6 +102,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <button class="tab" onclick="goTab(2)">03 Bipar</button>
   <button class="tab" onclick="goTab(3)">04 Motoristas</button>
   <button class="tab" onclick="goTab(4)">05 Regiões CEP</button>
+  <button class="tab" onclick="goTab(5)">06 📷 Câmera</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
@@ -247,7 +248,6 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <div style="display:grid;grid-template-columns:230px 1fr;gap:1rem">
     <div style="display:flex;flex-direction:column;gap:.75rem">
       <div class="card" style="padding:1rem"><div class="card-title">motoristas</div><div id="mot-list"></div>
-        <a href="/scanner" target="_blank" style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;border-radius:8px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-size:12px;text-decoration:none">📷 Bipar pelo celular</a>
       </div>
       <!-- ETIQUETAS (lateral) -->
       <div class="card" style="padding:1rem">
@@ -321,6 +321,39 @@ tr:hover td{background:rgba(255,255,255,.02)}
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 5 — CÂMERA (scanner pelo celular)
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="page" id="p5">
+  <div style="max-width:520px;margin:0 auto">
+
+    <!-- resultado grande -->
+    <div id="sc-result" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px 16px 20px;text-align:center;margin-bottom:1rem">
+      <div id="sc-rota" style="font-family:var(--mono);font-size:13px;color:var(--text3);letter-spacing:2px;margin-bottom:4px"> </div>
+      <div id="sc-num" style="font-size:52px;font-weight:800;font-family:var(--mono);line-height:1;color:var(--text3)">aguardando</div>
+      <div id="sc-sub" style="font-size:12px;color:var(--text2);margin-top:10px;line-height:1.5"> </div>
+    </div>
+
+    <!-- viewfinder -->
+    <div id="sc-cam-wrap" style="display:none;border-radius:var(--radius-lg);overflow:hidden;margin-bottom:1rem;position:relative;background:#000">
+      <div id="sc-reader"></div>
+      <div style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+        <div style="width:260px;height:110px;border:2px solid var(--accent);border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)"></div>
+      </div>
+    </div>
+
+    <!-- botão câmera -->
+    <button id="sc-btn" class="btn btn-p" style="width:100%;padding:14px;font-size:15px;margin-bottom:1rem" onclick="scToggle()">📷 Ativar câmera</button>
+
+    <!-- últimos 10 -->
+    <div class="card" style="overflow:hidden">
+      <div class="card-title">Últimos bipados</div>
+      <div id="sc-lista" style="font-size:13px;color:var(--text3);font-family:var(--mono)">Nenhum código lido ainda.</div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
      MODAL — CORREÇÃO MANUAL
      ═══════════════════════════════════════════════════════════════════════════ -->
 <div id="modal-bg" onclick="if(event.target===this)fecharModal()">
@@ -346,6 +379,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
@@ -398,6 +432,7 @@ function goTab(n) {
   if (n===2) { renderMotList(); renderEtSelect(); }
   if (n===3) renderMotDownload();
   if (n===4) renderRegioes();
+  if (n!==5 && _scAtivo) scParar();
 }
 
 function arToggle() {
@@ -1386,6 +1421,75 @@ function reconstruirRotasLocais() {
   });
   _rotasPendentes = null;
   renderRotasList(); plotarPontos(); renderMotList(); renderEtSelect(); renderMotDownload();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SCANNER (câmera)
+// ═══════════════════════════════════════════════════════════════════════════════
+var _scScanner = null, _scAtivo = false, _scUltCod = '', _scUltTs = 0, _scHist = [];
+
+function scToggle() { _scAtivo ? scParar() : scIniciar(); }
+
+function scIniciar() {
+  if (typeof Html5Qrcode === 'undefined') { alert('Biblioteca de câmera não carregou. Verifique a conexão.'); return; }
+  document.getElementById('sc-cam-wrap').style.display = 'block';
+  document.getElementById('sc-btn').textContent = '⏹ Parar câmera';
+  document.getElementById('sc-btn').className = 'btn';
+  _scAtivo = true;
+  _scScanner = new Html5Qrcode('sc-reader');
+  _scScanner.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 260, height: 110 } },
+    scOnLeitura,
+    function() {}
+  ).catch(function(err) {
+    document.getElementById('sc-sub').textContent = 'Erro ao acessar câmera: ' + err;
+    scParar();
+  });
+}
+
+function scParar() {
+  if (_scScanner) { _scScanner.stop().catch(function(){}).finally(function(){ _scScanner.clear(); _scScanner = null; }); }
+  document.getElementById('sc-cam-wrap').style.display = 'none';
+  document.getElementById('sc-btn').textContent = '📷 Ativar câmera';
+  document.getElementById('sc-btn').className = 'btn btn-p';
+  _scAtivo = false;
+}
+
+function scOnLeitura(codigo) {
+  var agora = Date.now();
+  if (codigo === _scUltCod && agora - _scUltTs < 2000) return;
+  _scUltCod = codigo; _scUltTs = agora;
+  if (navigator.vibrate) navigator.vibrate(60);
+  var pacote = pacotes.find(function(p) { return p.tracking === codigo; });
+  var hora = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  if (!pacote) {
+    document.getElementById('sc-rota').textContent = '';
+    document.getElementById('sc-num').style.color = 'var(--red)';
+    document.getElementById('sc-num').style.fontSize = '32px';
+    document.getElementById('sc-num').textContent = 'NÃO ENCONTRADO';
+    document.getElementById('sc-sub').textContent = codigo;
+    _scHist.unshift({ badge:'??', cor:'var(--red)', tracking:codigo, info:'não encontrado', hora:hora });
+  } else {
+    var rNum = pacote.rota ? 'R' + String(pacote.rota).padStart(2,'0') : '??';
+    var pNum = pacote.numNaRota ? 'P' + String(pacote.numNaRota).padStart(3,'0') : '???';
+    document.getElementById('sc-rota').textContent = rNum;
+    document.getElementById('sc-num').style.color = 'var(--green)';
+    document.getElementById('sc-num').style.fontSize = '64px';
+    document.getElementById('sc-num').textContent = pNum;
+    document.getElementById('sc-sub').textContent = pacote.enderecoNorm || pacote.endereco || '';
+    _scHist.unshift({ badge: rNum + ' · ' + pNum, cor:'var(--green)', tracking:codigo, info: pacote.enderecoNorm || pacote.endereco || '', hora:hora });
+  }
+  if (_scHist.length > 10) _scHist.pop();
+  var el = document.getElementById('sc-lista');
+  el.innerHTML = _scHist.map(function(h) {
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">'
+      + '<span style="font-weight:700;color:'+h.cor+';white-space:nowrap;min-width:90px">'+h.badge+'</span>'
+      + '<div style="flex:1;min-width:0"><div style="color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+h.info+'</div>'
+        + '<div style="font-size:10px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+h.tracking+'</div></div>'
+      + '<span style="font-size:11px;color:var(--text3);flex-shrink:0">'+h.hora+'</span>'
+    + '</div>';
+  }).join('');
 }
 
 // init
