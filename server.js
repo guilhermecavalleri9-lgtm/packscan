@@ -198,6 +198,10 @@ function extrairNumeroLocal(complemento) {
   return { rua: '', complemento: c.substring(0, 30) || 'S/N' };
 }
 
+function limparPrefixoNumero(c) {
+  return c.replace(/\b(n[uú]mero|n[º°]\.?|n\.)\s*/gi, '').trim();
+}
+
 function complementoValido(c) {
   if (!c) return false;
   if (c.length > 40) return false;
@@ -224,7 +228,7 @@ Texto bruto do endereço: "${textoBruto}"
 Extraia:
 1. "rua": se o texto bruto MENCIONAR um nome de rua/avenida (ex: "Rua Antônio Jovita Duarte", "Av Lisboa"), copie esse nome exatamente como está escrito (mesmo com pequenos erros de digitação), SEM o número. Se o texto bruto não mencionar nenhuma rua, deixe "".
 2. "complemento": o identificador necessário para localizar o imóvel — NUNCA deixe vazio se houver QUALQUER informação útil, e PROCURE ATIVAMENTE por quadra/lote no texto antes de desistir. Use esta prioridade:
-   - Número da casa/prédio: "158 casa 2" → "158, Casa 2"
+   - Número da casa/prédio: escreva SÓ o número puro, sem a palavra "Número"/"Nº"/"N." na frente: "158 casa 2" → "158, Casa 2" (NUNCA "Número 158, Casa 2")
    - Apartamento/Bloco: "3147 ap 201 bloco 23" → "3147, Ap 201, Bloco 23"
    - Quadra/Lote — SEMPRE que aparecer "Q", "QD", "Quadra", "LT" ou "Lote" no texto, mesmo sem número de casa, mesmo abreviado ou colado em outras palavras: "Q39" → "Quadra 39" | "s/n Q 49 LT 01" → "Quadra 49, Lote 1" | "quadra 04 lote 12" → "Quadra 4, Lote 12"
    - Nome de comércio/loja/condomínio quando não há número nem quadra/lote: "Loja Space Car Filmes" → "Loja Space Car Filmes" | "Agropecuária da Família" → "Agropecuária da Família"
@@ -242,7 +246,7 @@ Responda APENAS com um JSON válido de uma linha, sem markdown: {"rua":"...","co
     const match = texto.match(/\{[\s\S]*\}/);
     if (match) {
       const parsed = JSON.parse(match[0]);
-      const complBruto = (parsed.complemento || '').trim();
+      const complBruto = limparPrefixoNumero((parsed.complemento || '').trim());
       let compl = complementoValido(complBruto) ? complBruto : 'S/N';
       if (compl === 'S/N') {
         const ql = extrairQuadraLote(textoBruto);
