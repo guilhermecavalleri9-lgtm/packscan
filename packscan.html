@@ -86,7 +86,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 /* MODAL */
 #modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center}
 #modal-bg.show{display:flex}
-.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;width:500px;max-width:95vw}
+.modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;width:560px;max-width:95vw;max-height:92vh;overflow-y:auto}
 </style>
 </head>
 <body>
@@ -374,8 +374,12 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <button class="btn btn-sm" onclick="buscarEnderecoModal()">🔍 Buscar no Google</button>
     </div>
     <div class="g2" style="margin-bottom:.75rem">
-      <div><label>Latitude</label><input type="text" id="modal-lat" placeholder="-27.6136"></div>
-      <div><label>Longitude</label><input type="text" id="modal-lng" placeholder="-48.6400"></div>
+      <div><label>Latitude</label><input type="text" id="modal-lat" placeholder="-27.6136" onchange="sincronizarMarcadorModal()"></div>
+      <div><label>Longitude</label><input type="text" id="modal-lng" placeholder="-48.6400" onchange="sincronizarMarcadorModal()"></div>
+    </div>
+    <div style="margin-bottom:.75rem">
+      <label>Clique no mapa pra ajustar o ponto (ou arraste o marcador)</label>
+      <div id="modal-map" style="height:260px;border-radius:var(--radius);overflow:hidden;margin-top:4px"></div>
     </div>
     <div id="modal-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);margin-bottom:.75rem;min-height:18px"></div>
     <div class="btn-row">
@@ -1034,6 +1038,8 @@ function goTabCorrigir() {
 // ═══════════════════════════════════════════════════════════════════════════════
 var _modalTracking=null;
 
+var _modalMap = null, _modalMarker = null;
+
 function abrirModal(tracking) {
   var p=pacotes.find(function(x){ return x.tracking===tracking; }); if (!p) return;
   _modalTracking=tracking;
@@ -1044,6 +1050,45 @@ function abrirModal(tracking) {
   document.getElementById('modal-lng').value=p.lng?p.lng.toFixed(6):'';
   document.getElementById('modal-status').textContent='';
   document.getElementById('modal-bg').classList.add('show');
+  var lat = p.lat || -27.6136, lng = p.lng || -48.6400;
+  setTimeout(function(){ initModalMap(lat, lng); }, 50);
+}
+
+function initModalMap(lat, lng) {
+  if (!_modalMap) {
+    _modalMap = L.map('modal-map', { preferCanvas:true }).setView([lat,lng], p_modalZoom(lat,lng));
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(_modalMap);
+    _modalMarker = L.marker([lat,lng], { draggable:true }).addTo(_modalMap);
+    _modalMarker.on('dragend', function(){
+      var pos = _modalMarker.getLatLng();
+      atualizarLatLngModal(pos.lat, pos.lng);
+    });
+    _modalMap.on('click', function(e){
+      _modalMarker.setLatLng(e.latlng);
+      atualizarLatLngModal(e.latlng.lat, e.latlng.lng);
+    });
+  } else {
+    _modalMap.setView([lat,lng], _modalMap.getZoom() || 16);
+    _modalMarker.setLatLng([lat,lng]);
+  }
+  setTimeout(function(){ _modalMap.invalidateSize(); }, 100);
+}
+
+function p_modalZoom(lat,lng) { return (lat===-27.6136 && lng===-48.6400) ? 12 : 17; }
+
+function atualizarLatLngModal(lat, lng) {
+  document.getElementById('modal-lat').value = lat.toFixed(6);
+  document.getElementById('modal-lng').value = lng.toFixed(6);
+  var st=document.getElementById('modal-status');
+  st.textContent = 'Ponto ajustado no mapa.'; st.style.color='var(--accent)';
+}
+
+function sincronizarMarcadorModal() {
+  var lat=parseFloat(document.getElementById('modal-lat').value);
+  var lng=parseFloat(document.getElementById('modal-lng').value);
+  if (isNaN(lat)||isNaN(lng)||!_modalMap) return;
+  _modalMap.setView([lat,lng],17);
+  _modalMarker.setLatLng([lat,lng]);
 }
 
 function fecharModal() {
@@ -1089,9 +1134,10 @@ async function buscarEnderecoModal() {
     if (r.ok&&d.lat) {
       document.getElementById('modal-lat').value=d.lat.toFixed(6);
       document.getElementById('modal-lng').value=d.lng.toFixed(6);
+      if (_modalMap) { _modalMap.setView([d.lat,d.lng],17); _modalMarker.setLatLng([d.lat,d.lng]); }
       st.textContent='✓ '+(d.enderecoFormatado||end)+' ('+(d.precisao||'')+')';
       st.style.color=d.precisao==='ROOFTOP'?'var(--green)':'var(--amber)';
-    } else { st.textContent='Não encontrado. Cole as coordenadas manualmente.'; st.style.color='var(--red)'; }
+    } else { st.textContent='Não encontrado. Clique no mapa pra marcar o ponto manualmente.'; st.style.color='var(--red)'; }
   } catch(e) { st.textContent='Erro: '+e.message; st.style.color='var(--red)'; }
 }
 
