@@ -483,7 +483,7 @@ const server = http.createServer(async (req, res) => {
       // fallback 3.5: sem rua nenhuma E o CEP já foi corrigido manualmente no mapa —
       // usa esse ponto direto, é mais confiável que um chute novo do Google em cima do CEP cru
       if (!coord && !ruaCep && cepInfo.manual && cepInfo.lat) {
-        coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep} (referência manual)`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
+        coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep} (referência manual)`, precisao: 'CEP_MANUAL', cidade: cidadeFinal };
       }
 
       // fallback 4: CEP + complemento

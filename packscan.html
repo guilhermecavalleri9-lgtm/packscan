@@ -689,9 +689,9 @@ function plotarPontos() {
   if (!geo.length) return;
   geo.forEach(function(p) {
     var rotaCor = p.rota?(rotas.find(function(r){ return r.id===p.rota; })||{}).cor||'#888':null;
-    var cor = rotaCor||(p.precisao==='ROOFTOP'?'#34c97e':p.precisao==='RANGE_INTERPOLATED'?'#f5a623':'#f05252');
+    var cor = rotaCor||((p.precisao==='ROOFTOP'||p.precisao==='MANUAL'||p.precisao==='CEP_MANUAL')?'#34c97e':p.precisao==='RANGE_INTERPOLATED'?'#f5a623':'#f05252');
     var m = L.circleMarker([p.lat,p.lng],{radius:5,color:cor,fillColor:cor,fillOpacity:.85,weight:1});
-    var precCor = p.precisao==='ROOFTOP'||p.precisao==='MANUAL' ? 'var(--green)' : p.precisao==='RANGE_INTERPOLATED' ? 'var(--amber)' : 'var(--red)';
+    var precCor = (p.precisao==='ROOFTOP'||p.precisao==='MANUAL'||p.precisao==='CEP_MANUAL') ? 'var(--green)' : p.precisao==='RANGE_INTERPOLATED' ? 'var(--amber)' : 'var(--red)';
     var popHtml =
       '<div style="font-family:var(--sans);min-width:220px">'
       + '<div style="font-family:var(--mono);font-size:11px;color:var(--text2);margin-bottom:4px">'+esc(p.tracking)+'</div>'
@@ -968,11 +968,12 @@ function linhasExcelRota(pkgs, atId) {
   pkgs.forEach(function(p){
     var endereco=p.enderecoNorm||p.endereco;
     var key=chaveEnderecoBase(endereco)+'|'+p.cep+'|'+(p.cidade||'');
-    if (!mapa[key]) { mapa[key]={ nums:[], endereco:endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'', lat:p.lat, lng:p.lng }; grupos.push(mapa[key]); }
+    if (!mapa[key]) { mapa[key]={ nums:[], endereco:endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'', lat:p.lat, lng:p.lng, precisao:p.precisao }; grupos.push(mapa[key]); }
     mapa[key].nums.push('P'+String(p.numNaRota).padStart(3,'0'));
   });
   return grupos.map(function(g){
-    return [atId, g.endereco, g.bairro, g.cidade, formatarCep(g.cep), g.lat?g.lat.toFixed(6):'', g.lng?g.lng.toFixed(6):'', '', g.nums.join(', ')];
+    var temCoordConfiavel = g.precisao==='MANUAL'||g.precisao==='CEP_MANUAL';
+    return [atId, g.endereco, g.bairro, g.cidade, formatarCep(g.cep), temCoordConfiavel&&g.lat?g.lat.toFixed(6):'', temCoordConfiavel&&g.lng?g.lng.toFixed(6):'', '', g.nums.join(', ')];
   });
 }
 
@@ -1073,7 +1074,7 @@ function goTabCorrigir() {
   if (!problemas.length) { el.innerHTML='<p style="color:var(--green);font-family:var(--mono);font-size:13px">✓ Nenhum pacote com problema!</p>'; return; }
   var html='<p style="font-size:12px;color:var(--text2);margin-bottom:.75rem">'+problemas.length+' pacote(s) para corrigir:</p><div style="overflow-x:auto"><table><thead><tr><th>Tracking</th><th>Endereço original</th><th>Precisão</th><th>Problema</th><th></th></tr></thead><tbody>';
   problemas.forEach(function(p) {
-    var precBadge=!p.lat?'b-red':(p.precisao==='ROOFTOP'||p.precisao==='MANUAL')?'b-green':'b-red';
+    var precBadge=!p.lat?'b-red':(p.precisao==='ROOFTOP'||p.precisao==='MANUAL'||p.precisao==='CEP_MANUAL')?'b-green':'b-red';
     var v=p.lat?validarCoordRegiao(p.cep,p.lat,p.lng):null;
     var prob=!p.lat?'Sem coord':(p.lat<-28.5||p.lat>-26.5||p.lng<-49.5||p.lng>-47.5)?'Fora de SC':(p.precisao==='APPROXIMATE'||p.precisao==='GEOMETRIC_CENTER')?'Impreciso':(v&&!v.dentro)?'Fora de '+v.regiao:'Verificar';
     html+='<tr><td style="font-family:var(--mono);font-size:11px">'+esc(p.tracking)+'</td><td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(p.endereco)+'">'+esc(p.endereco)+'</td><td><span class="badge '+precBadge+'">'+esc(p.precisao||'N/A')+'</span></td><td><span class="badge b-red">'+esc(prob)+'</span></td><td><button class="btn btn-p btn-sm" onclick="abrirModal(\''+esc(p.tracking)+'\')">✏ Corrigir</button></td></tr>';
