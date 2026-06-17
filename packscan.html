@@ -958,7 +958,12 @@ function chaveEnderecoBase(end) {
   return base.toLowerCase();
 }
 
-function linhasExcelRota(pkgs) {
+function formatarCep(cep) {
+  cep = String(cep||'').replace(/\D/g,'');
+  return cep.length===8 ? cep.slice(0,5)+'-'+cep.slice(5) : cep;
+}
+
+function linhasExcelRota(pkgs, atId) {
   var grupos=[], mapa={};
   pkgs.forEach(function(p){
     var endereco=p.enderecoNorm||p.endereco;
@@ -966,13 +971,20 @@ function linhasExcelRota(pkgs) {
     if (!mapa[key]) { mapa[key]={ nums:[], endereco:endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'', lat:p.lat, lng:p.lng }; grupos.push(mapa[key]); }
     mapa[key].nums.push('P'+String(p.numNaRota).padStart(3,'0'));
   });
-  return grupos.map(function(g){ return [g.nums.join(', '),g.endereco,g.bairro,g.cep,g.cidade,g.lat?g.lat.toFixed(6):'',g.lng?g.lng.toFixed(6):'']; });
+  return grupos.map(function(g){
+    return [atId, g.endereco, g.bairro, g.cidade, formatarCep(g.cep), g.lat?g.lat.toFixed(6):'', g.lng?g.lng.toFixed(6):'', '', g.nums.join(', ')];
+  });
 }
 
+var XLSX_HEADER_ROTA = ['AT ID','Destination Address','Bairro','City','Zipcode/Postal code','Latitude','Longitude','Address Line 2','Pacotes na Parada'];
+var XLSX_COLS_ROTA = [{wch:18},{wch:38},{wch:16},{wch:14},{wch:14},{wch:12},{wch:12},{wch:24},{wch:18}];
+
+function atIdRota(r) { return 'R'+String(r.id).padStart(2,'0'); }
+
 function gerarExcel(r) {
-  var data=[['Nº(s) na rota','Endereço','Bairro','CEP','Cidade','Latitude','Longitude']].concat(linhasExcelRota(r.pkgs));
+  var data=[XLSX_HEADER_ROTA].concat(linhasExcelRota(r.pkgs, atIdRota(r)));
   var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(data);
-  ws['!cols']=[{wch:24},{wch:35},{wch:16},{wch:12},{wch:14},{wch:12},{wch:12}];
+  ws['!cols']=XLSX_COLS_ROTA;
   XLSX.utils.book_append_sheet(wb,ws,'Rota');
   XLSX.writeFile(wb,'Rota_'+String(r.id).padStart(2,'0')+'_'+r.motorista.replace(/ /g,'_')+'.xlsx');
 }
@@ -987,8 +999,8 @@ function downloadTodos() {
   if (!rotas.length) { alert('Finalize as rotas primeiro.'); return; }
   var wb=XLSX.utils.book_new();
   rotas.forEach(function(r) {
-    var data=[['Nº(s) na rota','Endereço','Bairro','CEP','Cidade','Latitude','Longitude']].concat(linhasExcelRota(r.pkgs));
-    var ws=XLSX.utils.aoa_to_sheet(data); ws['!cols']=[{wch:24},{wch:35},{wch:16},{wch:12},{wch:14},{wch:12},{wch:12}];
+    var data=[XLSX_HEADER_ROTA].concat(linhasExcelRota(r.pkgs, atIdRota(r)));
+    var ws=XLSX.utils.aoa_to_sheet(data); ws['!cols']=XLSX_COLS_ROTA;
     XLSX.utils.book_append_sheet(wb,ws,'R'+String(r.id).padStart(2,'0')+'_'+r.motorista.split(' ')[0]);
   });
   XLSX.writeFile(wb,'PackScan_Rotas.xlsx');
