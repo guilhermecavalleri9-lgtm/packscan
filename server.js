@@ -397,9 +397,6 @@ const server = http.createServer(async (req, res) => {
       // fallback 5 (último recurso): coordenada aproximada do CEP — fica marcado pra corrigir
       if (!coord && cepInfo.lat) {
         coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
-        enderecoFinal = ruaCep
-          ? `${ruaCep}, ${complemento}, ${cidadeFinal}, SC, Brasil (aprox. — corrigir manualmente)`
-          : `CEP ${cep} (sem rua/número identificado — corrigir manualmente)`;
       }
 
       if (!coord) {
@@ -407,11 +404,15 @@ const server = http.createServer(async (req, res) => {
         return json(res, 404, { error: 'Endereço não encontrado', enderecoFinal });
       }
 
-      // exibição final pro motorista: prioriza nome de rua real (do texto, do Google ou do CEP)
-      // — nunca mostra só o CEP cru se alguma rua já foi identificada em algum momento
+      // exibição final pro motorista: NUNCA mostra o CEP cru.
+      // prioridade: rua do texto > rua devolvida pelo Google > rua do CEP > bairro > último recurso (CEP só se não houver mais nada)
       const ruaParaExibir = info.rua || coord.logradouro || ruaCep || '';
-      if (ruaParaExibir && coord.precisao !== 'APPROXIMATE') {
+      if (ruaParaExibir) {
         enderecoFinal = `${ruaParaExibir}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
+      } else if (bairro) {
+        enderecoFinal = `${bairro} (bairro), ${complemento}, ${cidadeFinal}, SC, Brasil — corrigir manualmente`;
+      } else {
+        enderecoFinal = `CEP ${cep} (sem rua identificada — corrigir manualmente)`;
       }
 
       const resultado = { ...coord, cidade: coord.cidade || cidadeFinal, enderecoNormalizado: enderecoFinal, ruaCep, ruaTexto: info.rua, complemento, fromCache: false };
