@@ -322,6 +322,20 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
+  // ─── SALVAR CORREÇÃO DE CEP (referência manual no mapa) ──────────────────
+  if (req.method === 'POST' && pathname === '/api/cep/corrigir') {
+    const body = await readBody(req);
+    const cepDigits = (body.cep || '').replace(/\D/g, '');
+    const { lat, lng } = body;
+    if (cepDigits.length !== 8 || !lat || !lng) return json(res, 400, { error: 'cep (8 dígitos), lat, lng obrigatórios' });
+    const cepKey = 'cep:' + cepDigits;
+    const anterior = (await supabaseGet(cepKey)) || { rua: '', bairro: '', cidade: '' };
+    const atualizado = { ...anterior, lat, lng, manual: true };
+    await supabaseSet(cepKey, atualizado);
+    console.log(`[cep-correcao] ${cepDigits} → ${lat},${lng}`);
+    return json(res, 200, { ok: true });
+  }
+
   // ─── POST /api/geocode ────────────────────────────────────────────────────
   if (req.method === 'POST' && pathname === '/api/geocode') {
     const body = await readBody(req);
@@ -387,6 +401,12 @@ const server = http.createServer(async (req, res) => {
         coord = await geocodificarEndereco(enderecoFinal);
       }
 
+      // fallback 3.5: sem rua nenhuma E o CEP já foi corrigido manualmente no mapa —
+      // usa esse ponto direto, é mais confiável que um chute novo do Google em cima do CEP cru
+      if (!coord && !ruaCep && cepInfo.manual && cepInfo.lat) {
+        coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep} (referência manual)`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
+      }
+
       // fallback 4: CEP + complemento
       if (!coord && cep) {
         const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
@@ -410,7 +430,7 @@ const server = http.createServer(async (req, res) => {
       if (ruaParaExibir) {
         enderecoFinal = `${ruaParaExibir}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
       } else if (bairro) {
-        enderecoFinal = `${bairro} (bairro), ${complemento}, ${cidadeFinal}, SC, Brasil — corrigir manualmente`;
+        enderecoFinal = `${bairro}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
       } else {
         enderecoFinal = `CEP ${cep} (sem rua identificada — corrigir manualmente)`;
       }

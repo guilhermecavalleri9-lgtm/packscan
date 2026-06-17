@@ -103,6 +103,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <button class="tab" onclick="goTab(3)">04 Motoristas</button>
   <button class="tab" onclick="goTab(4)">05 Regiões CEP</button>
   <button class="tab" onclick="goTab(5)">06 📷 Câmera</button>
+  <button class="tab" onclick="goTab(6)">07 📍 Corrigir CEP</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
@@ -357,6 +358,28 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div id="sc-lista" style="font-size:13px;color:var(--text3);font-family:var(--mono)">Nenhum código lido ainda.</div>
     </div>
 
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     TAB 6 — CORRIGIR CEP (referência manual no mapa)
+     ═══════════════════════════════════════════════════════════════════════════ -->
+<div class="page" id="p6">
+  <div style="max-width:700px">
+    <div class="alert alert-blue">ℹ <div>Quando um CEP não tem rua cadastrada no Google (CEPs genéricos de bairro), o sistema usa um ponto aproximado pra esse CEP. Aqui você corrige esse ponto manualmente clicando no mapa — vale pra <strong>todos os pacotes futuros</strong> com esse mesmo CEP.</div></div>
+    <div class="card">
+      <div class="card-title">corrigir referência do CEP</div>
+      <div class="g2" style="margin-bottom:.75rem">
+        <div><label>CEP (8 dígitos)</label><input type="text" id="cepcorr-cep" placeholder="88107210" maxlength="9"></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn btn-sm" onclick="cepCorrCarregarMapa()" style="width:100%">🔍 Carregar no mapa</button></div>
+      </div>
+      <div style="margin-bottom:.75rem">
+        <label>Clique no mapa onde fica esse CEP</label>
+        <div id="cepcorr-map" style="height:320px;border-radius:var(--radius);overflow:hidden;margin-top:4px"></div>
+      </div>
+      <div id="cepcorr-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);margin-bottom:.75rem;min-height:18px"></div>
+      <button class="btn btn-p" onclick="cepCorrSalvar()">💾 Salvar referência do CEP</button>
+    </div>
   </div>
 </div>
 
@@ -926,16 +949,16 @@ function linhasExcelRota(pkgs) {
   pkgs.forEach(function(p){
     var endereco=p.enderecoNorm||p.endereco;
     var key=chaveEnderecoBase(endereco)+'|'+p.cep+'|'+(p.cidade||'');
-    if (!mapa[key]) { mapa[key]={ nums:[], endereco:endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'' }; grupos.push(mapa[key]); }
+    if (!mapa[key]) { mapa[key]={ nums:[], endereco:endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'', lat:p.lat, lng:p.lng }; grupos.push(mapa[key]); }
     mapa[key].nums.push('P'+String(p.numNaRota).padStart(3,'0'));
   });
-  return grupos.map(function(g){ return [g.nums.join(', '),g.endereco,g.bairro,g.cep,g.cidade]; });
+  return grupos.map(function(g){ return [g.nums.join(', '),g.endereco,g.bairro,g.cep,g.cidade,g.lat?g.lat.toFixed(6):'',g.lng?g.lng.toFixed(6):'']; });
 }
 
 function gerarExcel(r) {
-  var data=[['Nº(s) na rota','Endereço','Bairro','CEP','Cidade']].concat(linhasExcelRota(r.pkgs));
+  var data=[['Nº(s) na rota','Endereço','Bairro','CEP','Cidade','Latitude','Longitude']].concat(linhasExcelRota(r.pkgs));
   var wb=XLSX.utils.book_new(),ws=XLSX.utils.aoa_to_sheet(data);
-  ws['!cols']=[{wch:24},{wch:35},{wch:16},{wch:12},{wch:14}];
+  ws['!cols']=[{wch:24},{wch:35},{wch:16},{wch:12},{wch:14},{wch:12},{wch:12}];
   XLSX.utils.book_append_sheet(wb,ws,'Rota');
   XLSX.writeFile(wb,'Rota_'+String(r.id).padStart(2,'0')+'_'+r.motorista.replace(/ /g,'_')+'.xlsx');
 }
@@ -950,8 +973,8 @@ function downloadTodos() {
   if (!rotas.length) { alert('Finalize as rotas primeiro.'); return; }
   var wb=XLSX.utils.book_new();
   rotas.forEach(function(r) {
-    var data=[['Nº(s) na rota','Endereço','Bairro','CEP','Cidade']].concat(linhasExcelRota(r.pkgs));
-    var ws=XLSX.utils.aoa_to_sheet(data); ws['!cols']=[{wch:24},{wch:35},{wch:16},{wch:12},{wch:14}];
+    var data=[['Nº(s) na rota','Endereço','Bairro','CEP','Cidade','Latitude','Longitude']].concat(linhasExcelRota(r.pkgs));
+    var ws=XLSX.utils.aoa_to_sheet(data); ws['!cols']=[{wch:24},{wch:35},{wch:16},{wch:12},{wch:14},{wch:12},{wch:12}];
     XLSX.utils.book_append_sheet(wb,ws,'R'+String(r.id).padStart(2,'0')+'_'+r.motorista.split(' ')[0]);
   });
   XLSX.writeFile(wb,'PackScan_Rotas.xlsx');
@@ -1159,6 +1182,51 @@ async function salvarCorrecao() {
     st.textContent='Salvo em memória. Erro servidor: '+e.message; st.style.color='var(--amber)';
     setTimeout(function(){ fecharModal(); goTabCorrigir(); plotarPontos(); },1500);
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CORRIGIR CEP (referência manual no mapa)
+// ═══════════════════════════════════════════════════════════════════════════════
+var _cepCorrMap = null, _cepCorrMarker = null;
+
+async function cepCorrCarregarMapa() {
+  var cepDigits = document.getElementById('cepcorr-cep').value.replace(/\D/g,'');
+  var st = document.getElementById('cepcorr-status');
+  if (cepDigits.length !== 8) { st.textContent='Digite um CEP válido (8 dígitos).'; st.style.color='var(--red)'; return; }
+  st.textContent='Buscando...'; st.style.color='var(--amber)';
+  var lat=-27.6136, lng=-48.6400;
+  try {
+    var r=await fetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits,cidade:'São José'})});
+    var d=await r.json();
+    if (r.ok && d.lat) { lat=d.lat; lng=d.lng; st.textContent='✓ '+(d.enderecoFormatado||'')+' — clique no mapa pra ajustar.'; st.style.color='var(--accent)'; }
+    else { st.textContent='Sem referência ainda. Clique no mapa pra marcar o ponto.'; st.style.color='var(--amber)'; }
+  } catch(e) { st.textContent='Sem referência ainda. Clique no mapa pra marcar o ponto.'; st.style.color='var(--amber)'; }
+  setTimeout(function(){ cepCorrInitMap(lat,lng); },50);
+}
+
+function cepCorrInitMap(lat,lng) {
+  if (!_cepCorrMap) {
+    _cepCorrMap = L.map('cepcorr-map', { preferCanvas:true }).setView([lat,lng], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom:19 }).addTo(_cepCorrMap);
+    _cepCorrMarker = L.marker([lat,lng], { draggable:true }).addTo(_cepCorrMap);
+    _cepCorrMap.on('click', function(e){ _cepCorrMarker.setLatLng(e.latlng); });
+  } else {
+    _cepCorrMap.setView([lat,lng],16);
+    _cepCorrMarker.setLatLng([lat,lng]);
+  }
+  setTimeout(function(){ _cepCorrMap.invalidateSize(); },100);
+}
+
+async function cepCorrSalvar() {
+  var cepDigits = document.getElementById('cepcorr-cep').value.replace(/\D/g,'');
+  var st = document.getElementById('cepcorr-status');
+  if (cepDigits.length !== 8 || !_cepCorrMarker) { st.textContent='Carregue o mapa e marque o ponto antes de salvar.'; st.style.color='var(--red)'; return; }
+  var pos = _cepCorrMarker.getLatLng();
+  st.textContent='Salvando...'; st.style.color='var(--amber)';
+  try {
+    await fetch(BACKEND+'/api/cep/corrigir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits,lat:pos.lat,lng:pos.lng})});
+    st.textContent='✓ Referência do CEP salva! Próximos pacotes com esse CEP vão usar esse ponto.'; st.style.color='var(--green)';
+  } catch(e) { st.textContent='Erro ao salvar: '+e.message; st.style.color='var(--red)'; }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
