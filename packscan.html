@@ -180,6 +180,19 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div class="card-title">pacotes para corrigir</div>
         <div id="corrigir-content"><p style="color:var(--text3);font-family:var(--mono);font-size:12px">Geocodifique os pacotes primeiro.</p></div>
       </div>
+
+      <!-- CORREÇÕES DE NOME DE RUA -->
+      <div class="card">
+        <div class="card-title">correções de nome de rua</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:.75rem;line-height:1.5">Quando um nome de rua entra escrito errado (ex: <em>Jacob</em> em vez de <em>Jacobe</em>), cadastre aqui. O sistema corrige em <strong>todos os pacotes</strong> (atuais e futuros) e busca a localização certa no Google.</div>
+        <div class="g2" style="margin-bottom:.75rem">
+          <div><label>Como entra (errado)</label><input type="text" id="nome-de" placeholder="Jacob Ferreira de Melo"></div>
+          <div><label>Nome correto</label><input type="text" id="nome-para" placeholder="Jacobe Ferreira de Melo"></div>
+        </div>
+        <button class="btn btn-p" onclick="adicionarCorrecaoNome()">+ Adicionar e regeocodificar</button>
+        <div id="nomes-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);margin-top:.6rem;min-height:16px"></div>
+        <div id="nomes-lista" style="margin-top:.5rem"></div>
+      </div>
     </div>
 
   </div>
@@ -457,7 +470,7 @@ var DEMO = [
 function goTab(n) {
   document.querySelectorAll('.tab').forEach(function(t,i){ t.classList.toggle('active', i===n); });
   document.querySelectorAll('.page').forEach(function(p,i){ p.classList.toggle('active', i===n); });
-  if (n===0) { atualizarGeoInfo(); goTabCorrigir(); }
+  if (n===0) { atualizarGeoInfo(); goTabCorrigir(); carregarCorrecoesNome(); }
   if (n===1) {
     if (!mapaInit) { initMap(); setTimeout(function(){ if (_rotasPendentes) reconstruirRotasLocais(); else carregarRotas(); }, 800); }
     else { setTimeout(function(){ map.invalidateSize(); }, 100); plotarPontos(); }
@@ -1235,6 +1248,99 @@ async function cepCorrSalvar() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CORREÇÕES DE NOME DE RUA (lista global "errado → certo")
+// ═══════════════════════════════════════════════════════════════════════════════
+var _correcoesNome = [];
+
+// mesmo critério do backend: limite de "palavra" com acento, pra "jacob" não casar dentro de "jacobe"
+function _matchNome(texto, de) {
+  if (!texto || !de) return false;
+  var esc = de.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  try {
+    return new RegExp('(?<![\\p{L}\\p{N}])' + esc + '(?![\\p{L}\\p{N}])', 'iu').test(texto);
+  } catch(e) {
+    try { return new RegExp('\\b' + esc + '\\b', 'i').test(texto); }
+    catch(e2) { return texto.toLowerCase().indexOf(de.toLowerCase()) !== -1; }
+  }
+}
+
+async function carregarCorrecoesNome() {
+  try {
+    var r = await fetch(BACKEND + '/api/nomes');
+    var d = await r.json();
+    _correcoesNome = d.correcoes || [];
+  } catch(e) { _correcoesNome = []; }
+  renderCorrecoesNome();
+}
+
+function renderCorrecoesNome() {
+  var el = document.getElementById('nomes-lista'); if (!el) return;
+  if (!_correcoesNome.length) { el.innerHTML = '<p style="font-size:12px;color:var(--text3);font-family:var(--mono)">Nenhuma correção de nome cadastrada.</p>'; return; }
+  el.innerHTML = _correcoesNome.map(function(c) {
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;background:var(--bg3)">'
+      + '<div style="flex:1;min-width:0;font-size:13px"><span style="color:var(--red);text-decoration:line-through">'+esc(c.de)+'</span> <span style="color:var(--text3)">→</span> <strong style="color:var(--green)">'+esc(c.para)+'</strong></div>'
+      + '<button class="btn btn-r btn-sm" onclick="removerCorrecaoNome(\''+esc(c.de).replace(/'/g,"\\'")+'\')">✕</button>'
+    + '</div>';
+  }).join('');
+}
+
+async function adicionarCorrecaoNome() {
+  var de = document.getElementById('nome-de').value.trim();
+  var para = document.getElementById('nome-para').value.trim();
+  var st = document.getElementById('nomes-status');
+  if (!de || !para) { st.textContent='Preencha o nome errado e o nome correto.'; st.style.color='var(--red)'; return; }
+  if (de.toLowerCase() === para.toLowerCase()) { st.textContent='Os dois nomes são iguais.'; st.style.color='var(--red)'; return; }
+  st.textContent='Salvando correção...'; st.style.color='var(--amber)';
+  try {
+    var r = await fetch(BACKEND+'/api/nomes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de:de,para:para})});
+    var d = await r.json();
+    if (!r.ok) { st.textContent='Erro: '+(d.error||'desconhecido'); st.style.color='var(--red)'; return; }
+    _correcoesNome = d.correcoes || [];
+    renderCorrecoesNome();
+    document.getElementById('nome-de').value='';
+    document.getElementById('nome-para').value='';
+    // regeocodifica os pacotes atuais que batem com esse nome
+    var afetados = pacotes.filter(function(p){ return _matchNome(p.endereco, de) || _matchNome(p.enderecoNorm, de); });
+    if (!afetados.length) { st.textContent='✓ Correção salva. Nenhum pacote atual com esse nome — vai valer pros próximos.'; st.style.color='var(--green)'; return; }
+    var n = await regeocodificarPacotes(afetados, st);
+    st.textContent='✓ Correção salva e '+n+'/'+afetados.length+' pacote(s) regeocodificado(s).'; st.style.color='var(--green)';
+    plotarPontos(); goTabCorrigir(); atualizarGeoInfo(); persistirLocal();
+  } catch(e) { st.textContent='Erro: '+e.message; st.style.color='var(--red)'; }
+}
+
+async function removerCorrecaoNome(de) {
+  var st = document.getElementById('nomes-status');
+  try {
+    var r = await fetch(BACKEND+'/api/nomes/remover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de:de})});
+    var d = await r.json();
+    _correcoesNome = d.correcoes || [];
+    renderCorrecoesNome();
+    st.textContent='Correção removida. (Os pacotes já corrigidos continuam como estão; use "↺ Forçar reprocessar" pra reverter.)'; st.style.color='var(--text3)';
+  } catch(e) { st.textContent='Erro: '+e.message; st.style.color='var(--red)'; }
+}
+
+// regeocodifica uma lista específica de pacotes (reaproveitado pela correção de nome)
+async function regeocodificarPacotes(lista, statusEl) {
+  var n = 0;
+  for (var i=0;i<lista.length;i++) {
+    var p = lista[i];
+    try {
+      var r = await fetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep})});
+      var d = await r.json();
+      if (r.ok && d.lat) {
+        var j=(Math.random()-.5)*0.0003;
+        p.lat=d.lat+j; p.lng=d.lng+j; p.enderecoNorm=d.enderecoNormalizado; p.precisao=d.precisao;
+        if (d.cidade) p.cidade=d.cidade;
+        n++;
+      }
+    } catch(e) {}
+    if (statusEl) { statusEl.textContent='Regeocodificando... '+(i+1)+'/'+lista.length; statusEl.style.color='var(--amber)'; }
+    await new Promise(function(res){ setTimeout(res,150); });
+  }
+  return n;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // AUTO ROTAS — K-Means geográfico
 // ═══════════════════════════════════════════════════════════════════════════════
 var _arConfig = []; // [{nome, qtd, cor}]
@@ -1730,6 +1836,7 @@ function scBiparManual(codigo) {
 restaurarLocal();
 renderRegioes();
 verificarSessao();
+carregarCorrecoesNome();
 </script>
 </body>
 </html>

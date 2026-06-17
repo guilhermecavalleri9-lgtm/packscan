@@ -283,6 +283,38 @@ async function geocodificarEndereco(enderecoCompleto) {
   };
 }
 
+// ─── CORREÇÕES DE NOME DE RUA (lista global "errado → certo") ──────────────────
+const CFG_NOMES_KEY = 'cfg:nomes';
+
+async function getCorrecoesNome() {
+  const v = await supabaseGet(CFG_NOMES_KEY);
+  return Array.isArray(v) ? v : [];
+}
+async function setCorrecoesNome(lista) {
+  await supabaseSet(CFG_NOMES_KEY, lista);
+}
+
+function escRegex(s) { return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// substitui o nome errado pelo certo respeitando limite de "palavra" (com acento):
+// "jacob" → "jacobe" NÃO afeta "jacobe" (que já está certo), graças aos lookarounds.
+function aplicarCorrecoesNome(endereco, lista) {
+  if (!endereco || !lista || !lista.length) return endereco;
+  let out = endereco;
+  for (const c of lista) {
+    if (!c || !c.de || !c.para) continue;
+    try {
+      const re = new RegExp('(?<![\\p{L}\\p{N}])' + escRegex(c.de.trim()) + '(?![\\p{L}\\p{N}])', 'giu');
+      out = out.replace(re, c.para);
+    } catch(e) {
+      // fallback sem lookaround/unicode caso o runtime não suporte
+      const re = new RegExp('\\b' + escRegex(c.de.trim()) + '\\b', 'gi');
+      out = out.replace(re, c.para);
+    }
+  }
+  return out;
+}
+
 // ─── SERVER ───────────────────────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -355,10 +387,38 @@ const server = http.createServer(async (req, res) => {
     return json(res, 404, { error: 'CEP sem referência no mapa ainda' });
   }
 
+  // ─── CORREÇÕES DE NOME DE RUA ─────────────────────────────────────────────
+  if (req.method === 'GET' && pathname === '/api/nomes') {
+    return json(res, 200, { correcoes: await getCorrecoesNome() });
+  }
+  if (req.method === 'POST' && pathname === '/api/nomes') {
+    const body = await readBody(req);
+    const de = (body.de || '').trim();
+    const para = (body.para || '').trim();
+    if (!de || !para) return json(res, 400, { error: 'de e para obrigatórios' });
+    const lista = await getCorrecoesNome();
+    const filtrada = lista.filter(c => (c.de || '').toLowerCase() !== de.toLowerCase());
+    filtrada.push({ de, para });
+    await setCorrecoesNome(filtrada);
+    console.log(`[nome] "${de}" → "${para}"`);
+    return json(res, 200, { ok: true, correcoes: filtrada });
+  }
+  if (req.method === 'POST' && pathname === '/api/nomes/remover') {
+    const body = await readBody(req);
+    const de = (body.de || '').trim();
+    const lista = await getCorrecoesNome();
+    const filtrada = lista.filter(c => (c.de || '').toLowerCase() !== de.toLowerCase());
+    await setCorrecoesNome(filtrada);
+    return json(res, 200, { ok: true, correcoes: filtrada });
+  }
+
   // ─── POST /api/geocode ────────────────────────────────────────────────────
   if (req.method === 'POST' && pathname === '/api/geocode') {
     const body = await readBody(req);
-    const { endereco, bairro, cidade, cep } = body;
+    const { bairro, cidade, cep } = body;
+    // aplica correções de nome de rua ANTES de tudo, pra a busca e o cache já
+    // usarem o nome certo (vale pra pacotes atuais e futuros)
+    const endereco = aplicarCorrecoesNome(body.endereco, await getCorrecoesNome());
     if (!endereco && !cep) return json(res, 400, { error: 'endereco ou cep obrigatório' });
 
     // chave do cache
