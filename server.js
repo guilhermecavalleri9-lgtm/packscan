@@ -186,7 +186,7 @@ async function ruaPeloCep(cep) {
 
 // ─── PASSO 2: IA extrai rua bruta + número/complemento ────────────────────────
 function extrairNumeroLocal(complemento) {
-  let c = complemento
+  let c = (complemento || '')
     .replace(/portão|portao|branco|preto|amarelo|azul|verde|fundo|frente|lateral|descendo|subindo|referencia|ref\.|obs\.|entregar|fachada/gi, '')
     .replace(/CPF[\s:]*[\d.\-]+/gi, '')
     .replace(/\s{2,}/g, ' ').trim();
@@ -218,6 +218,8 @@ function extrairQuadraLote(textoBruto) {
 }
 
 async function extrairInfoIA(textoBruto, ruaCep) {
+  textoBruto = textoBruto || '';
+  if (!textoBruto.trim()) return { rua: '', complemento: 'S/N' };
   if (!ANTHROPIC_KEY) return extrairNumeroLocal(textoBruto);
 
   const prompt = `Você recebe o texto bruto de um endereço de entrega. Extraia duas coisas e responda em JSON.
@@ -336,6 +338,23 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
+  // ─── LOOKUP DE CEP (ponto de referência atual, p/ a aba Corrigir CEP) ─────
+  // leve: só resolve o CEP (cache → manual → Google), sem passar pela IA de endereço
+  if (req.method === 'POST' && pathname === '/api/cep/lookup') {
+    const body = await readBody(req);
+    const cepDigits = (body.cep || '').replace(/\D/g, '');
+    if (cepDigits.length !== 8) return json(res, 400, { error: 'cep (8 dígitos) obrigatório' });
+    const info = await ruaPeloCep(cepDigits);
+    if (info && info.lat) {
+      return json(res, 200, {
+        lat: info.lat, lng: info.lng,
+        rua: info.rua || '', bairro: info.bairro || '', cidade: info.cidade || '',
+        manual: !!info.manual
+      });
+    }
+    return json(res, 404, { error: 'CEP sem referência no mapa ainda' });
+  }
+
   // ─── POST /api/geocode ────────────────────────────────────────────────────
   if (req.method === 'POST' && pathname === '/api/geocode') {
     const body = await readBody(req);
@@ -343,7 +362,7 @@ const server = http.createServer(async (req, res) => {
     if (!endereco && !cep) return json(res, 400, { error: 'endereco ou cep obrigatório' });
 
     // chave do cache
-    const cacheKey = 'end:' + `${cep}|${endereco}`.toLowerCase().trim();
+    const cacheKey = 'end:' + `${cep || ''}|${endereco || ''}`.toLowerCase().trim();
 
     // verifica cache Supabase
     const cached = await supabaseGet(cacheKey);
@@ -420,7 +439,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (!coord) {
-        console.log(`[geocode] não encontrado: ${endereco.substring(0,40)}`);
+        console.log(`[geocode] não encontrado: ${(endereco || cep || '').substring(0,40)}`);
         return json(res, 404, { error: 'Endereço não encontrado', enderecoFinal });
       }
 

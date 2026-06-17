@@ -466,6 +466,7 @@ function goTab(n) {
   if (n===2) { renderMotList(); renderEtSelect(); }
   if (n===3) renderMotDownload();
   if (n===4) renderRegioes();
+  if (n===6 && _cepCorrMap) setTimeout(function(){ _cepCorrMap.invalidateSize(); }, 100);
   if (n!==5 && _scAtivo) scParar();
 }
 
@@ -1196,10 +1197,14 @@ async function cepCorrCarregarMapa() {
   st.textContent='Buscando...'; st.style.color='var(--amber)';
   var lat=-27.6136, lng=-48.6400;
   try {
-    var r=await fetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits,cidade:'São José'})});
+    var r=await fetch(BACKEND+'/api/cep/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits})});
     var d=await r.json();
-    if (r.ok && d.lat) { lat=d.lat; lng=d.lng; st.textContent='✓ '+(d.enderecoFormatado||'')+' — clique no mapa pra ajustar.'; st.style.color='var(--accent)'; }
-    else { st.textContent='Sem referência ainda. Clique no mapa pra marcar o ponto.'; st.style.color='var(--amber)'; }
+    if (r.ok && d.lat) {
+      lat=d.lat; lng=d.lng;
+      var ref=[d.rua,d.bairro,d.cidade].filter(Boolean).join(', ');
+      st.textContent=(d.manual?'📍 Ponto manual salvo':'≈ Referência do Google')+(ref?' — '+ref:'')+'. Clique no mapa pra ajustar.';
+      st.style.color=d.manual?'var(--green)':'var(--accent)';
+    } else { st.textContent='Sem referência ainda. Clique no mapa pra marcar o ponto.'; st.style.color='var(--amber)'; }
   } catch(e) { st.textContent='Sem referência ainda. Clique no mapa pra marcar o ponto.'; st.style.color='var(--amber)'; }
   setTimeout(function(){ cepCorrInitMap(lat,lng); },50);
 }
