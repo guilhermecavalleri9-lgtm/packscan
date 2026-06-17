@@ -192,7 +192,10 @@ function extrairNumeroLocal(complemento) {
     .replace(/\s{2,}/g, ' ').trim();
   c = c.replace(/^(Rua|Av|Avenida|Travessa|Alameda)\s+[^,\d]+[,\s]+/i, '').trim();
   const nums = c.match(/\d[\d\s]*(?:ap(?:to)?\.?\s*\d+)?(?:\s*bloco\s*\w+)?/i);
-  return { rua: '', complemento: nums ? nums[0].trim() : (c.substring(0, 30) || 'S/N') };
+  if (nums) return { rua: '', complemento: nums[0].trim() };
+  const ql = extrairQuadraLote(complemento);
+  if (ql) return { rua: '', complemento: ql };
+  return { rua: '', complemento: c.substring(0, 30) || 'S/N' };
 }
 
 function complementoValido(c) {
@@ -200,6 +203,14 @@ function complementoValido(c) {
   if (c.length > 40) return false;
   if (/identificad|informa[cç][aã]o dispon[íi]vel|n[aã]o h[aá]\b|nenhum|sem n[uú]mero|fornecido|n[aã]o (foi|encontr)/i.test(c)) return false;
   return true;
+}
+
+// rede de segurança determinística: pega quadra/lote do texto bruto mesmo que a IA não tenha pego
+function extrairQuadraLote(textoBruto) {
+  const qd = textoBruto.match(/\b(?:quadra|qd|q)\.?\s*(\w+)/i);
+  const lt = textoBruto.match(/\b(?:lote|lt)\.?\s*(\w+)/i);
+  if (!qd && !lt) return '';
+  return [qd ? `Quadra ${qd[1]}` : '', lt ? `Lote ${lt[1]}` : ''].filter(Boolean).join(', ');
 }
 
 async function extrairInfoIA(textoBruto, ruaCep) {
@@ -212,12 +223,12 @@ Texto bruto do endereço: "${textoBruto}"
 
 Extraia:
 1. "rua": se o texto bruto MENCIONAR um nome de rua/avenida (ex: "Rua Antônio Jovita Duarte", "Av Lisboa"), copie esse nome exatamente como está escrito (mesmo com pequenos erros de digitação), SEM o número. Se o texto bruto não mencionar nenhuma rua, deixe "".
-2. "complemento": o identificador necessário para localizar o imóvel — NUNCA deixe vazio se houver QUALQUER informação útil. Use esta prioridade:
+2. "complemento": o identificador necessário para localizar o imóvel — NUNCA deixe vazio se houver QUALQUER informação útil, e PROCURE ATIVAMENTE por quadra/lote no texto antes de desistir. Use esta prioridade:
    - Número da casa/prédio: "158 casa 2" → "158, Casa 2"
    - Apartamento/Bloco: "3147 ap 201 bloco 23" → "3147, Ap 201, Bloco 23"
-   - Quadra/Lote (mesmo sem número de casa): "Q39" → "Quadra 39" | "s/n Q 49 LT 01" → "Quadra 49, Lote 1"
-   - Nome de comércio/loja/condomínio quando não há número: "Loja Space Car Filmes" → "Loja Space Car Filmes" | "Agropecuária da Família" → "Agropecuária da Família"
-   - Se realmente não houver nada aproveitável, use "S/N"
+   - Quadra/Lote — SEMPRE que aparecer "Q", "QD", "Quadra", "LT" ou "Lote" no texto, mesmo sem número de casa, mesmo abreviado ou colado em outras palavras: "Q39" → "Quadra 39" | "s/n Q 49 LT 01" → "Quadra 49, Lote 1" | "quadra 04 lote 12" → "Quadra 4, Lote 12"
+   - Nome de comércio/loja/condomínio quando não há número nem quadra/lote: "Loja Space Car Filmes" → "Loja Space Car Filmes" | "Agropecuária da Família" → "Agropecuária da Família"
+   - Se DE FATO não houver nenhum número, quadra/lote ou nome de comércio em lugar nenhum do texto, use exatamente "S/N" (nunca escreva frases explicando que não achou nada — só "S/N").
    Remova: cores de portão, referências, CPF, nomes de pessoas, observações de entrega (ex: "deixar com vizinho").
 
 Responda APENAS com um JSON válido de uma linha, sem markdown: {"rua":"...","complemento":"..."}`;
@@ -232,7 +243,11 @@ Responda APENAS com um JSON válido de uma linha, sem markdown: {"rua":"...","co
     if (match) {
       const parsed = JSON.parse(match[0]);
       const complBruto = (parsed.complemento || '').trim();
-      const compl = complementoValido(complBruto) ? complBruto : 'S/N';
+      let compl = complementoValido(complBruto) ? complBruto : 'S/N';
+      if (compl === 'S/N') {
+        const ql = extrairQuadraLote(textoBruto);
+        if (ql) compl = ql;
+      }
       console.log(`[ia] "${textoBruto.substring(0,30)}" → rua:"${parsed.rua||''}" compl:"${compl}"`);
       return { rua: (parsed.rua || '').trim(), complemento: compl };
     }
@@ -378,12 +393,21 @@ const server = http.createServer(async (req, res) => {
       // fallback 5 (último recurso): coordenada aproximada do CEP — fica marcado pra corrigir
       if (!coord && cepInfo.lat) {
         coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
-        enderecoFinal = `CEP ${cep} (sem rua/número identificado — corrigir manualmente)`;
+        enderecoFinal = ruaCep
+          ? `${ruaCep}, ${complemento}, ${cidadeFinal}, SC, Brasil (aprox. — corrigir manualmente)`
+          : `CEP ${cep} (sem rua/número identificado — corrigir manualmente)`;
       }
 
       if (!coord) {
         console.log(`[geocode] não encontrado: ${endereco.substring(0,40)}`);
         return json(res, 404, { error: 'Endereço não encontrado', enderecoFinal });
+      }
+
+      // exibição final pro motorista: prioriza nome de rua real (do texto, do Google ou do CEP)
+      // — nunca mostra só o CEP cru se alguma rua já foi identificada em algum momento
+      const ruaParaExibir = info.rua || coord.logradouro || ruaCep || '';
+      if (ruaParaExibir && coord.precisao !== 'APPROXIMATE') {
+        enderecoFinal = `${ruaParaExibir}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
       }
 
       const resultado = { ...coord, cidade: coord.cidade || cidadeFinal, enderecoNormalizado: enderecoFinal, ruaCep, ruaTexto: info.rua, complemento, fromCache: false };
