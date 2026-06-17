@@ -561,7 +561,7 @@ async function iniciarGeo(forcar) {
         var j=(Math.random()-.5)*0.0003;
         p.lat=d.lat+j; p.lng=d.lng+j; p.enderecoNorm=d.enderecoNormalizado; p.precisao=d.precisao;
         if (d.bairro&&!p.bairro) p.bairro=d.bairro;
-        if (d.cidade&&!p.cidade) p.cidade=d.cidade;
+        if (d.cidade) p.cidade=d.cidade;
         var prec = d.precisao==='ROOFTOP'?'📍':d.precisao==='RANGE_INTERPOLATED'?'~':'≈';
         var cls = d.fromCache?'cache':'ok';
         if (d.fromCache) cntCache++; else cntOk++;

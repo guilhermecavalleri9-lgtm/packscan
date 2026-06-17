@@ -195,6 +195,13 @@ function extrairNumeroLocal(complemento) {
   return { rua: '', complemento: nums ? nums[0].trim() : (c.substring(0, 30) || 'S/N') };
 }
 
+function complementoValido(c) {
+  if (!c) return false;
+  if (c.length > 40) return false;
+  if (/identificad|informa[cç][aã]o dispon[íi]vel|n[aã]o h[aá]\b|nenhum|sem n[uú]mero|fornecido|n[aã]o (foi|encontr)/i.test(c)) return false;
+  return true;
+}
+
 async function extrairInfoIA(textoBruto, ruaCep) {
   if (!ANTHROPIC_KEY) return extrairNumeroLocal(textoBruto);
 
@@ -224,8 +231,10 @@ Responda APENAS com um JSON válido de uma linha, sem markdown: {"rua":"...","co
     const match = texto.match(/\{[\s\S]*\}/);
     if (match) {
       const parsed = JSON.parse(match[0]);
-      console.log(`[ia] "${textoBruto.substring(0,30)}" → rua:"${parsed.rua||''}" compl:"${parsed.complemento||''}"`);
-      return { rua: (parsed.rua || '').trim(), complemento: (parsed.complemento || 'S/N').trim() };
+      const complBruto = (parsed.complemento || '').trim();
+      const compl = complementoValido(complBruto) ? complBruto : 'S/N';
+      console.log(`[ia] "${textoBruto.substring(0,30)}" → rua:"${parsed.rua||''}" compl:"${compl}"`);
+      return { rua: (parsed.rua || '').trim(), complemento: compl };
     }
   } catch(e) { console.error('[ia] erro:', e.message); }
   return extrairNumeroLocal(textoBruto);
@@ -326,7 +335,8 @@ const server = http.createServer(async (req, res) => {
       const ruaCep = cepInfo.rua;
       const info = await extrairInfoIA(endereco, ruaCep);
       const complemento = info.complemento || 'S/N';
-      const cidadeFinal = cepInfo.cidade || cidade || 'São José';
+      const cidadeValida = cidade && !/^\d+$/.test(cidade) ? cidade : '';
+      const cidadeFinal = cepInfo.cidade || cidadeValida || 'São José';
 
       let enderecoFinal, coord;
 
@@ -367,7 +377,7 @@ const server = http.createServer(async (req, res) => {
 
       // fallback 5 (último recurso): coordenada aproximada do CEP — fica marcado pra corrigir
       if (!coord && cepInfo.lat) {
-        coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE' };
+        coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
         enderecoFinal = `CEP ${cep} (sem rua/número identificado — corrigir manualmente)`;
       }
 
@@ -376,7 +386,7 @@ const server = http.createServer(async (req, res) => {
         return json(res, 404, { error: 'Endereço não encontrado', enderecoFinal });
       }
 
-      const resultado = { ...coord, enderecoNormalizado: enderecoFinal, ruaCep, ruaTexto: info.rua, complemento, fromCache: false };
+      const resultado = { ...coord, cidade: coord.cidade || cidadeFinal, enderecoNormalizado: enderecoFinal, ruaCep, ruaTexto: info.rua, complemento, fromCache: false };
       await supabaseSet(cacheKey, resultado);
       console.log(`[geocode] ✓ ${enderecoFinal.substring(0,55)} (${coord.precisao})`);
       return json(res, 200, resultado);
