@@ -568,18 +568,21 @@ function atualizarGeoInfo() {
 // GEOCODIFICAR
 // ═══════════════════════════════════════════════════════════════════════════════
 function extrairRuaCandidata(texto) {
-  var prefixRe = /^(rua|r\.?|av\.?|avenida|travessa|trav\.?|alameda|al\.?|estrada|rod\.?|rodovia)$/i;
-  var stopWords = /^(bl|bloco|aptos?|apto?|ap|casa|quadra|qd|lote|lt|fundos|sobrado|kitnet|cond|condominio|residencial|predio|edificio|edif|torre|sala|loja|galpao|km|portao|portão)$/i;
+  var palavraRua = /^(rua|r\.?|av\.?|avenida|travessa|trav\.?|alameda|al\.?|estrada|rod\.?|rodovia)$/i;
+  var stopWords = /^(bl|bloco|aptos?|apto?|ap|casa|quadra|qd|lote|lt|fundos|sobrado|kitnet|cond|condominio|residencial|predio|edificio|edif|torre|sala|loja|galpao|km|portao|portão|numero|número|num|nº|n°|n\.)$/i;
   var words = String(texto||'').trim().split(/\s+/);
-  if (!words.length || !prefixRe.test(words[0])) return '';
-  var out = [words[0]];
-  for (var i=1;i<words.length;i++) {
-    var w = words[i];
-    if (/\d/.test(w)) break;
-    if (stopWords.test(w.replace(/[.,]/g,''))) break;
-    out.push(w);
+  for (var start=0; start<words.length; start++) {
+    if (!palavraRua.test(words[start].replace(/[.,]/g,''))) continue;
+    var out = [words[start]];
+    for (var i=start+1;i<words.length;i++) {
+      var w = words[i];
+      if (/\d/.test(w)) break;
+      if (stopWords.test(w.replace(/[.,]/g,''))) break;
+      out.push(w);
+    }
+    if (out.length > 1) return out.join(' ').replace(/[,.\s]+$/,'');
   }
-  return out.length > 1 ? out.join(' ').replace(/[,.\s]+$/,'') : '';
+  return '';
 }
 function montarCepRuaMap() {
   var mapa = {};
