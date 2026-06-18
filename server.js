@@ -397,6 +397,26 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
+  // ─── BUSCAR RUA AUTOMATICAMENTE PELO CEP (via ViaCEP/Correios, sem usar o mapa) ──
+  if (req.method === 'POST' && pathname === '/api/cep/autocompletar') {
+    const body = await readBody(req);
+    const cepDigits = (body.cep || '').replace(/\D/g, '');
+    if (cepDigits.length !== 8) return json(res, 400, { error: 'cep (8 dígitos) obrigatório' });
+    try {
+      const d = await httpsGet('viacep.com.br', `/ws/${cepDigits}/json/`);
+      if (d.erro || !d.logradouro) return json(res, 404, { error: 'CEP sem logradouro cadastrado nos Correios' });
+      const cepKey = 'cep:' + cepDigits;
+      const anterior = (await supabaseGet(cepKey)) || { rua: '', bairro: '', cidade: '' };
+      const atualizado = { ...anterior, rua: d.logradouro, bairro: anterior.bairro || d.bairro || '', cidade: anterior.cidade || d.localidade || '' };
+      await supabaseSet(cepKey, atualizado);
+      console.log(`[cep-autocompletar] ${cepDigits} → ${d.logradouro}`);
+      return json(res, 200, { ok: true, rua: d.logradouro, bairro: atualizado.bairro, cidade: atualizado.cidade });
+    } catch(e) {
+      console.error('[cep-autocompletar]', e.message);
+      return json(res, 502, { error: 'Erro ao consultar ViaCEP' });
+    }
+  }
+
   // ─── LOOKUP DE CEP (ponto de referência atual, p/ a aba Corrigir CEP) ─────
   // leve: só resolve o CEP (cache → manual → Google), sem passar pela IA de endereço
   if (req.method === 'POST' && pathname === '/api/cep/lookup') {
