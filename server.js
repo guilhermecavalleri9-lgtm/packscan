@@ -173,12 +173,23 @@ function supabaseRequest(method, path, body, extraHeaders) {
 }
 
 // ─── PASSO 1: rua pelo CEP via Google ────────────────────────────────────────
+// Correios (ViaCEP) muitas vezes sabem o logradouro oficial de um CEP mesmo quando o
+// reverse-geocode do Google só retorna nível de bairro (sem componente "route")
+async function buscarRuaViaCep(cep) {
+  try {
+    const d = await httpsGet('viacep.com.br', `/ws/${cep}/json/`);
+    if (d && !d.erro && d.logradouro) return { rua: d.logradouro, bairro: d.bairro || '', cidade: d.localidade || '' };
+  } catch(e) { console.error(`[viacep] erro ${cep}:`, e.message); }
+  return null;
+}
+
 async function ruaPeloCep(cep) {
   if (!cep || cep.length !== 8) return { rua: '', bairro: '', cidade: '' };
   const cepKey = 'cep:' + cep;
   const cached = await supabaseGet(cepKey);
-  if (cached) { console.log(`[cep-cache] ${cep}`); return cached; }
+  if (cached && (cached.rua || cached.manual)) { console.log(`[cep-cache] ${cep}`); return cached; }
 
+  let resultado = cached || { rua: '', bairro: '', cidade: '' };
   const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
   const query = encodeURIComponent(`${cepFmt}, Brasil`);
   try {
@@ -193,21 +204,31 @@ async function ruaPeloCep(cep) {
       const estado = get('administrative_area_level_1');
       // valida que é SC e Grande Florianópolis
       if ((estado === 'Santa Catarina' || estado === 'SC') && lat >= -28.5 && lat <= -26.5) {
-        const resultado = {
+        resultado = {
           rua: get('route'),
           bairro: get('sublocality_level_1') || get('sublocality') || get('neighborhood'),
           cidade: get('administrative_area_level_2'),
           lat, lng
         };
-        await supabaseSet(cepKey, resultado);
-        console.log(`[cep] ${cep} → ${resultado.rua || '(sem rua)'}, ${resultado.cidade}`);
-        return resultado;
       } else {
         console.log(`[cep] ${cep} → resultado inválido (${estado}) — ignorado`);
       }
     }
   } catch(e) { console.error(`[cep] erro ${cep}:`, e.message); }
-  return { rua: '', bairro: '', cidade: '' };
+
+  // Google não trouxe rua (CEP genérico de bairro) — tenta nos Correios antes de desistir
+  if (!resultado.rua) {
+    const viaCep = await buscarRuaViaCep(cep);
+    if (viaCep && viaCep.rua) {
+      resultado = { ...resultado, rua: viaCep.rua, bairro: resultado.bairro || viaCep.bairro, cidade: resultado.cidade || viaCep.cidade };
+    }
+  }
+
+  if (resultado.rua || resultado.lat) {
+    await supabaseSet(cepKey, resultado);
+    console.log(`[cep] ${cep} → ${resultado.rua || '(sem rua)'}, ${resultado.cidade}`);
+  }
+  return resultado;
 }
 
 // ─── PASSO 2: IA extrai rua bruta + número/complemento ────────────────────────
@@ -403,14 +424,14 @@ const server = http.createServer(async (req, res) => {
     const cepDigits = (body.cep || '').replace(/\D/g, '');
     if (cepDigits.length !== 8) return json(res, 400, { error: 'cep (8 dígitos) obrigatório' });
     try {
-      const d = await httpsGet('viacep.com.br', `/ws/${cepDigits}/json/`);
-      if (d.erro || !d.logradouro) return json(res, 404, { error: 'CEP sem logradouro cadastrado nos Correios' });
+      const viaCep = await buscarRuaViaCep(cepDigits);
+      if (!viaCep) return json(res, 404, { error: 'CEP sem logradouro cadastrado nos Correios' });
       const cepKey = 'cep:' + cepDigits;
       const anterior = (await supabaseGet(cepKey)) || { rua: '', bairro: '', cidade: '' };
-      const atualizado = { ...anterior, rua: d.logradouro, bairro: anterior.bairro || d.bairro || '', cidade: anterior.cidade || d.localidade || '' };
+      const atualizado = { ...anterior, rua: viaCep.rua, bairro: anterior.bairro || viaCep.bairro || '', cidade: anterior.cidade || viaCep.cidade || '' };
       await supabaseSet(cepKey, atualizado);
-      console.log(`[cep-autocompletar] ${cepDigits} → ${d.logradouro}`);
-      return json(res, 200, { ok: true, rua: d.logradouro, bairro: atualizado.bairro, cidade: atualizado.cidade });
+      console.log(`[cep-autocompletar] ${cepDigits} → ${viaCep.rua}`);
+      return json(res, 200, { ok: true, rua: viaCep.rua, bairro: atualizado.bairro, cidade: atualizado.cidade });
     } catch(e) {
       console.error('[cep-autocompletar]', e.message);
       return json(res, 502, { error: 'Erro ao consultar ViaCEP' });
