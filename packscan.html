@@ -1283,7 +1283,12 @@ async function cepCorrSalvar() {
   st.textContent='Salvando...'; st.style.color='var(--amber)';
   try {
     await fetch(BACKEND+'/api/cep/corrigir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits,lat:pos.lat,lng:pos.lng})});
-    st.textContent='✓ Referência do CEP salva! Próximos pacotes com esse CEP vão usar esse ponto.'; st.style.color='var(--green)';
+    var afetados = pacotes.filter(function(p){ return (p.cep||'').replace(/\D/g,'')===cepDigits && p.precisao!=='MANUAL' && p.precisao!=='ROOFTOP' && p.precisao!=='RANGE_INTERPOLATED'; });
+    if (!afetados.length) { st.textContent='✓ Referência do CEP salva. Nenhum pacote atual com esse CEP — vai valer pros próximos.'; st.style.color='var(--green)'; return; }
+    st.textContent='Referência salva. Regeocodificando '+afetados.length+' pacote(s) atual(is)...'; st.style.color='var(--amber)';
+    var n = await regeocodificarPacotes(afetados, st);
+    st.textContent='✓ Referência salva e '+n+'/'+afetados.length+' pacote(s) atual(is) atualizado(s).'; st.style.color='var(--green)';
+    plotarPontos(); goTabCorrigir(); atualizarGeoInfo(); persistirLocal();
   } catch(e) { st.textContent='Erro ao salvar: '+e.message; st.style.color='var(--red)'; }
 }
 
