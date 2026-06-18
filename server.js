@@ -492,8 +492,8 @@ const server = http.createServer(async (req, res) => {
     // chave do cache
     const cacheKey = 'end:' + `${cep || ''}|${endereco || ''}`.toLowerCase().trim();
 
-    // verifica cache Supabase
-    const cached = await supabaseGet(cacheKey);
+    // verifica cache Supabase (a menos que "forcar" peça pra ignorar e regeocodificar)
+    const cached = body.forcar ? null : await supabaseGet(cacheKey);
     if (cached) {
       console.log(`[cache] ${(endereco||cep||'').substring(0,35)}`);
       return json(res, 200, { ...cached, fromCache: true });

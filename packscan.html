@@ -633,7 +633,7 @@ async function iniciarGeo(forcar) {
     try {
       var r = await fetch(BACKEND+'/api/geocode', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||''})
+        body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:!!forcar})
       });
       var d = await r.json();
       if (r.ok && d.lat) {
@@ -1400,7 +1400,7 @@ async function regeocodificarPacotes(lista, statusEl) {
   for (var i=0;i<lista.length;i++) {
     var p = lista[i];
     try {
-      var r = await fetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||''})});
+      var r = await fetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:true})});
       var d = await r.json();
       if (r.ok && d.lat) {
         var j=(Math.random()-.5)*0.0003;
