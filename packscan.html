@@ -387,6 +387,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div style="display:flex;align-items:flex-end"><button class="btn btn-sm" onclick="cepCorrCarregarMapa()" style="width:100%">🔍 Carregar no mapa</button></div>
       </div>
       <div style="margin-bottom:.75rem">
+        <label>Nome da rua (opcional, se o Google não souber)</label>
+        <input type="text" id="cepcorr-rua" placeholder="Rua Exemplo da Silva">
+      </div>
+      <div style="margin-bottom:.75rem">
         <label>Clique no mapa onde fica esse CEP</label>
         <div id="cepcorr-map" style="height:320px;border-radius:var(--radius);overflow:hidden;margin-top:4px"></div>
       </div>
@@ -1252,8 +1256,10 @@ async function cepCorrCarregarMapa() {
   try {
     var r=await fetch(BACKEND+'/api/cep/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits})});
     var d=await r.json();
+    document.getElementById('cepcorr-rua').value = '';
     if (r.ok && d.lat) {
       lat=d.lat; lng=d.lng;
+      document.getElementById('cepcorr-rua').value = d.rua || '';
       var ref=[d.rua,d.bairro,d.cidade].filter(Boolean).join(', ');
       st.textContent=(d.manual?'📍 Ponto manual salvo':'≈ Referência do Google')+(ref?' — '+ref:'')+'. Clique no mapa pra ajustar.';
       st.style.color=d.manual?'var(--green)':'var(--accent)';
@@ -1280,9 +1286,10 @@ async function cepCorrSalvar() {
   var st = document.getElementById('cepcorr-status');
   if (cepDigits.length !== 8 || !_cepCorrMarker) { st.textContent='Carregue o mapa e marque o ponto antes de salvar.'; st.style.color='var(--red)'; return; }
   var pos = _cepCorrMarker.getLatLng();
+  var ruaCorrigida = document.getElementById('cepcorr-rua').value.trim();
   st.textContent='Salvando...'; st.style.color='var(--amber)';
   try {
-    await fetch(BACKEND+'/api/cep/corrigir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits,lat:pos.lat,lng:pos.lng})});
+    await fetch(BACKEND+'/api/cep/corrigir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits,lat:pos.lat,lng:pos.lng,rua:ruaCorrigida})});
     var afetados = pacotes.filter(function(p){ return (p.cep||'').replace(/\D/g,'')===cepDigits && p.precisao!=='MANUAL' && p.precisao!=='ROOFTOP' && p.precisao!=='RANGE_INTERPOLATED'; });
     if (!afetados.length) { st.textContent='✓ Referência do CEP salva. Nenhum pacote atual com esse CEP — vai valer pros próximos.'; st.style.color='var(--green)'; return; }
     st.textContent='Referência salva. Regeocodificando '+afetados.length+' pacote(s) atual(is)...'; st.style.color='var(--amber)';

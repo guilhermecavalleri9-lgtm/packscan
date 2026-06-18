@@ -390,7 +390,8 @@ const server = http.createServer(async (req, res) => {
     if (cepDigits.length !== 8 || !lat || !lng) return json(res, 400, { error: 'cep (8 dígitos), lat, lng obrigatórios' });
     const cepKey = 'cep:' + cepDigits;
     const anterior = (await supabaseGet(cepKey)) || { rua: '', bairro: '', cidade: '' };
-    const atualizado = { ...anterior, lat, lng, manual: true };
+    const ruaCorrigida = (body.rua || '').trim();
+    const atualizado = { ...anterior, lat, lng, manual: true, rua: ruaCorrigida || anterior.rua || '' };
     await supabaseSet(cepKey, atualizado);
     console.log(`[cep-correcao] ${cepDigits} → ${lat},${lng}`);
     return json(res, 200, { ok: true });
