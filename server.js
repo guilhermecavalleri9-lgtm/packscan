@@ -110,6 +110,32 @@ async function supabaseSet(cacheKey, coordData) {
   } catch(e) { console.error('[supabase set]', e.message); }
 }
 
+// procura, em pacotes já geocodificados antes (qualquer importação, não só o lote
+// atual), uma rua resolvida pra esse CEP — útil quando o texto do pacote atual e a
+// referência do Google pro CEP não trazem nome de rua nenhum
+async function buscarRuaApreendidaPorCep(cep) {
+  if (!cep) return '';
+  const prefixo = `end:${cep}|`;
+  for (const k in memoriaCache) {
+    if (k.indexOf(prefixo) === 0) {
+      const c = memoriaCache[k];
+      if (c && c.logradouro && c.logradouro.trim()) return c.logradouro.trim();
+    }
+  }
+  if (!SUPABASE_URL || !SUPABASE_KEY) return '';
+  try {
+    const r = await supabaseRequest('GET',
+      `/rest/v1/geo_cache?cache_key=like.${encodeURIComponent(prefixo + '*')}&select=coord_data&limit=20`
+    );
+    if (r.status >= 300 || !Array.isArray(r.body)) return '';
+    for (const row of r.body) {
+      const c = row.coord_data;
+      if (c && c.logradouro && c.logradouro.trim()) return c.logradouro.trim();
+    }
+  } catch(e) { console.error('[cep-rua-cache]', e.message); }
+  return '';
+}
+
 async function supabaseClear() {
   Object.keys(memoriaCache).forEach(k => delete memoriaCache[k]);
   if (!SUPABASE_URL || !SUPABASE_KEY) return;
@@ -463,6 +489,31 @@ const server = http.createServer(async (req, res) => {
       if (!coord && ruaCep) {
         enderecoFinal = `${ruaCep}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
         coord = await geocodificarEndereco(enderecoFinal);
+      }
+
+      // fallback 1.4: nem o texto nem o Google sabem a rua do CEP — busca no CACHE
+      // (qualquer pacote já geocodificado antes pra esse CEP, de qualquer importação)
+      if (!coord && !ruaCep && cep) {
+        const ruaCache = await buscarRuaApreendidaPorCep(cep);
+        if (ruaCache) {
+          enderecoFinal = `${ruaCache}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
+          coord = await geocodificarEndereco(enderecoFinal);
+          if (coord) await supabaseSet('cep:' + cep.replace(/\D/g,''), { ...cepInfo, rua: ruaCache, cidade: cidadeFinal });
+        }
+      }
+
+      // fallback 1.5: nem o texto, nem o Google, nem o cache sabem a rua do CEP — usa a
+      // rua de outro pacote do MESMO CEP no lote atual (frontend manda em ruaSugerida),
+      // já que é muito comum o mesmo CEP cobrir só uma rua e o motorista escrever a rua
+      // só uma vez por lote
+      const ruaSugerida = (body.ruaSugerida || '').trim();
+      if (!coord && !ruaCep && ruaSugerida) {
+        enderecoFinal = `${ruaSugerida}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
+        coord = await geocodificarEndereco(enderecoFinal);
+        if (coord && cep) {
+          // aprende essa rua pro CEP, beneficia próximos lotes também
+          await supabaseSet('cep:' + cep.replace(/\D/g,''), { ...cepInfo, rua: ruaSugerida, cidade: cidadeFinal });
+        }
       }
 
       // fallback 2: complemento contém nome de comércio/condomínio identificável — busca direto
