@@ -325,7 +325,11 @@ async function geocodificarValidado(enderecoCompleto, cepInfo) {
   const coord = await geocodificarEndereco(enderecoCompleto);
   if (coord && cepInfo && cepInfo.lat) {
     const d = distanciaKm(coord.lat, coord.lng, cepInfo.lat, cepInfo.lng);
-    if (d > 4) {
+    // se o ponto do CEP já foi corrigido manualmente, é uma referência precisa (não um
+    // centroide aproximado do Google) — exige proximidade bem maior antes de confiar num
+    // resultado de texto/cache que possa ser uma rua homônima errada
+    const limite = cepInfo.manual ? 1 : 4;
+    if (d > limite) {
       console.log(`[geocode] descartado (${d.toFixed(1)}km do CEP): ${enderecoCompleto}`);
       return null;
     }
@@ -544,10 +548,12 @@ const server = http.createServer(async (req, res) => {
       let enderecoFinal, coord;
 
       // melhor caso: rua MENCIONADA NO PRÓPRIO TEXTO (mais confiável que a rua do CEP,
-      // que é só uma aproximação do Google e pode estar errada para a região)
+      // que é só uma aproximação do Google e pode estar errada para a região) — mas ainda
+      // valida distância, já que erro de digitação no texto pode casar com uma rua homônima
+      // bem longe (ex: "Maria Saturnina de Jesus" → rua errada em outro bairro)
       if (info.rua) {
         enderecoFinal = `${info.rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarEndereco(enderecoFinal);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo);
       }
 
       // fallback 1: rua do CEP + complemento (quando o texto não tinha nome de rua)
@@ -584,7 +590,7 @@ const server = http.createServer(async (req, res) => {
       // fallback 2: complemento contém nome de comércio/condomínio identificável — busca direto
       if (!coord && complemento && complemento !== 'S/N' && !/^\d/.test(complemento)) {
         enderecoFinal = `${complemento}, ${bairro||''}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarEndereco(enderecoFinal);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo);
       }
 
       // fallback 3: endereço bruto completo, limpo (cobre casos que a IA não capturou bem)
@@ -593,7 +599,7 @@ const server = http.createServer(async (req, res) => {
           .replace(/portão|portao|branco|preto|referencia|ref\.|obs\.|entregar|fachada|descendo|subindo/gi, '')
           .replace(/\s{2,}/g,' ').trim();
         enderecoFinal = `${endLimpo}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarEndereco(enderecoFinal);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo);
       }
 
       // fallback 3.5: nenhuma tentativa de rua deu num resultado confiável, mas o CEP já
