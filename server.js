@@ -539,7 +539,7 @@ const server = http.createServer(async (req, res) => {
 
       // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
       const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,'')) : { rua:'', bairro:'', cidade:'' };
-      const ruaCep = cepInfo.rua;
+      let ruaCep = cepInfo.rua;
       const info = await extrairInfoIA(endereco, ruaCep);
       const complemento = info.complemento || 'S/N';
       const cidadeValida = cidade && !/^\d+$/.test(cidade) ? cidade : '';
@@ -602,6 +602,24 @@ const server = http.createServer(async (req, res) => {
         coord = await geocodificarValidado(enderecoFinal, cepInfo);
       }
 
+      // fallback 3.6: nada bateu até aqui (texto, rua do Google pro CEP, cache, sugestão) —
+      // confirma direto com os Correios (ViaCEP) qual é o nome oficial da rua do CEP antes de
+      // desistir pro ponto manual/aproximado; cobre os casos em que o Google sabia ALGUMA rua
+      // pro CEP (errada/genérica) e por isso nunca chegou a consultar o ViaCEP em ruaPeloCep
+      if (!coord && cep) {
+        const cepDigitsLimpo = cep.replace(/\D/g,'');
+        const ruaOficial = await buscarRuaViaCep(cepDigitsLimpo);
+        if (ruaOficial && ruaOficial.rua && ruaOficial.rua !== ruaCep) {
+          enderecoFinal = `${ruaOficial.rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
+          coord = await geocodificarValidado(enderecoFinal, cepInfo);
+          if (coord) {
+            ruaCep = ruaOficial.rua;
+            await supabaseSet('cep:' + cepDigitsLimpo, { ...cepInfo, rua: ruaOficial.rua, cidade: cidadeFinal });
+            console.log(`[geocode] rua corrigida via ViaCEP pro CEP ${cepDigitsLimpo}: ${ruaOficial.rua}`);
+          }
+        }
+      }
+
       // fallback 3.5: nenhuma tentativa de rua deu num resultado confiável, mas o CEP já
       // foi corrigido manualmente no mapa — usa esse ponto direto, é mais confiável que um
       // chute novo do Google em cima do CEP cru
@@ -624,6 +642,16 @@ const server = http.createServer(async (req, res) => {
       if (!coord) {
         console.log(`[geocode] não encontrado: ${(endereco || cep || '').substring(0,40)}`);
         return json(res, 404, { error: 'Endereço não encontrado', enderecoFinal });
+      }
+
+      // antes de cair pro bairro na exibição, confirma uma última vez com os Correios se eles
+      // sabem o nome da rua do CEP — evita mostrar só o bairro quando dá pra mostrar a rua certa
+      if (!info.rua && !coord.logradouro && !ruaCep && cep) {
+        const ruaOficialDisplay = await buscarRuaViaCep(cep.replace(/\D/g,''));
+        if (ruaOficialDisplay && ruaOficialDisplay.rua) {
+          ruaCep = ruaOficialDisplay.rua;
+          await supabaseSet('cep:' + cep.replace(/\D/g,''), { ...cepInfo, rua: ruaOficialDisplay.rua, cidade: cidadeFinal });
+        }
       }
 
       // exibição final pro motorista: NUNCA mostra o CEP cru.
