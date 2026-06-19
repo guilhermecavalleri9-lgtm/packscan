@@ -310,6 +310,29 @@ Responda APENAS com um JSON válido de uma linha, sem markdown: {"rua":"...","co
 
 
 // ─── PASSO 3: geocodifica endereço completo ───────────────────────────────────
+function distanciaKm(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// quando a rua usada na busca veio de uma fonte indireta (CEP, cache, sugestão de pacote
+// vizinho), o Google às vezes "corrige" o nome pra uma rua homônima/parecida em outro bairro
+// inteiro — descarta o resultado se ficar longe demais do ponto conhecido do CEP
+async function geocodificarValidado(enderecoCompleto, cepInfo) {
+  const coord = await geocodificarEndereco(enderecoCompleto);
+  if (coord && cepInfo && cepInfo.lat) {
+    const d = distanciaKm(coord.lat, coord.lng, cepInfo.lat, cepInfo.lng);
+    if (d > 4) {
+      console.log(`[geocode] descartado (${d.toFixed(1)}km do CEP): ${enderecoCompleto}`);
+      return null;
+    }
+  }
+  return coord;
+}
+
 async function geocodificarEndereco(enderecoCompleto) {
   const query = encodeURIComponent(enderecoCompleto);
   const d = await httpsGet('maps.googleapis.com',
@@ -530,7 +553,7 @@ const server = http.createServer(async (req, res) => {
       // fallback 1: rua do CEP + complemento (quando o texto não tinha nome de rua)
       if (!coord && ruaCep) {
         enderecoFinal = `${ruaCep}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarEndereco(enderecoFinal);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo);
       }
 
       // fallback 1.4: nem o texto nem o Google sabem a rua do CEP — busca no CACHE
@@ -539,7 +562,7 @@ const server = http.createServer(async (req, res) => {
         const ruaCache = await buscarRuaApreendidaPorCep(cep);
         if (ruaCache) {
           enderecoFinal = `${ruaCache}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-          coord = await geocodificarEndereco(enderecoFinal);
+          coord = await geocodificarValidado(enderecoFinal, cepInfo);
           if (coord) await supabaseSet('cep:' + cep.replace(/\D/g,''), { ...cepInfo, rua: ruaCache, cidade: cidadeFinal });
         }
       }
@@ -551,7 +574,7 @@ const server = http.createServer(async (req, res) => {
       const ruaSugerida = (body.ruaSugerida || '').trim();
       if (!coord && !ruaCep && ruaSugerida) {
         enderecoFinal = `${ruaSugerida}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarEndereco(enderecoFinal);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo);
         if (coord && cep) {
           // aprende essa rua pro CEP, beneficia próximos lotes também
           await supabaseSet('cep:' + cep.replace(/\D/g,''), { ...cepInfo, rua: ruaSugerida, cidade: cidadeFinal });
@@ -573,9 +596,10 @@ const server = http.createServer(async (req, res) => {
         coord = await geocodificarEndereco(enderecoFinal);
       }
 
-      // fallback 3.5: sem rua nenhuma E o CEP já foi corrigido manualmente no mapa —
-      // usa esse ponto direto, é mais confiável que um chute novo do Google em cima do CEP cru
-      if (!coord && !ruaCep && cepInfo.manual && cepInfo.lat) {
+      // fallback 3.5: nenhuma tentativa de rua deu num resultado confiável, mas o CEP já
+      // foi corrigido manualmente no mapa — usa esse ponto direto, é mais confiável que um
+      // chute novo do Google em cima do CEP cru
+      if (!coord && cepInfo.manual && cepInfo.lat) {
         coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep} (referência manual)`, precisao: 'CEP_MANUAL', cidade: cidadeFinal };
       }
 
@@ -583,7 +607,7 @@ const server = http.createServer(async (req, res) => {
       if (!coord && cep) {
         const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
         enderecoFinal = `${cepFmt}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarEndereco(enderecoFinal);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo);
       }
 
       // fallback 5 (último recurso): coordenada aproximada do CEP — fica marcado pra corrigir
