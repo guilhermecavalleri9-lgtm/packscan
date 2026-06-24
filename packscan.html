@@ -257,7 +257,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <button class="btn btn-g" style="justify-content:center" onclick="finalizarRotas()">✓ Finalizar e calcular</button>
       <button class="btn btn-p" style="justify-content:center" onclick="salvarRotas()">💾 Salvar rotas</button>
       <button class="btn" style="justify-content:center" onclick="carregarRotas()">📂 Carregar rotas salvas</button>
-      <button class="btn btn-r btn-sm" style="justify-content:center" onclick="apagarRotasSalvas()">🗑 Apagar rotas salvas</button>
+      <button class="btn btn-r btn-sm admin-only" style="display:none;justify-content:center" onclick="apagarRotasSalvas()">🗑 Apagar rotas salvas</button>
       <div id="rotas-save-status" style="font-size:11px;font-family:var(--mono);color:var(--text3);text-align:center"></div>
     </div>
     <div style="display:flex;flex-direction:column;gap:1rem">
@@ -1237,7 +1237,7 @@ function renderRegioes() {
     var ini=r.ini.substring(0,5)+'-'+r.ini.substring(5),fim=r.fim.substring(0,5)+'-'+r.fim.substring(5);
     var d=document.createElement('div');
     d.style.cssText='display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;background:var(--bg3)';
-    d.innerHTML='<div style="flex:1"><div style="font-weight:500;font-size:13px">'+r.nome+'</div><div style="font-size:11px;font-family:var(--mono);color:var(--text3)">'+ini+' → '+fim+'</div></div><span class="badge b-blue">'+(r.total||0)+' CEPs</span><button class="btn btn-r btn-sm" onclick="removerRegiao('+i+')">✕</button>';
+    d.innerHTML='<div style="flex:1"><div style="font-weight:500;font-size:13px">'+r.nome+'</div><div style="font-size:11px;font-family:var(--mono);color:var(--text3)">'+ini+' → '+fim+'</div></div><span class="badge b-blue">'+(r.total||0)+' CEPs</span>'+(AUTH_ADMIN?'<button class="btn btn-r btn-sm" onclick="removerRegiao('+i+')">✕</button>':'');
     el.appendChild(d);
   });
 }
@@ -1530,7 +1530,7 @@ function renderCorrecoesNome() {
   el.innerHTML = _correcoesNome.map(function(c) {
     return '<div style="display:flex;align-items:center;gap:10px;padding:8px 10px;border:1px solid var(--border);border-radius:var(--radius);margin-bottom:6px;background:var(--bg3)">'
       + '<div style="flex:1;min-width:0;font-size:13px"><span style="color:var(--red);text-decoration:line-through">'+esc(c.de)+'</span> <span style="color:var(--text3)">→</span> <strong style="color:var(--green)">'+esc(c.para)+'</strong></div>'
-      + '<button class="btn btn-r btn-sm" onclick="removerCorrecaoNome(\''+esc(c.de).replace(/'/g,"\\'")+'\')">✕</button>'
+      + (AUTH_ADMIN?'<button class="btn btn-r btn-sm" onclick="removerCorrecaoNome(\''+esc(c.de).replace(/'/g,"\\'")+'\')">✕</button>':'')
     + '</div>';
   }).join('');
 }
