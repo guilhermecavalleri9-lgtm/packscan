@@ -87,13 +87,51 @@ tr:hover td{background:rgba(255,255,255,.02)}
 #modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center}
 #modal-bg.show{display:flex}
 .modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;width:560px;max-width:95vw;max-height:92vh;overflow-y:auto}
+/* LOGIN */
+#auth-bg{position:fixed;inset:0;background:var(--bg);z-index:10000;display:flex;align-items:center;justify-content:center}
+#auth-bg.hide{display:none}
+.auth-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:2rem;width:380px;max-width:92vw}
+.auth-box .logo{text-align:center;margin-bottom:1.5rem;font-size:18px}
+.auth-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:var(--bg3);border-radius:var(--radius);padding:3px}
+.auth-tabs button{flex:1;background:none;border:none;color:var(--text2);padding:7px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:13px}
+.auth-tabs button.active{background:var(--accent2);color:#fff}
+.auth-field{margin-bottom:.9rem}
+#auth-msg{font-size:12px;font-family:var(--mono);min-height:18px;margin-top:.5rem;text-align:center}
 </style>
 </head>
 <body>
 
+<div id="auth-bg">
+  <div class="auth-box">
+    <div class="logo">PACK<span style="color:var(--text2)">SCAN</span></div>
+    <div class="auth-tabs">
+      <button id="auth-tab-login" class="active" onclick="authMostrarAba('login')">Entrar</button>
+      <button id="auth-tab-registro" onclick="authMostrarAba('registro')">Registrar</button>
+    </div>
+
+    <div id="auth-form-login">
+      <div class="auth-field"><label>Usuário</label><input type="text" id="auth-login-usuario" autocomplete="username"></div>
+      <div class="auth-field"><label>Senha</label><input type="password" id="auth-login-senha" autocomplete="current-password" onkeydown="if(event.key==='Enter')authLogin()"></div>
+      <button class="btn btn-p" style="width:100%" onclick="authLogin()">Entrar</button>
+    </div>
+
+    <div id="auth-form-registro" style="display:none">
+      <div class="auth-field"><label>Usuário</label><input type="text" id="auth-reg-usuario" autocomplete="username"></div>
+      <div class="auth-field"><label>Senha (mín. 4 caracteres)</label><input type="password" id="auth-reg-senha" autocomplete="new-password"></div>
+      <button class="btn btn-p" style="width:100%" onclick="authRegistrar()">Registrar</button>
+      <div style="font-size:11px;color:var(--text3);margin-top:.6rem">Após registrar, um administrador precisa aprovar seu acesso antes que você consiga entrar.</div>
+    </div>
+
+    <div id="auth-msg"></div>
+  </div>
+</div>
+
 <div class="header">
   <div class="logo">PACK<span>SCAN</span></div>
   <span style="color:var(--text3);font-size:11px;font-family:var(--mono)">// roteirização com geocodificação IA</span>
+  <span style="flex:1"></span>
+  <span id="auth-user-info" style="font-size:12px;color:var(--text2);font-family:var(--mono)"></span>
+  <button class="btn btn-sm" onclick="authLogout()">Sair</button>
 </div>
 
 <div class="tab-bar">
@@ -157,7 +195,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="btn-row" style="margin-bottom:1rem">
         <button class="btn btn-p" id="btn-geo" onclick="iniciarGeo(false)">▶ Iniciar</button>
         <button class="btn btn-a" id="btn-geo-force" onclick="iniciarGeo(true)">↺ Forçar reprocessar todos</button>
-        <button class="btn btn-r btn-sm" onclick="limparCacheServidor()">🗑 Limpar cache servidor</button>
+        <button class="btn btn-r btn-sm admin-only" style="display:none" onclick="limparCacheServidor()">🗑 Limpar cache servidor</button>
         <button class="btn btn-g" id="btn-ver-mapa" style="display:none" onclick="goTab(1)">→ Ver no mapa</button>
         <button class="btn btn-r btn-sm" id="btn-parar" style="display:none" onclick="geoParar=true">⏹ Parar</button>
       </div>
@@ -402,7 +440,15 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div id="cepcorr-map" style="height:320px;border-radius:var(--radius);overflow:hidden;margin-top:4px"></div>
       </div>
       <div id="cepcorr-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);margin-bottom:.75rem;min-height:18px"></div>
-      <button class="btn btn-p" onclick="cepCorrSalvar()">💾 Salvar referência do CEP</button>
+      <div class="btn-row">
+        <button class="btn btn-p" onclick="cepCorrSalvar()">💾 Salvar referência do CEP</button>
+        <button class="btn btn-r admin-only" style="display:none" onclick="cepCorrExcluir()">🗑 Excluir referência salva</button>
+      </div>
+    </div>
+
+    <div class="card admin-only" style="display:none">
+      <div class="card-title">cadastros pendentes de aprovação</div>
+      <div id="auth-pendentes-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Nenhum.</div>
     </div>
   </div>
 </div>
@@ -445,6 +491,137 @@ tr:hover td{background:rgba(255,255,255,.02)}
 // CONFIG
 // ═══════════════════════════════════════════════════════════════════════════════
 var BACKEND = '';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUTENTICAÇÃO
+// ═══════════════════════════════════════════════════════════════════════════════
+var AUTH_TOKEN = localStorage.getItem('packscan_token') || '';
+var AUTH_USUARIO = localStorage.getItem('packscan_usuario') || '';
+var AUTH_ADMIN = localStorage.getItem('packscan_admin') === '1';
+
+// fetch com o header de autenticação embutido; se a sessão expirou/foi invalidada,
+// volta pra tela de login automaticamente
+function apiFetch(url, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({}, opts.headers, AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {});
+  return fetch(url, opts).then(function(r) {
+    if (r.status === 401) { authLogout(); throw new Error('Sessão expirada, faça login novamente.'); }
+    return r;
+  });
+}
+
+function authMostrarAba(aba) {
+  document.getElementById('auth-tab-login').classList.toggle('active', aba==='login');
+  document.getElementById('auth-tab-registro').classList.toggle('active', aba==='registro');
+  document.getElementById('auth-form-login').style.display = aba==='login' ? '' : 'none';
+  document.getElementById('auth-form-registro').style.display = aba==='registro' ? '' : 'none';
+  document.getElementById('auth-msg').textContent = '';
+}
+
+function authAplicarPermissoes() {
+  document.getElementById('auth-user-info').textContent = AUTH_USUARIO + (AUTH_ADMIN ? ' (admin)' : '');
+  var els = document.querySelectorAll('.admin-only');
+  for (var i=0;i<els.length;i++) els[i].style.display = AUTH_ADMIN ? '' : 'none';
+}
+
+async function authLogin() {
+  var usuario = document.getElementById('auth-login-usuario').value.trim();
+  var senha = document.getElementById('auth-login-senha').value;
+  var msg = document.getElementById('auth-msg');
+  if (!usuario || !senha) { msg.textContent='Preencha usuário e senha.'; msg.style.color='var(--red)'; return; }
+  msg.textContent='Entrando...'; msg.style.color='var(--amber)';
+  try {
+    var r = await fetch(BACKEND+'/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,senha:senha}) });
+    var d = await r.json();
+    if (!r.ok) { msg.textContent='✗ '+(d.error||'Erro ao entrar.'); msg.style.color='var(--red)'; return; }
+    AUTH_TOKEN = d.token; AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin;
+    localStorage.setItem('packscan_token', AUTH_TOKEN);
+    localStorage.setItem('packscan_usuario', AUTH_USUARIO);
+    localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
+    document.getElementById('auth-bg').classList.add('hide');
+    authAplicarPermissoes();
+    iniciarApp();
+  } catch(e) { msg.textContent='Erro: '+e.message; msg.style.color='var(--red)'; }
+}
+
+async function authRegistrar() {
+  var usuario = document.getElementById('auth-reg-usuario').value.trim();
+  var senha = document.getElementById('auth-reg-senha').value;
+  var msg = document.getElementById('auth-msg');
+  if (!usuario || senha.length < 4) { msg.textContent='Usuário obrigatório e senha com pelo menos 4 caracteres.'; msg.style.color='var(--red)'; return; }
+  msg.textContent='Registrando...'; msg.style.color='var(--amber)';
+  try {
+    var r = await fetch(BACKEND+'/api/auth/registrar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,senha:senha}) });
+    var d = await r.json();
+    if (!r.ok) { msg.textContent='✗ '+(d.error||'Erro ao registrar.'); msg.style.color='var(--red)'; return; }
+    if (d.pendente) {
+      msg.textContent='✓ Cadastro enviado! Aguarde um administrador aprovar seu acesso.'; msg.style.color='var(--green)';
+    } else {
+      msg.textContent='✓ Cadastro criado e aprovado automaticamente (primeiro usuário do sistema). Já pode entrar.'; msg.style.color='var(--green)';
+    }
+    authMostrarAba('login');
+  } catch(e) { msg.textContent='Erro: '+e.message; msg.style.color='var(--red)'; }
+}
+
+function authLogout() {
+  AUTH_TOKEN=''; AUTH_USUARIO=''; AUTH_ADMIN=false;
+  localStorage.removeItem('packscan_token'); localStorage.removeItem('packscan_usuario'); localStorage.removeItem('packscan_admin');
+  document.getElementById('auth-bg').classList.remove('hide');
+  authMostrarAba('login');
+}
+
+async function authBootstrap() {
+  if (!AUTH_TOKEN) { document.getElementById('auth-bg').classList.remove('hide'); return; }
+  try {
+    var r = await fetch(BACKEND+'/api/auth/me', { headers:{ 'Authorization':'Bearer '+AUTH_TOKEN } });
+    if (!r.ok) { authLogout(); return; }
+    var d = await r.json();
+    AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin;
+    localStorage.setItem('packscan_usuario', AUTH_USUARIO);
+    localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
+    document.getElementById('auth-bg').classList.add('hide');
+    authAplicarPermissoes();
+    iniciarApp();
+  } catch(e) { authLogout(); }
+}
+
+async function carregarPendentes() {
+  if (!AUTH_ADMIN) return;
+  var el = document.getElementById('auth-pendentes-lista');
+  try {
+    var r = await apiFetch(BACKEND+'/api/auth/pendentes');
+    var d = await r.json();
+    var lista = d.pendentes || [];
+    if (!lista.length) { el.textContent = 'Nenhum.'; return; }
+    el.innerHTML = lista.map(function(p) {
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'
+        + '<div style="flex:1">'+esc(p.usuario)+'</div>'
+        + '<button class="btn btn-g btn-sm" onclick="authAprovar(\''+esc(p.usuario).replace(/'/g,"\\'")+'\')">✓ Aprovar</button>'
+        + '<button class="btn btn-r btn-sm" onclick="authRejeitar(\''+esc(p.usuario).replace(/'/g,"\\'")+'\')">✕ Rejeitar</button>'
+      + '</div>';
+    }).join('');
+  } catch(e) { el.textContent = 'Erro ao carregar: '+e.message; }
+}
+async function authAprovar(usuario) {
+  await apiFetch(BACKEND+'/api/auth/aprovar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario}) });
+  carregarPendentes();
+}
+async function authRejeitar(usuario) {
+  if (!confirm('Rejeitar/remover o cadastro de "'+usuario+'"?')) return;
+  await apiFetch(BACKEND+'/api/auth/rejeitar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario}) });
+  carregarPendentes();
+}
+
+async function cepCorrExcluir() {
+  var cepDigits = document.getElementById('cepcorr-cep').value.replace(/\D/g,'');
+  var st = document.getElementById('cepcorr-status');
+  if (cepDigits.length !== 8) { st.textContent='Digite um CEP válido (8 dígitos).'; st.style.color='var(--red)'; return; }
+  if (!confirm('Excluir a referência salva para o CEP '+cepDigits+'? Os próximos pacotes desse CEP voltam a usar a aproximação automática do Google/Correios.')) return;
+  try {
+    await apiFetch(BACKEND+'/api/cep/excluir', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cep:cepDigits}) });
+    st.textContent='✓ Referência excluída.'; st.style.color='var(--green)';
+  } catch(e) { st.textContent='Erro: '+e.message; st.style.color='var(--red)'; }
+}
 
 // escapa dados vindos de arquivos importados / digitados antes de inserir via innerHTML
 function esc(v) {
@@ -631,7 +808,7 @@ async function iniciarGeo(forcar) {
     if (geoParar) break;
     var p = pendentes[i];
     try {
-      var r = await fetch(BACKEND+'/api/geocode', {
+      var r = await apiFetch(BACKEND+'/api/geocode', {
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:!!forcar})
       });
@@ -677,7 +854,7 @@ async function iniciarGeo(forcar) {
 async function limparCacheServidor() {
   if (!confirm('Limpar todo o cache do servidor?')) return;
   try {
-    await fetch(BACKEND+'/api/cache/clear',{method:'POST'});
+    await apiFetch(BACKEND+'/api/cache/clear',{method:'POST'});
     alert('✓ Cache limpo!');
   } catch(e){ alert('Erro: '+e.message); }
 }
@@ -830,7 +1007,7 @@ async function salvarRotas() {
   st.textContent='⏳ Salvando...'; st.style.color='var(--amber)';
   var data=rotas.map(function(r){ return {id:r.id,motorista:r.motorista,cor:r.cor,latlngs:r.layer.getLatLngs()[0].map(function(ll){ return [ll.lat,ll.lng]; })}; });
   try {
-    var res=await fetch(BACKEND+'/api/rotas/salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rotas:data})});
+    var res=await apiFetch(BACKEND+'/api/rotas/salvar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rotas:data})});
     var d=await res.json();
     st.textContent='✓ '+d.total+' rotas salvas'; st.style.color='var(--green)';
   } catch(e) { st.textContent='✗ Erro: '+e.message; st.style.color='var(--red)'; }
@@ -839,7 +1016,7 @@ async function salvarRotas() {
 async function carregarRotas() {
   var st=document.getElementById('rotas-save-status');
   try {
-    var res=await fetch(BACKEND+'/api/rotas/carregar');
+    var res=await apiFetch(BACKEND+'/api/rotas/carregar');
     var d=await res.json();
     if (!d.rotas||!d.rotas.length) { st.textContent='Nenhuma rota salva.'; st.style.color='var(--text3)'; return; }
     rotas.forEach(function(r){ try{ map.removeLayer(r.layer); }catch(e){} });
@@ -859,7 +1036,7 @@ async function carregarRotas() {
 
 async function apagarRotasSalvas() {
   if (!confirm('Apagar rotas salvas no servidor?')) return;
-  try { await fetch(BACKEND+'/api/rotas/apagar',{method:'POST'}); document.getElementById('rotas-save-status').textContent='✓ Rotas apagadas.'; } catch(e){}
+  try { await apiFetch(BACKEND+'/api/rotas/apagar',{method:'POST'}); document.getElementById('rotas-save-status').textContent='✓ Rotas apagadas.'; } catch(e){}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1217,7 +1394,7 @@ async function buscarEnderecoModal() {
   st.textContent='Buscando...'; st.style.color='var(--amber)';
   try {
     var p=pacotes.find(function(x){ return x.tracking===_modalTracking; });
-    var r=await fetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endereco:end,bairro:p?p.bairro:'',cidade:p?p.cidade:'São José',cep:p?p.cep:'',forcarEndereco:true})});
+    var r=await apiFetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endereco:end,bairro:p?p.bairro:'',cidade:p?p.cidade:'São José',cep:p?p.cep:'',forcarEndereco:true})});
     var d=await r.json();
     if (r.ok&&d.lat) {
       document.getElementById('modal-lat').value=d.lat.toFixed(6);
@@ -1240,7 +1417,7 @@ async function salvarCorrecao() {
   persistirLocal();
   st.textContent='Salvando...'; st.style.color='var(--amber)';
   try {
-    await fetch(BACKEND+'/api/geocode/correcao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cacheKey:(p.cep+'|'+p.endereco).toLowerCase().trim(),lat:lat,lng:lng,enderecoNormalizado:endCorrigido,precisao:'MANUAL',enderecoFormatado:endCorrigido})});
+    await apiFetch(BACKEND+'/api/geocode/correcao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cacheKey:(p.cep+'|'+p.endereco).toLowerCase().trim(),lat:lat,lng:lng,enderecoNormalizado:endCorrigido,precisao:'MANUAL',enderecoFormatado:endCorrigido})});
     st.textContent='✓ Correção salva!'; st.style.color='var(--green)';
     setTimeout(function(){ fecharModal(); goTabCorrigir(); plotarPontos(); },1000);
   } catch(e) {
@@ -1261,7 +1438,7 @@ async function cepCorrCarregarMapa() {
   st.textContent='Buscando...'; st.style.color='var(--amber)';
   var lat=-27.6136, lng=-48.6400;
   try {
-    var r=await fetch(BACKEND+'/api/cep/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits})});
+    var r=await apiFetch(BACKEND+'/api/cep/lookup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits})});
     var d=await r.json();
     if (r.ok && d.lat) {
       lat=d.lat; lng=d.lng;
@@ -1293,7 +1470,7 @@ async function cepCorrSalvar() {
   var pos = _cepCorrMarker.getLatLng();
   st.textContent='Salvando...'; st.style.color='var(--amber)';
   try {
-    await fetch(BACKEND+'/api/cep/corrigir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits,lat:pos.lat,lng:pos.lng})});
+    await apiFetch(BACKEND+'/api/cep/corrigir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits,lat:pos.lat,lng:pos.lng})});
     var afetados = pacotes.filter(function(p){ return (p.cep||'').replace(/\D/g,'')===cepDigits && p.precisao!=='MANUAL' && p.precisao!=='ROOFTOP' && p.precisao!=='RANGE_INTERPOLATED'; });
     if (!afetados.length) { st.textContent='✓ Referência do CEP salva. Nenhum pacote atual com esse CEP — vai valer pros próximos.'; st.style.color='var(--green)'; return; }
     st.textContent='Referência salva. Regeocodificando '+afetados.length+' pacote(s) atual(is)...'; st.style.color='var(--amber)';
@@ -1309,7 +1486,7 @@ async function cepAutoBuscar() {
   if (cepDigits.length !== 8) { st.textContent='Digite um CEP válido (8 dígitos).'; st.style.color='var(--red)'; return; }
   st.textContent='Buscando nos Correios...'; st.style.color='var(--amber)';
   try {
-    var r = await fetch(BACKEND+'/api/cep/autocompletar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits})});
+    var r = await apiFetch(BACKEND+'/api/cep/autocompletar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cep:cepDigits})});
     var d = await r.json();
     if (!r.ok) { st.textContent='✗ '+(d.error||'CEP não encontrado.'); st.style.color='var(--red)'; return; }
     var afetados = pacotes.filter(function(p){ return (p.cep||'').replace(/\D/g,'')===cepDigits && p.precisao!=='MANUAL' && p.precisao!=='ROOFTOP' && p.precisao!=='RANGE_INTERPOLATED'; });
@@ -1340,7 +1517,7 @@ function _matchNome(texto, de) {
 
 async function carregarCorrecoesNome() {
   try {
-    var r = await fetch(BACKEND + '/api/nomes');
+    var r = await apiFetch(BACKEND + '/api/nomes');
     var d = await r.json();
     _correcoesNome = d.correcoes || [];
   } catch(e) { _correcoesNome = []; }
@@ -1366,7 +1543,7 @@ async function adicionarCorrecaoNome() {
   if (de.toLowerCase() === para.toLowerCase()) { st.textContent='Os dois nomes são iguais.'; st.style.color='var(--red)'; return; }
   st.textContent='Salvando correção...'; st.style.color='var(--amber)';
   try {
-    var r = await fetch(BACKEND+'/api/nomes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de:de,para:para})});
+    var r = await apiFetch(BACKEND+'/api/nomes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de:de,para:para})});
     var d = await r.json();
     if (!r.ok) { st.textContent='Erro: '+(d.error||'desconhecido'); st.style.color='var(--red)'; return; }
     _correcoesNome = d.correcoes || [];
@@ -1385,7 +1562,7 @@ async function adicionarCorrecaoNome() {
 async function removerCorrecaoNome(de) {
   var st = document.getElementById('nomes-status');
   try {
-    var r = await fetch(BACKEND+'/api/nomes/remover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de:de})});
+    var r = await apiFetch(BACKEND+'/api/nomes/remover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({de:de})});
     var d = await r.json();
     _correcoesNome = d.correcoes || [];
     renderCorrecoesNome();
@@ -1400,7 +1577,7 @@ async function regeocodificarPacotes(lista, statusEl) {
   for (var i=0;i<lista.length;i++) {
     var p = lista[i];
     try {
-      var r = await fetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:true})});
+      var r = await apiFetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:true})});
       var d = await r.json();
       if (r.ok && d.lat) {
         var j=(Math.random()-.5)*0.0003;
@@ -1595,7 +1772,7 @@ async function verificarSessao() {
   var el = document.getElementById('sessao-info');
   if (!el) return;
   try {
-    var r = await fetch(BACKEND + '/api/pacotes/carregar');
+    var r = await apiFetch(BACKEND + '/api/pacotes/carregar');
     var d = await r.json();
     if (d.pacotes && d.pacotes.length) {
       var dt = d.salvoEm ? new Date(d.salvoEm).toLocaleString('pt-BR') : '';
@@ -1614,7 +1791,7 @@ async function salvarSessao() {
   el.textContent = '⏳ Salvando...'; el.style.color = 'var(--amber)';
   try {
     var arquivo = _pFile ? _pFile.name : 'demo';
-    var r = await fetch(BACKEND + '/api/pacotes/salvar', {
+    var r = await apiFetch(BACKEND + '/api/pacotes/salvar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pacotes: pacotes, arquivo: arquivo })
@@ -1636,7 +1813,7 @@ async function carregarSessao() {
   var el = document.getElementById('sessao-info');
   el.textContent = '⏳ Carregando...'; el.style.color = 'var(--amber)';
   try {
-    var r = await fetch(BACKEND + '/api/pacotes/carregar');
+    var r = await apiFetch(BACKEND + '/api/pacotes/carregar');
     var d = await r.json();
     if (!d.pacotes || !d.pacotes.length) {
       el.textContent = 'Nenhuma importação salva no servidor.';
@@ -1668,7 +1845,7 @@ async function apagarSessao() {
   if (map) plotarPontos();
   renderRotasList(); renderMotList(); renderEtSelect(); renderMotDownload();
   // limpa servidor também
-  try { await fetch(BACKEND + '/api/pacotes/apagar', { method: 'POST' }); } catch(e){}
+  try { await apiFetch(BACKEND + '/api/pacotes/apagar', { method: 'POST' }); } catch(e){}
   el.textContent = '✓ Importação apagada (navegador e servidor).';
   el.style.color = 'var(--text3)';
 }
@@ -1907,11 +2084,15 @@ function scBiparManual(codigo) {
   scBuscar();
 }
 
-// init
-restaurarLocal();
-renderRegioes();
-verificarSessao();
-carregarCorrecoesNome();
+// init — só roda depois de autenticado (authBootstrap chama isto)
+function iniciarApp() {
+  restaurarLocal();
+  renderRegioes();
+  verificarSessao();
+  carregarCorrecoesNome();
+  if (AUTH_ADMIN) carregarPendentes();
+}
+authBootstrap();
 </script>
 </body>
 </html>

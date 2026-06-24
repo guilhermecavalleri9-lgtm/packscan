@@ -136,12 +136,24 @@ async function buscarRuaApreendidaPorCep(cep) {
   return '';
 }
 
+// limpa só o cache de geocodificação por endereço ("end:...") — NUNCA as referências
+// de CEP ("cep:..."), correções de nome ("cfg:nomes") ou usuários ("auth:..."), que
+// moram na mesma tabela genérica mas são dados permanentes, não cache descartável
 async function supabaseClear() {
-  Object.keys(memoriaCache).forEach(k => delete memoriaCache[k]);
+  Object.keys(memoriaCache).forEach(k => { if (k.indexOf('end:') === 0) delete memoriaCache[k]; });
   if (!SUPABASE_URL || !SUPABASE_KEY) return;
   try {
-    await supabaseRequest('DELETE', '/rest/v1/geo_cache?cache_key=neq.null');
+    await supabaseRequest('DELETE', `/rest/v1/geo_cache?cache_key=like.${encodeURIComponent('end:*')}`);
   } catch(e) { console.error('[supabase clear]', e.message); }
+}
+
+async function supabaseDelete(cacheKey) {
+  delete memoriaCache[cacheKey];
+  if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  try {
+    const keyEnc = encodeURIComponent(cacheKey);
+    await supabaseRequest('DELETE', `/rest/v1/geo_cache?cache_key=eq.${keyEnc}`);
+  } catch(e) { console.error('[supabase delete]', e.message); }
 }
 
 function supabaseRequest(method, path, body, extraHeaders) {
@@ -170,6 +182,64 @@ function supabaseRequest(method, path, body, extraHeaders) {
     if (payload) req.write(payload);
     req.end();
   });
+}
+
+// ─── AUTENTICAÇÃO ───────────────────────────────────────────────────────────
+const crypto = require('crypto');
+const AUTH_SECRET = process.env.AUTH_SECRET || (() => {
+  console.warn('[auth] AUTH_SECRET não definido — usando segredo de desenvolvimento (tokens somem a cada deploy)');
+  return 'packscan-dev-secret-troque-em-producao';
+})();
+const AUTH_USUARIOS_KEY = 'auth:usuarios';
+const TOKEN_VALIDADE_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
+
+async function getUsuarios() {
+  const v = await supabaseGet(AUTH_USUARIOS_KEY);
+  return Array.isArray(v) ? v : [];
+}
+async function setUsuarios(lista) {
+  await supabaseSet(AUTH_USUARIOS_KEY, lista);
+}
+
+function hashSenha(senha, saltHex) {
+  const salt = saltHex || crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(senha, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+function senhaConfere(senha, hashArmazenado) {
+  if (!hashArmazenado || hashArmazenado.indexOf(':') === -1) return false;
+  const [salt, hashOriginal] = hashArmazenado.split(':');
+  const hashTentativa = crypto.scryptSync(senha, salt, 64).toString('hex');
+  const a = Buffer.from(hashOriginal, 'hex'), b = Buffer.from(hashTentativa, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+function base64url(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function base64urlDecode(str) { return Buffer.from(str.replace(/-/g,'+').replace(/_/g,'/'), 'base64'); }
+
+function gerarToken(usuario, admin) {
+  const payload = JSON.stringify({ u: usuario, a: !!admin, exp: Date.now() + TOKEN_VALIDADE_MS });
+  const payloadB64 = base64url(payload);
+  const assinatura = base64url(crypto.createHmac('sha256', AUTH_SECRET).update(payloadB64).digest());
+  return `${payloadB64}.${assinatura}`;
+}
+function verificarToken(token) {
+  if (!token || token.indexOf('.') === -1) return null;
+  const [payloadB64, assinatura] = token.split('.');
+  const esperada = base64url(crypto.createHmac('sha256', AUTH_SECRET).update(payloadB64).digest());
+  const a = Buffer.from(assinatura), b = Buffer.from(esperada);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const payload = JSON.parse(base64urlDecode(payloadB64).toString('utf8'));
+    if (!payload.exp || payload.exp < Date.now()) return null;
+    return { usuario: payload.u, admin: !!payload.a };
+  } catch(e) { return null; }
+}
+
+async function autenticar(req) {
+  const auth = req.headers['authorization'] || '';
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  return verificarToken(token);
 }
 
 // ─── PASSO 1: rua pelo CEP via Google ────────────────────────────────────────
@@ -393,11 +463,97 @@ function aplicarCorrecoesNome(endereco, lista) {
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   const parsedUrl = url.parse(req.url, true);
   const pathname = parsedUrl.pathname;
+
+  // rotas de API que não exigem login (login/registro em si)
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar']);
+  // rotas que, além de logado, exigem admin
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/auth/pendentes', '/api/auth/aprovar', '/api/auth/rejeitar']);
+
+  if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
+    const usuarioAtual = await autenticar(req);
+    if (!usuarioAtual) return json(res, 401, { error: 'Não autenticado' });
+    if (SOMENTE_ADMIN.has(pathname) && !usuarioAtual.admin) return json(res, 403, { error: 'Apenas administradores podem fazer isso' });
+    req.usuarioAtual = usuarioAtual;
+  }
+
+  // ─── AUTENTICAÇÃO: registro, login e aprovação ─────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/auth/registrar') {
+    const body = await readBody(req);
+    const usuario = (body.usuario || '').trim().toLowerCase();
+    const senha = body.senha || '';
+    if (!usuario || senha.length < 4) return json(res, 400, { error: 'Usuário obrigatório e senha com pelo menos 4 caracteres' });
+    const lista = await getUsuarios();
+    if (lista.some(u => u.usuario === usuario)) return json(res, 409, { error: 'Usuário já existe' });
+    // primeiro usuário cadastrado no sistema nasce admin e já aprovado, pra alguém
+    // conseguir entrar e aprovar os próximos
+    const ehPrimeiro = lista.length === 0;
+    lista.push({
+      usuario, senhaHash: hashSenha(senha),
+      status: ehPrimeiro ? 'aprovado' : 'pendente',
+      admin: ehPrimeiro,
+      criadoEm: new Date().toISOString()
+    });
+    await setUsuarios(lista);
+    console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ' (pendente)'}`);
+    return json(res, 200, { ok: true, pendente: !ehPrimeiro });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auth/login') {
+    const body = await readBody(req);
+    const usuario = (body.usuario || '').trim().toLowerCase();
+    const senha = body.senha || '';
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === usuario);
+    if (!u || !senhaConfere(senha, u.senhaHash)) return json(res, 401, { error: 'Usuário ou senha inválidos' });
+    if (u.status !== 'aprovado') return json(res, 403, { error: 'Cadastro ainda não foi aprovado por um administrador' });
+    return json(res, 200, { ok: true, token: gerarToken(u.usuario, u.admin), usuario: u.usuario, admin: !!u.admin });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/auth/me') {
+    return json(res, 200, { usuario: req.usuarioAtual.usuario, admin: req.usuarioAtual.admin });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/auth/pendentes') {
+    const lista = await getUsuarios();
+    return json(res, 200, { pendentes: lista.filter(u => u.status === 'pendente').map(u => ({ usuario: u.usuario, criadoEm: u.criadoEm })) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auth/aprovar') {
+    const body = await readBody(req);
+    const usuario = (body.usuario || '').trim().toLowerCase();
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === usuario);
+    if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
+    u.status = 'aprovado';
+    await setUsuarios(lista);
+    console.log(`[auth] aprovado: ${usuario} (por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/auth/rejeitar') {
+    const body = await readBody(req);
+    const usuario = (body.usuario || '').trim().toLowerCase();
+    const lista = await getUsuarios();
+    const filtrada = lista.filter(x => x.usuario !== usuario);
+    await setUsuarios(filtrada);
+    console.log(`[auth] rejeitado/removido: ${usuario} (por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true });
+  }
+
+  // ─── EXCLUIR REFERÊNCIA DE CEP (lat/lng salvos manualmente) — admin ────────
+  if (req.method === 'POST' && pathname === '/api/cep/excluir') {
+    const body = await readBody(req);
+    const cepDigits = (body.cep || '').replace(/\D/g, '');
+    if (cepDigits.length !== 8) return json(res, 400, { error: 'cep (8 dígitos) obrigatório' });
+    await supabaseDelete('cep:' + cepDigits);
+    console.log(`[cep-excluir] ${cepDigits} (por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true });
+  }
 
   // página principal
   if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
