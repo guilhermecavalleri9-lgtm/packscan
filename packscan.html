@@ -307,7 +307,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div class="et-prev" style="width:auto;margin:0 0 .75rem"><div class="main">R01 · P007</div><div class="bar">|||||||||||||||||||||</div></div>
         <div style="margin-bottom:.5rem"><label>Rota</label><select id="et-rota"><option value="">— todas —</option></select></div>
         <div style="margin-bottom:.75rem"><label>Formato</label>
-          <select id="et-tipo"><option value="termica">Térmica 100×25mm</option><option value="a4">A4 — 6 por folha</option></select>
+          <select id="et-tipo"><option value="termica">Térmica 100×25mm</option><option value="termica40">Térmica 40×25mm</option><option value="a4">A4 — 6 por folha</option></select>
         </div>
         <div class="btn-row">
           <button class="btn btn-p btn-sm" onclick="imprimirLote()">🖨 Imprimir</button>
@@ -1116,10 +1116,17 @@ function showFb(msg,tipo) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ETIQUETAS
 // ═══════════════════════════════════════════════════════════════════════════════
+var ET_TAMANHOS = {
+  termica:   { w:100, h:25, fontMain:20, fontBar:9 },
+  termica40: { w:40,  h:25, fontMain:12, fontBar:7 }
+};
+
 function imprimirEtiqueta(pacote,rota) {
   var rNum=String(rota.id).padStart(2,'0'),pNum=String(pacote.numNaRota).padStart(3,'0');
+  var tipo=(document.getElementById('et-tipo')||{}).value||'termica';
+  var t=ET_TAMANHOS[tipo]||ET_TAMANHOS.termica;
   var win=window.open('','_blank','width=400,height=200'); if (!win) return;
-  win.document.write('<!DOCTYPE html><html><head><title>R'+rNum+'P'+pNum+'</title><style>*{margin:0;padding:0;box-sizing:border-box}body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff}.et{width:100mm;height:25mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:"Courier New",monospace}.main{font-size:20pt;font-weight:bold;letter-spacing:2px}.bar{font-size:9pt;letter-spacing:4px;margin-top:2mm}@media print{body{min-height:auto}@page{size:100mm 25mm;margin:0}}<\/style><\/head><body><div class="et"><div class="main">R'+rNum+' · P'+pNum+'<\/div><div class="bar">||||||||||||||||||||||||<\/div><\/div><script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}<\/script><\/body><\/html>');
+  win.document.write('<!DOCTYPE html><html><head><title>R'+rNum+'P'+pNum+'</title><style>*{margin:0;padding:0;box-sizing:border-box}body{display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fff}.et{width:'+t.w+'mm;height:'+t.h+'mm;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:"Courier New",monospace}.main{font-size:'+t.fontMain+'pt;font-weight:bold;letter-spacing:2px}.bar{font-size:'+t.fontBar+'pt;letter-spacing:4px;margin-top:2mm}@media print{body{min-height:auto}@page{size:'+t.w+'mm '+t.h+'mm;margin:0}}<\/style><\/head><body><div class="et"><div class="main">R'+rNum+' · P'+pNum+'<\/div><div class="bar">||||||||||||||||||||||||<\/div><\/div><script>window.onload=function(){window.print();setTimeout(function(){window.close();},500);}<\/script><\/body><\/html>');
   win.document.close();
 }
 
@@ -1138,11 +1145,15 @@ function imprimirLote() {
   var pkgs=rid?(rotas.find(function(r){ return r.id==rid; })||{pkgs:[]}).pkgs:rotas.reduce(function(a,r){ return a.concat(r.pkgs); },[]);
   if (!pkgs.length) { alert('Sem pacotes. Finalize as rotas primeiro.'); return; }
   var tipo=document.getElementById('et-tipo').value;
-  var cols=tipo==='a4'?3:1, pgSize=tipo==='termica'?'100mm 25mm':'210mm 297mm';
+  var t=ET_TAMANHOS[tipo];
+  var cols=tipo==='a4'?3:1;
+  var pgSize=t?(t.w+'mm '+t.h+'mm'):'210mm 297mm';
+  var etWidth=t?(t.w+'mm'):'auto';
+  var fontMain=t?t.fontMain:14, fontBar=t?t.fontBar:9;
   var win=window.open('','_blank'); if (!win) return;
   var items='';
   pkgs.forEach(function(p){ var rNum=String(p.rota||0).padStart(2,'0'),pNum=String(p.numNaRota||0).padStart(3,'0'); items+='<div class="et"><div class="main">R'+rNum+' · P'+pNum+'</div><div class="bar">||||||||||||||||||||||||</div></div>'; });
-  win.document.write('<!DOCTYPE html><html><head><title>Etiquetas</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Courier New",monospace;background:#fff}.grid{display:grid;grid-template-columns:repeat('+cols+',1fr);gap:2mm;padding:'+(cols>1?'5mm':'0')+'}.et{height:25mm;display:flex;flex-direction:column;align-items:center;justify-content:center;border-bottom:'+(cols>1?'1px solid #eee':'none')+';break-inside:avoid}.main{font-size:'+(cols>1?'14':'20')+'pt;font-weight:bold;letter-spacing:2px}.bar{font-size:9pt;letter-spacing:3px;margin-top:1mm}@media print{@page{size:'+pgSize+';margin:0}}<\/style><\/head><body><div class="grid">'+items+'<\/div><script>window.onload=function(){window.print();}<\/script><\/body><\/html>');
+  win.document.write('<!DOCTYPE html><html><head><title>Etiquetas</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:"Courier New",monospace;background:#fff}.grid{display:grid;grid-template-columns:repeat('+cols+',1fr);gap:2mm;padding:'+(cols>1?'5mm':'0')+'}.et{width:'+etWidth+';height:25mm;display:flex;flex-direction:column;align-items:center;justify-content:center;border-bottom:'+(cols>1?'1px solid #eee':'none')+';break-inside:avoid;margin:0 auto}.main{font-size:'+fontMain+'pt;font-weight:bold;letter-spacing:2px}.bar{font-size:'+fontBar+'pt;letter-spacing:3px;margin-top:1mm}@media print{@page{size:'+pgSize+';margin:0}}<\/style><\/head><body><div class="grid">'+items+'<\/div><script>window.onload=function(){window.print();}<\/script><\/body><\/html>');
   win.document.close();
 }
 
