@@ -123,6 +123,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
     </div>
 
     <div id="auth-msg"></div>
+
+    <div id="auth-reativar" style="display:none;margin-top:1rem;text-align:center">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:.6rem">Seu plano acabou. Para continuar usando, reative seu acesso:</div>
+      <a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none" href="https://wa.me/5554981194621" target="_blank" rel="noopener">💬 Reativar plano no WhatsApp</a>
+    </div>
   </div>
 </div>
 
@@ -514,6 +519,15 @@ var BACKEND = '';
 var AUTH_TOKEN = localStorage.getItem('packscan_token') || '';
 var AUTH_USUARIO = localStorage.getItem('packscan_usuario') || '';
 var AUTH_ADMIN = localStorage.getItem('packscan_admin') === '1';
+var AUTH_EXPIRA = Number(localStorage.getItem('packscan_expira')) || 0;
+
+// texto curto de dias restantes para o cabeçalho
+function diasRestantesTexto(expiraEm) {
+  if (!expiraEm) return 'acesso ilimitado';
+  var dias = Math.ceil((expiraEm - Date.now()) / 86400000);
+  if (dias <= 0) return 'plano expirado';
+  return dias + ' dia(s) restante(s)';
+}
 
 // fetch com o header de autenticação embutido; se a sessão expirou/foi invalidada,
 // volta pra tela de login automaticamente
@@ -532,10 +546,13 @@ function authMostrarAba(aba) {
   document.getElementById('auth-form-login').style.display = aba==='login' ? '' : 'none';
   document.getElementById('auth-form-registro').style.display = aba==='registro' ? '' : 'none';
   document.getElementById('auth-msg').textContent = '';
+  document.getElementById('auth-reativar').style.display = 'none';
 }
 
 function authAplicarPermissoes() {
-  document.getElementById('auth-user-info').textContent = AUTH_USUARIO + (AUTH_ADMIN ? ' (admin)' : '');
+  var info = AUTH_USUARIO + (AUTH_ADMIN ? ' (admin)' : '');
+  info += ' · ' + diasRestantesTexto(AUTH_EXPIRA);
+  document.getElementById('auth-user-info').textContent = info;
   var els = document.querySelectorAll('.admin-only');
   for (var i=0;i<els.length;i++) els[i].style.display = AUTH_ADMIN ? '' : 'none';
 }
@@ -549,11 +566,17 @@ async function authLogin() {
   try {
     var r = await fetch(BACKEND+'/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,senha:senha}) });
     var d = await r.json();
-    if (!r.ok) { msg.textContent='✗ '+(d.error||'Erro ao entrar.'); msg.style.color='var(--red)'; return; }
-    AUTH_TOKEN = d.token; AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin;
+    if (!r.ok) {
+      msg.textContent='✗ '+(d.error||'Erro ao entrar.'); msg.style.color='var(--red)';
+      // plano expirado → oferece reativação via WhatsApp
+      document.getElementById('auth-reativar').style.display = (r.status===403 && /expir/i.test(d.error||'')) ? 'block' : 'none';
+      return;
+    }
+    AUTH_TOKEN = d.token; AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin; AUTH_EXPIRA = d.expiraEm || 0;
     localStorage.setItem('packscan_token', AUTH_TOKEN);
     localStorage.setItem('packscan_usuario', AUTH_USUARIO);
     localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
+    localStorage.setItem('packscan_expira', String(AUTH_EXPIRA));
     document.getElementById('auth-bg').classList.add('hide');
     authAplicarPermissoes();
     iniciarApp();
@@ -580,8 +603,8 @@ async function authRegistrar() {
 }
 
 function authLogout() {
-  AUTH_TOKEN=''; AUTH_USUARIO=''; AUTH_ADMIN=false;
-  localStorage.removeItem('packscan_token'); localStorage.removeItem('packscan_usuario'); localStorage.removeItem('packscan_admin');
+  AUTH_TOKEN=''; AUTH_USUARIO=''; AUTH_ADMIN=false; AUTH_EXPIRA=0;
+  localStorage.removeItem('packscan_token'); localStorage.removeItem('packscan_usuario'); localStorage.removeItem('packscan_admin'); localStorage.removeItem('packscan_expira');
   document.getElementById('auth-bg').classList.remove('hide');
   authMostrarAba('login');
 }
@@ -592,9 +615,10 @@ async function authBootstrap() {
     var r = await fetch(BACKEND+'/api/auth/me', { headers:{ 'Authorization':'Bearer '+AUTH_TOKEN } });
     if (!r.ok) { authLogout(); return; }
     var d = await r.json();
-    AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin;
+    AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin; AUTH_EXPIRA = d.expiraEm || 0;
     localStorage.setItem('packscan_usuario', AUTH_USUARIO);
     localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
+    localStorage.setItem('packscan_expira', String(AUTH_EXPIRA));
     document.getElementById('auth-bg').classList.add('hide');
     authAplicarPermissoes();
     iniciarApp();

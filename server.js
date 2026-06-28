@@ -191,7 +191,7 @@ const AUTH_SECRET = process.env.AUTH_SECRET || (() => {
   return 'packscan-dev-secret-troque-em-producao';
 })();
 const AUTH_USUARIOS_KEY = 'auth:usuarios';
-const TOKEN_VALIDADE_MS = 7 * 24 * 60 * 60 * 1000; // 7 dias
+const TOKEN_VALIDADE_MS = 24 * 60 * 60 * 1000; // 1 dia — login diário obrigatório
 
 async function getUsuarios() {
   const v = await supabaseGet(AUTH_USUARIOS_KEY);
@@ -515,11 +515,15 @@ const server = http.createServer(async (req, res) => {
     if (!u || !senhaConfere(senha, u.senhaHash)) return json(res, 401, { error: 'Usuário ou senha inválidos' });
     if (u.status !== 'aprovado') return json(res, 403, { error: 'Cadastro ainda não foi aprovado por um administrador' });
     if (u.expiraEm && u.expiraEm < Date.now()) return json(res, 403, { error: 'Seu tempo de acesso expirou. Fale com o administrador.' });
-    return json(res, 200, { ok: true, token: gerarToken(u.usuario, u.admin, u.expiraEm), usuario: u.usuario, admin: !!u.admin });
+    return json(res, 200, { ok: true, token: gerarToken(u.usuario, u.admin, u.expiraEm), usuario: u.usuario, admin: !!u.admin, expiraEm: u.expiraEm || null });
   }
 
   if (req.method === 'GET' && pathname === '/api/auth/me') {
-    return json(res, 200, { usuario: req.usuarioAtual.usuario, admin: req.usuarioAtual.admin });
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === req.usuarioAtual.usuario);
+    // se o acesso expirou desde o último login, derruba a sessão
+    if (u && u.expiraEm && u.expiraEm < Date.now()) return json(res, 401, { error: 'Acesso expirado' });
+    return json(res, 200, { usuario: req.usuarioAtual.usuario, admin: req.usuarioAtual.admin, expiraEm: u ? (u.expiraEm || null) : null });
   }
 
   if (req.method === 'GET' && pathname === '/api/auth/pendentes') {
