@@ -217,8 +217,11 @@ function senhaConfere(senha, hashArmazenado) {
 function base64url(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 function base64urlDecode(str) { return Buffer.from(str.replace(/-/g,'+').replace(/_/g,'/'), 'base64'); }
 
-function gerarToken(usuario, admin) {
-  const payload = JSON.stringify({ u: usuario, a: !!admin, exp: Date.now() + TOKEN_VALIDADE_MS });
+function gerarToken(usuario, admin, expiraEm) {
+  // exp do token = padrão 7 dias, mas nunca depois da validade de acesso do usuário (se houver)
+  let exp = Date.now() + TOKEN_VALIDADE_MS;
+  if (expiraEm && expiraEm < exp) exp = expiraEm;
+  const payload = JSON.stringify({ u: usuario, a: !!admin, exp });
   const payloadB64 = base64url(payload);
   const assinatura = base64url(crypto.createHmac('sha256', AUTH_SECRET).update(payloadB64).digest());
   return `${payloadB64}.${assinatura}`;
@@ -472,7 +475,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/auth/pendentes', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/validade', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -511,7 +514,8 @@ const server = http.createServer(async (req, res) => {
     const u = lista.find(x => x.usuario === usuario);
     if (!u || !senhaConfere(senha, u.senhaHash)) return json(res, 401, { error: 'Usuário ou senha inválidos' });
     if (u.status !== 'aprovado') return json(res, 403, { error: 'Cadastro ainda não foi aprovado por um administrador' });
-    return json(res, 200, { ok: true, token: gerarToken(u.usuario, u.admin), usuario: u.usuario, admin: !!u.admin });
+    if (u.expiraEm && u.expiraEm < Date.now()) return json(res, 403, { error: 'Seu tempo de acesso expirou. Fale com o administrador.' });
+    return json(res, 200, { ok: true, token: gerarToken(u.usuario, u.admin, u.expiraEm), usuario: u.usuario, admin: !!u.admin });
   }
 
   if (req.method === 'GET' && pathname === '/api/auth/me') {
@@ -523,15 +527,41 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { pendentes: lista.filter(u => u.status === 'pendente').map(u => ({ usuario: u.usuario, criadoEm: u.criadoEm })) });
   }
 
+  // lista todos os usuários com status, admin e validade de acesso (admin)
+  if (req.method === 'GET' && pathname === '/api/auth/usuarios') {
+    const lista = await getUsuarios();
+    return json(res, 200, { usuarios: lista.map(u => ({
+      usuario: u.usuario, status: u.status, admin: !!u.admin,
+      criadoEm: u.criadoEm || null, expiraEm: u.expiraEm || null
+    })) });
+  }
+
+  // define a validade de acesso de um usuário: dias>0 = expira em N dias a partir de agora; dias=0 = sem limite (admin)
+  if (req.method === 'POST' && pathname === '/api/auth/validade') {
+    const body = await readBody(req);
+    const usuario = (body.usuario || '').trim().toLowerCase();
+    const dias = Number(body.dias);
+    if (!Number.isFinite(dias) || dias < 0) return json(res, 400, { error: 'dias inválido' });
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === usuario);
+    if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
+    u.expiraEm = dias > 0 ? Date.now() + dias * 24 * 60 * 60 * 1000 : null;
+    await setUsuarios(lista);
+    console.log(`[auth] validade de ${usuario}: ${dias > 0 ? dias + ' dias' : 'sem limite'} (por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true, expiraEm: u.expiraEm });
+  }
+
   if (req.method === 'POST' && pathname === '/api/auth/aprovar') {
     const body = await readBody(req);
     const usuario = (body.usuario || '').trim().toLowerCase();
+    const dias = Number(body.dias);
     const lista = await getUsuarios();
     const u = lista.find(x => x.usuario === usuario);
     if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
     u.status = 'aprovado';
+    if (Number.isFinite(dias) && dias > 0) u.expiraEm = Date.now() + dias * 24 * 60 * 60 * 1000;
     await setUsuarios(lista);
-    console.log(`[auth] aprovado: ${usuario} (por ${req.usuarioAtual.usuario})`);
+    console.log(`[auth] aprovado: ${usuario}${Number.isFinite(dias) && dias > 0 ? ' ('+dias+' dias)' : ''} (por ${req.usuarioAtual.usuario})`);
     return json(res, 200, { ok: true });
   }
 
