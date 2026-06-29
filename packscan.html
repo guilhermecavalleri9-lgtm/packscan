@@ -687,6 +687,7 @@ async function carregarUsuarios() {
         +   '<button class="btn btn-sm" onclick="authDefinirValidade(\''+nome+'\',30)">30 dias</button>'
         +   '<button class="btn btn-sm" onclick="authDefinirValidadeCustom(\''+nome+'\')">outro…</button>'
         +   '<button class="btn btn-sm" onclick="authDefinirValidade(\''+nome+'\',0)">sem limite</button>'
+        +   '<button class="btn btn-r btn-sm" onclick="authExpirarAgora(\''+nome+'\')">⏱ expirar agora</button>'
         + '</div>'
       + '</div>';
     }).join('');
@@ -695,6 +696,10 @@ async function carregarUsuarios() {
 async function authDefinirValidade(usuario, dias) {
   await apiFetch(BACKEND+'/api/auth/validade', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,dias:dias}) });
   carregarUsuarios();
+}
+function authExpirarAgora(usuario) {
+  if (!confirm('Expirar o acesso de "'+usuario+'" agora? Ele precisará reativar para entrar de novo.')) return;
+  authDefinirValidade(usuario, -1);
 }
 function authDefinirValidadeCustom(usuario) {
   var v = prompt('Quantos dias de acesso para "'+usuario+'"? (0 = sem limite)', '15');

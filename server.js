@@ -545,11 +545,12 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     const usuario = (body.usuario || '').trim().toLowerCase();
     const dias = Number(body.dias);
-    if (!Number.isFinite(dias) || dias < 0) return json(res, 400, { error: 'dias inválido' });
+    if (!Number.isFinite(dias)) return json(res, 400, { error: 'dias inválido' });
     const lista = await getUsuarios();
     const u = lista.find(x => x.usuario === usuario);
     if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
-    u.expiraEm = dias > 0 ? Date.now() + dias * 24 * 60 * 60 * 1000 : null;
+    // dias>0 expira em N dias; dias=0 sem limite; dias<0 expira imediatamente (corte/teste)
+    u.expiraEm = dias === 0 ? null : Date.now() + dias * 24 * 60 * 60 * 1000;
     await setUsuarios(lista);
     console.log(`[auth] validade de ${usuario}: ${dias > 0 ? dias + ' dias' : 'sem limite'} (por ${req.usuarioAtual.usuario})`);
     return json(res, 200, { ok: true, expiraEm: u.expiraEm });
