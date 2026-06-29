@@ -156,6 +156,23 @@ async function supabaseDelete(cacheKey) {
   } catch(e) { console.error('[supabase delete]', e.message); }
 }
 
+// ─── CONTADOR DE USO DA GOOGLE GEOCODING API ──────────────────────────────────
+// Registra UMA linha por chamada REAL ao Google (cache miss). É chamada de dentro
+// das funções que de fato batem no Google (geocodificarEndereco e ruaPeloCep), que
+// só são alcançadas quando não houve cache — então cache hit nunca conta.
+// NUNCA pode travar/derrubar o fluxo de geocodificação: tudo em try/catch e sem await
+// obrigatório no chamador.
+async function logGoogleCall(usuario, cep, apiType) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) return;
+  try {
+    await supabaseRequest('POST', '/rest/v1/google_api_log', {
+      usuario: usuario || null,
+      api_type: apiType || 'geocoding',
+      cep: cep || null
+    });
+  } catch(e) { console.error('[google-log]', e.message); }
+}
+
 function supabaseRequest(method, path, body, extraHeaders) {
   return new Promise((resolve, reject) => {
     const host = SUPABASE_URL.replace('https://','').replace('http://','');
@@ -256,7 +273,7 @@ async function buscarRuaViaCep(cep) {
   return null;
 }
 
-async function ruaPeloCep(cep) {
+async function ruaPeloCep(cep, ctx) {
   if (!cep || cep.length !== 8) return { rua: '', bairro: '', cidade: '' };
   const cepKey = 'cep:' + cep;
   const cached = await supabaseGet(cepKey);
@@ -269,6 +286,8 @@ async function ruaPeloCep(cep) {
     const d = await httpsGet('maps.googleapis.com',
       `/maps/api/geocode/json?address=${query}&key=${GOOGLE_KEY}&language=pt-BR&region=BR`
     );
+    // chamada real ao Google (passou do cache de CEP) — conta no contador
+    logGoogleCall(ctx && ctx.usuario, cep, 'geocoding');
     if (d.status === 'OK' && d.results[0]) {
       const comps = d.results[0].address_components;
       const get = type => (comps.find(c => c.types.includes(type)) || {}).long_name || '';
@@ -394,8 +413,8 @@ function distanciaKm(lat1, lng1, lat2, lng2) {
 // quando a rua usada na busca veio de uma fonte indireta (CEP, cache, sugestão de pacote
 // vizinho), o Google às vezes "corrige" o nome pra uma rua homônima/parecida em outro bairro
 // inteiro — descarta o resultado se ficar longe demais do ponto conhecido do CEP
-async function geocodificarValidado(enderecoCompleto, cepInfo) {
-  const coord = await geocodificarEndereco(enderecoCompleto);
+async function geocodificarValidado(enderecoCompleto, cepInfo, ctx) {
+  const coord = await geocodificarEndereco(enderecoCompleto, ctx);
   if (coord && cepInfo && cepInfo.lat) {
     const d = distanciaKm(coord.lat, coord.lng, cepInfo.lat, cepInfo.lng);
     // se o ponto do CEP já foi corrigido manualmente, é uma referência precisa (não um
@@ -410,11 +429,13 @@ async function geocodificarValidado(enderecoCompleto, cepInfo) {
   return coord;
 }
 
-async function geocodificarEndereco(enderecoCompleto) {
+async function geocodificarEndereco(enderecoCompleto, ctx) {
   const query = encodeURIComponent(enderecoCompleto);
   const d = await httpsGet('maps.googleapis.com',
     `/maps/api/geocode/json?address=${query}&key=${GOOGLE_KEY}&language=pt-BR&region=BR`
   );
+  // chamada real ao Google (passou do cache de endereço) — conta no contador
+  logGoogleCall(ctx && ctx.usuario, ctx && ctx.cep, 'geocoding');
   if (d.status !== 'OK' || !d.results[0]) return null;
   const r = d.results[0];
   const comps = r.address_components;
@@ -475,7 +496,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/validade', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/validade', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -524,6 +545,64 @@ const server = http.createServer(async (req, res) => {
     // se o acesso expirou desde o último login, derruba a sessão
     if (u && u.expiraEm && u.expiraEm < Date.now()) return json(res, 401, { error: 'Acesso expirado' });
     return json(res, 200, { usuario: req.usuarioAtual.usuario, admin: req.usuarioAtual.admin, expiraEm: u ? (u.expiraEm || null) : null });
+  }
+
+  // ─── PAINEL ADMIN: uso da Google Geocoding API no mês atual ────────────────
+  if (req.method === 'GET' && pathname === '/api/admin/google-usage') {
+    const LIMITE = 10000;
+    // início do mês atual (UTC) — o filtro por data faz a contagem "zerar" todo mês
+    // sem apagar nada do histórico
+    const agora = new Date();
+    const inicioMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toISOString();
+
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      return json(res, 200, { totalMes: 0, limiteGratuito: LIMITE, restante: LIMITE, percentUsado: 0, porUsuario: [], porApi: [], semBanco: true });
+    }
+
+    try {
+      // pagina por todas as linhas do mês (até ~10k, operação rara) e agrega em memória —
+      // evita depender de view/RPC e de permissão sobre auth.users
+      const porUsuarioMap = {}, porApiMap = {};
+      let total = 0, offset = 0;
+      const PAGINA = 1000;
+      while (true) {
+        const r = await supabaseRequest('GET',
+          `/rest/v1/google_api_log?created_at=gte.${encodeURIComponent(inicioMes)}&select=usuario,api_type&order=id.asc&limit=${PAGINA}&offset=${offset}`
+        );
+        if (r.status >= 300 || !Array.isArray(r.body)) {
+          console.error('[google-usage]', r.status, JSON.stringify(r.body));
+          break;
+        }
+        for (const row of r.body) {
+          total++;
+          const u = row.usuario || '(desconhecido)';
+          porUsuarioMap[u] = (porUsuarioMap[u] || 0) + 1;
+          const a = row.api_type || 'geocoding';
+          porApiMap[a] = (porApiMap[a] || 0) + 1;
+        }
+        if (r.body.length < PAGINA) break;
+        offset += PAGINA;
+      }
+
+      const porUsuario = Object.keys(porUsuarioMap)
+        .map(u => ({ usuario: u, total: porUsuarioMap[u] }))
+        .sort((a, b) => b.total - a.total);
+      const porApi = Object.keys(porApiMap)
+        .map(a => ({ api_type: a, total: porApiMap[a] }))
+        .sort((a, b) => b.total - a.total);
+
+      return json(res, 200, {
+        totalMes: total,
+        limiteGratuito: LIMITE,
+        restante: Math.max(0, LIMITE - total),
+        percentUsado: Math.round((total / LIMITE) * 100),
+        porUsuario,
+        porApi
+      });
+    } catch(e) {
+      console.error('[google-usage]', e.message);
+      return json(res, 500, { error: e.message });
+    }
   }
 
   if (req.method === 'GET' && pathname === '/api/auth/pendentes') {
@@ -710,6 +789,10 @@ const server = http.createServer(async (req, res) => {
     // chave do cache
     const cacheKey = 'end:' + `${cep || ''}|${endereco || ''}`.toLowerCase().trim();
 
+    // contexto pro contador de uso do Google (quem pediu + qual CEP); usado só quando
+    // há cache miss e o Google é de fato chamado
+    const ctx = { usuario: req.usuarioAtual ? req.usuarioAtual.usuario : null, cep: cep ? cep.replace(/\D/g,'') : null };
+
     // verifica cache Supabase (a menos que "forcar" peça pra ignorar e regeocodificar)
     const cached = body.forcar ? null : await supabaseGet(cacheKey);
     if (cached) {
@@ -720,7 +803,7 @@ const server = http.createServer(async (req, res) => {
     try {
       // forcarEndereco: geocodifica direto sem passar pelo CEP
       if (body.forcarEndereco && endereco) {
-        const coord = await geocodificarEndereco(`${endereco}, SC, Brasil`);
+        const coord = await geocodificarEndereco(`${endereco}, SC, Brasil`, ctx);
         if (coord) {
           await supabaseSet(cacheKey, { ...coord, enderecoNormalizado: endereco });
           return json(res, 200, { ...coord, enderecoNormalizado: endereco, fromCache: false });
@@ -729,7 +812,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
-      const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,'')) : { rua:'', bairro:'', cidade:'' };
+      const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,''), ctx) : { rua:'', bairro:'', cidade:'' };
       let ruaCep = cepInfo.rua;
       const info = await extrairInfoIA(endereco, ruaCep);
       const complemento = info.complemento || 'S/N';
@@ -744,13 +827,13 @@ const server = http.createServer(async (req, res) => {
       // bem longe (ex: "Maria Saturnina de Jesus" → rua errada em outro bairro)
       if (info.rua) {
         enderecoFinal = `${info.rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarValidado(enderecoFinal, cepInfo);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
       }
 
       // fallback 1: rua do CEP + complemento (quando o texto não tinha nome de rua)
       if (!coord && ruaCep) {
         enderecoFinal = `${ruaCep}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarValidado(enderecoFinal, cepInfo);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
       }
 
       // fallback 1.4: nem o texto nem o Google sabem a rua do CEP — busca no CACHE
@@ -759,7 +842,7 @@ const server = http.createServer(async (req, res) => {
         const ruaCache = await buscarRuaApreendidaPorCep(cep);
         if (ruaCache) {
           enderecoFinal = `${ruaCache}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-          coord = await geocodificarValidado(enderecoFinal, cepInfo);
+          coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
           if (coord) await supabaseSet('cep:' + cep.replace(/\D/g,''), { ...cepInfo, rua: ruaCache, cidade: cidadeFinal });
         }
       }
@@ -771,7 +854,7 @@ const server = http.createServer(async (req, res) => {
       const ruaSugerida = (body.ruaSugerida || '').trim();
       if (!coord && !ruaCep && ruaSugerida) {
         enderecoFinal = `${ruaSugerida}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarValidado(enderecoFinal, cepInfo);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
         if (coord && cep) {
           // aprende essa rua pro CEP, beneficia próximos lotes também
           await supabaseSet('cep:' + cep.replace(/\D/g,''), { ...cepInfo, rua: ruaSugerida, cidade: cidadeFinal });
@@ -781,7 +864,7 @@ const server = http.createServer(async (req, res) => {
       // fallback 2: complemento contém nome de comércio/condomínio identificável — busca direto
       if (!coord && complemento && complemento !== 'S/N' && !/^\d/.test(complemento)) {
         enderecoFinal = `${complemento}, ${bairro||''}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarValidado(enderecoFinal, cepInfo);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
       }
 
       // fallback 3: endereço bruto completo, limpo (cobre casos que a IA não capturou bem)
@@ -790,7 +873,7 @@ const server = http.createServer(async (req, res) => {
           .replace(/portão|portao|branco|preto|referencia|ref\.|obs\.|entregar|fachada|descendo|subindo/gi, '')
           .replace(/\s{2,}/g,' ').trim();
         enderecoFinal = `${endLimpo}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarValidado(enderecoFinal, cepInfo);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
       }
 
       // fallback 3.6: nada bateu até aqui (texto, rua do Google pro CEP, cache, sugestão) —
@@ -802,7 +885,7 @@ const server = http.createServer(async (req, res) => {
         const ruaOficial = await buscarRuaViaCep(cepDigitsLimpo);
         if (ruaOficial && ruaOficial.rua && ruaOficial.rua !== ruaCep) {
           enderecoFinal = `${ruaOficial.rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-          coord = await geocodificarValidado(enderecoFinal, cepInfo);
+          coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
           if (coord) {
             ruaCep = ruaOficial.rua;
             await supabaseSet('cep:' + cepDigitsLimpo, { ...cepInfo, rua: ruaOficial.rua, cidade: cidadeFinal });
@@ -822,7 +905,7 @@ const server = http.createServer(async (req, res) => {
       if (!coord && cep) {
         const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
         enderecoFinal = `${cepFmt}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
-        coord = await geocodificarValidado(enderecoFinal, cepInfo);
+        coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
       }
 
       // fallback 5 (último recurso): coordenada aproximada do CEP — fica marcado pra corrigir

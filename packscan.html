@@ -471,6 +471,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Defina o tempo de uso de cada usuário. "Sem limite" = acesso permanente.</div>
       <div id="auth-usuarios-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Carregando...</div>
     </div>
+
+    <div class="card">
+      <div class="card-title">uso da google geocoding api</div>
+      <div id="painel-google" style="font-size:13px;color:var(--text3)">Carregando...</div>
+    </div>
   </div>
 </div>
 
@@ -709,6 +714,80 @@ function authDefinirValidadeCustom(usuario) {
   authDefinirValidade(usuario, dias);
 }
 
+// ── contador de uso da Google Geocoding API (ES5) ──────────────────────────────
+function carregarUsoGoogle() {
+  if (!AUTH_ADMIN) return;
+  var el = document.getElementById('painel-google');
+  if (!el) return;
+  el.innerHTML = 'Carregando...';
+  apiFetch(BACKEND + '/api/admin/google-usage').then(function(r) {
+    return r.json();
+  }).then(function(d) {
+    var meses = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+    var agora = new Date();
+    var tituloMes = meses[agora.getMonth()] + ' de ' + agora.getFullYear();
+
+    var limite = d.limiteGratuito || 10000;
+    var total = d.totalMes || 0;
+    var restante = (typeof d.restante === 'number') ? d.restante : Math.max(0, limite - total);
+    var pct = (typeof d.percentUsado === 'number') ? d.percentUsado : Math.round((total / limite) * 100);
+    var pctBarra = pct > 100 ? 100 : pct;
+
+    // verde < 70%, laranja 70-90%, vermelho >= 90%
+    var cor = pct >= 90 ? 'var(--red)' : (pct >= 70 ? 'var(--amber)' : 'var(--green)');
+
+    var html = '';
+    html += '<div style="font-size:12px;color:var(--text3);margin-bottom:.5rem">Mês atual: <strong style="color:var(--text2)">' + tituloMes + '</strong></div>';
+
+    if (d.semBanco) {
+      html += '<div style="color:var(--amber);font-size:12px">Supabase não configurado — sem dados de uso.</div>';
+      el.innerHTML = html;
+      return;
+    }
+
+    html += '<div style="font-size:22px;font-weight:700;color:var(--text);margin-bottom:.25rem">' + total.toLocaleString('pt-BR') + ' <span style="font-size:13px;font-weight:400;color:var(--text3)">/ ' + limite.toLocaleString('pt-BR') + ' gratuitas</span></div>';
+
+    // barra de progresso
+    html += '<div style="background:var(--bg3);border-radius:6px;height:14px;overflow:hidden;margin:.6rem 0">';
+    html += '<div style="width:' + pctBarra + '%;height:100%;background:' + cor + ';transition:width .3s"></div>';
+    html += '</div>';
+    html += '<div style="font-size:12px;color:var(--text3)">' + pct + '% usado · restam <strong style="color:var(--text2)">' + restante.toLocaleString('pt-BR') + '</strong> requisições gratuitas</div>';
+
+    if (total >= 9000) {
+      html += '<div style="margin-top:.6rem;padding:8px 10px;background:rgba(255,0,0,.12);border:1px solid var(--red);border-radius:var(--radius);color:var(--red);font-size:12px">⚠ Perto do limite gratuito mensal! Acima de 10.000 requisições o Google passa a cobrar.</div>';
+    }
+
+    // por API (só mostra se houver mais de uma)
+    var porApi = d.porApi || [];
+    if (porApi.length > 1) {
+      html += '<div style="margin-top:1rem;font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px">por API</div>';
+      html += '<div style="font-size:12px;color:var(--text2);margin-top:.3rem">';
+      for (var i = 0; i < porApi.length; i++) {
+        html += '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)"><span>' + esc(porApi[i].api_type) + '</span><span>' + (porApi[i].total || 0).toLocaleString('pt-BR') + '</span></div>';
+      }
+      html += '</div>';
+    }
+
+    // por usuário
+    var porUsuario = d.porUsuario || [];
+    html += '<div style="margin-top:1rem;font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px">por usuário</div>';
+    if (!porUsuario.length) {
+      html += '<div style="font-size:12px;color:var(--text3);margin-top:.3rem">Nenhuma requisição neste mês.</div>';
+    } else {
+      html += '<table style="margin-top:.3rem"><thead><tr><th>Usuário</th><th style="text-align:right">Requisições</th></tr></thead><tbody>';
+      for (var j = 0; j < porUsuario.length; j++) {
+        var nome = porUsuario[j].usuario || porUsuario[j].email || porUsuario[j].user_id || '(desconhecido)';
+        html += '<tr><td>' + esc(nome) + '</td><td style="text-align:right;font-family:var(--mono)">' + (porUsuario[j].total || 0).toLocaleString('pt-BR') + '</td></tr>';
+      }
+      html += '</tbody></table>';
+    }
+
+    el.innerHTML = html;
+  }).catch(function(e) {
+    el.innerHTML = '<div style="color:var(--red);font-size:12px">Erro ao carregar uso da API: ' + esc(e.message) + '</div>';
+  });
+}
+
 async function cepCorrExcluir() {
   var cepDigits = document.getElementById('cepcorr-cep').value.replace(/\D/g,'');
   var st = document.getElementById('cepcorr-status');
@@ -765,7 +844,7 @@ function goTab(n) {
   if (n===3) renderMotDownload();
   if (n===4) renderRegioes();
   if (n===6 && _cepCorrMap) setTimeout(function(){ _cepCorrMap.invalidateSize(); }, 100);
-  if (n===7 && AUTH_ADMIN) { carregarPendentes(); carregarUsuarios(); }
+  if (n===7 && AUTH_ADMIN) { carregarPendentes(); carregarUsuarios(); carregarUsoGoogle(); }
   if (n!==5 && _scAtivo) scParar();
 }
 
