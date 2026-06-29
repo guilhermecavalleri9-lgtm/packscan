@@ -757,15 +757,26 @@ function carregarUsoGoogle() {
       html += '<div style="margin-top:.6rem;padding:8px 10px;background:rgba(255,0,0,.12);border:1px solid var(--red);border-radius:var(--radius);color:var(--red);font-size:12px">⚠ Perto do limite gratuito mensal! Acima de 10.000 requisições o Google passa a cobrar.</div>';
     }
 
-    // por API (só mostra se houver mais de uma)
+    // custo estimado total (Google + Anthropic)
+    var custoUsd = d.custoTotalUsd || 0;
+    var custoBrl = custoUsd * 5.4; // câmbio aproximado só pra referência
+    html += '<div style="margin-top:1rem;padding:10px 12px;background:var(--bg3);border-radius:var(--radius)">';
+    html += '<div style="font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px">custo estimado no mês (Google + IA)</div>';
+    html += '<div style="font-size:18px;font-weight:700;color:var(--text);margin-top:.25rem">US$ ' + custoUsd.toFixed(2) + ' <span style="font-size:12px;font-weight:400;color:var(--text3)">≈ R$ ' + custoBrl.toFixed(2) + '</span></div>';
+    html += '<div style="font-size:10px;color:var(--text3);margin-top:.2rem">estimativa: Google só acima de 10 mil grátis; IA por tokens (câmbio ~R$5,40). Valor oficial no billing de cada conta.</div>';
+    html += '</div>';
+
+    // por API (nomes amigáveis + custo)
     var porApi = d.porApi || [];
-    if (porApi.length > 1) {
+    var nomesApi = { geocoding: 'Google Geocoding', anthropic: 'IA (Anthropic)' };
+    if (porApi.length) {
       html += '<div style="margin-top:1rem;font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px">por API</div>';
-      html += '<div style="font-size:12px;color:var(--text2);margin-top:.3rem">';
+      html += '<table style="margin-top:.3rem"><thead><tr><th>API</th><th style="text-align:right">Chamadas</th><th style="text-align:right">Custo est.</th></tr></thead><tbody>';
       for (var i = 0; i < porApi.length; i++) {
-        html += '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)"><span>' + esc(porApi[i].api_type) + '</span><span>' + (porApi[i].total || 0).toLocaleString('pt-BR') + '</span></div>';
+        var nome = nomesApi[porApi[i].api_type] || porApi[i].api_type;
+        html += '<tr><td>' + esc(nome) + '</td><td style="text-align:right;font-family:var(--mono)">' + (porApi[i].total || 0).toLocaleString('pt-BR') + '</td><td style="text-align:right;font-family:var(--mono)">US$ ' + (porApi[i].custoUsd || 0).toFixed(2) + '</td></tr>';
       }
-      html += '</div>';
+      html += '</tbody></table>';
     }
 
     // por usuário

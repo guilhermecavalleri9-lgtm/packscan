@@ -162,13 +162,15 @@ async function supabaseDelete(cacheKey) {
 // só são alcançadas quando não houve cache — então cache hit nunca conta.
 // NUNCA pode travar/derrubar o fluxo de geocodificação: tudo em try/catch e sem await
 // obrigatório no chamador.
-async function logGoogleCall(usuario, cep, apiType) {
+async function logGoogleCall(usuario, cep, apiType, tokens) {
   if (!SUPABASE_URL || !SUPABASE_KEY) return;
   try {
     await supabaseRequest('POST', '/rest/v1/google_api_log', {
       usuario: usuario || null,
       api_type: apiType || 'geocoding',
-      cep: cep || null
+      cep: cep || null,
+      input_tokens: (tokens && tokens.input) || null,
+      output_tokens: (tokens && tokens.output) || null
     });
   } catch(e) { console.error('[google-log]', e.message); }
 }
@@ -356,7 +358,7 @@ function extrairQuadraLote(textoBruto) {
   return [qd ? `Quadra ${qd[1]}` : '', lt ? `Lote ${lt[1]}` : ''].filter(Boolean).join(', ');
 }
 
-async function extrairInfoIA(textoBruto, ruaCep) {
+async function extrairInfoIA(textoBruto, ruaCep, ctx) {
   textoBruto = textoBruto || '';
   if (!textoBruto.trim()) return { rua: '', complemento: 'S/N' };
   if (!ANTHROPIC_KEY) return extrairNumeroLocal(textoBruto);
@@ -383,6 +385,11 @@ Responda APENAS com um JSON válido de uma linha, sem markdown: {"rua":"...","co
       { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
       JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 150, messages: [{ role: 'user', content: prompt }] })
     );
+    // chamada real à API da Anthropic — conta no contador com os tokens usados (pra estimar custo)
+    logGoogleCall(ctx && ctx.usuario, ctx && ctx.cep, 'anthropic', {
+      input: (result.usage && result.usage.input_tokens) || 0,
+      output: (result.usage && result.usage.output_tokens) || 0
+    });
     const texto = result.content?.[0]?.text?.trim() || '';
     const match = texto.match(/\{[\s\S]*\}/);
     if (match) {
@@ -556,46 +563,68 @@ const server = http.createServer(async (req, res) => {
     const inicioMes = new Date(Date.UTC(agora.getUTCFullYear(), agora.getUTCMonth(), 1)).toISOString();
 
     if (!SUPABASE_URL || !SUPABASE_KEY) {
-      return json(res, 200, { totalMes: 0, limiteGratuito: LIMITE, restante: LIMITE, percentUsado: 0, porUsuario: [], porApi: [], semBanco: true });
+      return json(res, 200, { totalMes: 0, limiteGratuito: LIMITE, restante: LIMITE, percentUsado: 0, custoTotalUsd: 0, porUsuario: [], porApi: [], semBanco: true });
     }
 
     try {
-      // pagina por todas as linhas do mês (até ~10k, operação rara) e agrega em memória —
+      // pagina por todas as linhas do mês (operação rara) e agrega em memória —
       // evita depender de view/RPC e de permissão sobre auth.users
       const porUsuarioMap = {}, porApiMap = {};
-      let total = 0, offset = 0;
+      let offset = 0;
       const PAGINA = 1000;
       while (true) {
         const r = await supabaseRequest('GET',
-          `/rest/v1/google_api_log?created_at=gte.${encodeURIComponent(inicioMes)}&select=usuario,api_type&order=id.asc&limit=${PAGINA}&offset=${offset}`
+          `/rest/v1/google_api_log?created_at=gte.${encodeURIComponent(inicioMes)}&select=usuario,api_type,input_tokens,output_tokens&order=id.asc&limit=${PAGINA}&offset=${offset}`
         );
         if (r.status >= 300 || !Array.isArray(r.body)) {
           console.error('[google-usage]', r.status, JSON.stringify(r.body));
           break;
         }
         for (const row of r.body) {
-          total++;
           const u = row.usuario || '(desconhecido)';
           porUsuarioMap[u] = (porUsuarioMap[u] || 0) + 1;
           const a = row.api_type || 'geocoding';
-          porApiMap[a] = (porApiMap[a] || 0) + 1;
+          if (!porApiMap[a]) porApiMap[a] = { total: 0, inputTokens: 0, outputTokens: 0 };
+          porApiMap[a].total++;
+          porApiMap[a].inputTokens += row.input_tokens || 0;
+          porApiMap[a].outputTokens += row.output_tokens || 0;
         }
         if (r.body.length < PAGINA) break;
         offset += PAGINA;
       }
 
+      // ── estimativa de custo (US$) ───────────────────────────────────────
+      // Google Geocoding: 10.000 grátis/mês, depois US$ 0,005 por requisição
+      // Anthropic (claude-haiku-4-5): US$ 1,00 / 1M tokens de entrada, US$ 5,00 / 1M de saída
+      const PRECO_GOOGLE = 0.005;
+      const ANTHROPIC_IN = 1.0 / 1e6, ANTHROPIC_OUT = 5.0 / 1e6;
+
+      const geoCount = porApiMap['geocoding'] ? porApiMap['geocoding'].total : 0;
+      let custoTotalUsd = 0;
+
+      const porApi = Object.keys(porApiMap).map(a => {
+        const m = porApiMap[a];
+        let custoUsd = 0;
+        if (a === 'geocoding') {
+          custoUsd = Math.max(0, m.total - LIMITE) * PRECO_GOOGLE;
+        } else if (a === 'anthropic') {
+          custoUsd = m.inputTokens * ANTHROPIC_IN + m.outputTokens * ANTHROPIC_OUT;
+        }
+        custoTotalUsd += custoUsd;
+        return { api_type: a, total: m.total, inputTokens: m.inputTokens, outputTokens: m.outputTokens, custoUsd };
+      }).sort((x, y) => y.total - x.total);
+
       const porUsuario = Object.keys(porUsuarioMap)
         .map(u => ({ usuario: u, total: porUsuarioMap[u] }))
         .sort((a, b) => b.total - a.total);
-      const porApi = Object.keys(porApiMap)
-        .map(a => ({ api_type: a, total: porApiMap[a] }))
-        .sort((a, b) => b.total - a.total);
 
       return json(res, 200, {
-        totalMes: total,
+        // a barra de "free" continua sendo só do Google (Anthropic não tem cota grátis mensal)
+        totalMes: geoCount,
         limiteGratuito: LIMITE,
-        restante: Math.max(0, LIMITE - total),
-        percentUsado: Math.round((total / LIMITE) * 100),
+        restante: Math.max(0, LIMITE - geoCount),
+        percentUsado: Math.round((geoCount / LIMITE) * 100),
+        custoTotalUsd,
         porUsuario,
         porApi
       });
@@ -814,7 +843,7 @@ const server = http.createServer(async (req, res) => {
       // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
       const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,''), ctx) : { rua:'', bairro:'', cidade:'' };
       let ruaCep = cepInfo.rua;
-      const info = await extrairInfoIA(endereco, ruaCep);
+      const info = await extrairInfoIA(endereco, ruaCep, ctx);
       const complemento = info.complemento || 'S/N';
       const cidadeValida = cidade && !/^\d+$/.test(cidade) ? cidade : '';
       const cidadeFinal = cepInfo.cidade || cidadeValida || 'São José';
