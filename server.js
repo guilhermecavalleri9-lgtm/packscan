@@ -582,8 +582,14 @@ const server = http.createServer(async (req, res) => {
         }
         for (const row of r.body) {
           const u = row.usuario || '(desconhecido)';
-          porUsuarioMap[u] = (porUsuarioMap[u] || 0) + 1;
           const a = row.api_type || 'geocoding';
+          if (!porUsuarioMap[u]) porUsuarioMap[u] = { total: 0, geoCount: 0, inputTokens: 0, outputTokens: 0 };
+          porUsuarioMap[u].total++;
+          if (a === 'geocoding') porUsuarioMap[u].geoCount++;
+          else if (a === 'anthropic') {
+            porUsuarioMap[u].inputTokens += row.input_tokens || 0;
+            porUsuarioMap[u].outputTokens += row.output_tokens || 0;
+          }
           if (!porApiMap[a]) porApiMap[a] = { total: 0, inputTokens: 0, outputTokens: 0 };
           porApiMap[a].total++;
           porApiMap[a].inputTokens += row.input_tokens || 0;
@@ -616,8 +622,12 @@ const server = http.createServer(async (req, res) => {
       }).sort((x, y) => y.total - x.total);
 
       const porUsuario = Object.keys(porUsuarioMap)
-        .map(u => ({ usuario: u, total: porUsuarioMap[u] }))
-        .sort((a, b) => b.total - a.total);
+        .map(u => {
+          const m = porUsuarioMap[u];
+          const custoUsd = m.geoCount * PRECO_GOOGLE + m.inputTokens * ANTHROPIC_IN + m.outputTokens * ANTHROPIC_OUT;
+          return { usuario: u, total: m.total, custoUsd };
+        })
+        .sort((a, b) => b.custoUsd - a.custoUsd || b.total - a.total);
 
       return json(res, 200, {
         // a barra de "free" continua sendo só do Google (Anthropic não tem cota grátis mensal)

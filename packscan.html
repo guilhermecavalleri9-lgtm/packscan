@@ -785,10 +785,10 @@ function carregarUsoGoogle() {
     if (!porUsuario.length) {
       html += '<div style="font-size:12px;color:var(--text3);margin-top:.3rem">Nenhuma requisição neste mês.</div>';
     } else {
-      html += '<table style="margin-top:.3rem"><thead><tr><th>Usuário</th><th style="text-align:right">Requisições</th></tr></thead><tbody>';
+      html += '<table style="margin-top:.3rem"><thead><tr><th>Usuário</th><th style="text-align:right">Requisições</th><th style="text-align:right">Custo est.</th></tr></thead><tbody>';
       for (var j = 0; j < porUsuario.length; j++) {
         var nome = porUsuario[j].usuario || porUsuario[j].email || porUsuario[j].user_id || '(desconhecido)';
-        html += '<tr><td>' + esc(nome) + '</td><td style="text-align:right;font-family:var(--mono)">' + (porUsuario[j].total || 0).toLocaleString('pt-BR') + '</td></tr>';
+        html += '<tr><td>' + esc(nome) + '</td><td style="text-align:right;font-family:var(--mono)">' + (porUsuario[j].total || 0).toLocaleString('pt-BR') + '</td><td style="text-align:right;font-family:var(--mono)">US$ ' + (porUsuario[j].custoUsd || 0).toFixed(2) + '</td></tr>';
       }
       html += '</tbody></table>';
     }
