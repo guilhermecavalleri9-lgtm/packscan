@@ -606,7 +606,8 @@ const server = http.createServer(async (req, res) => {
         const m = porApiMap[a];
         let custoUsd = 0;
         if (a === 'geocoding') {
-          custoUsd = Math.max(0, m.total - LIMITE) * PRECO_GOOGLE;
+          // conta como se NÃO houvesse cota grátis: custo desde a 1ª requisição
+          custoUsd = m.total * PRECO_GOOGLE;
         } else if (a === 'anthropic') {
           custoUsd = m.inputTokens * ANTHROPIC_IN + m.outputTokens * ANTHROPIC_OUT;
         }
