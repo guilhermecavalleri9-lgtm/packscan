@@ -7,6 +7,14 @@ const url = require('url');
 const PORT = process.env.PORT || 3000;
 const GOOGLE_KEY = process.env.GOOGLE_MAPS_KEY || 'AIzaSyCHRl5eRHAfw0-WVEBj0wC5tpbJ81265gk';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
+const MERCADOPAGO_TOKEN = process.env.MERCADOPAGO_TOKEN || '';
+// pacotes de créditos à venda (1 crédito = 1 requisição). Preço com ~30% de margem, arredondado.
+const PACOTES_CREDITOS = [
+  { id: 'p1000',  creditos: 1000,  preco: 35.00 },
+  { id: 'p2000',  creditos: 2000,  preco: 70.00 },
+  { id: 'p5000',  creditos: 5000,  preco: 175.00 },
+  { id: 'p10000', creditos: 10000, preco: 350.00 }
+];
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const ROTAS_FILE = path.join(__dirname, 'rotas_salvas.json');
@@ -209,6 +217,38 @@ async function saldoCreditos(usuarioRec) {
   const comprados = Number(usuarioRec.creditos) || 0;
   const usado = await carregarUsoGeocoding(usuarioRec.usuario);
   return comprados - usado;
+}
+
+// ─── PAGAMENTO (Mercado Pago — PIX) ────────────────────────────────────────────
+function mpRequest(method, mpPath, body) {
+  return new Promise((resolve, reject) => {
+    const payload = body ? Buffer.from(JSON.stringify(body)) : null;
+    const headers = { 'Authorization': 'Bearer ' + MERCADOPAGO_TOKEN, 'Content-Type': 'application/json' };
+    if (payload) headers['Content-Length'] = payload.length;
+    const req = https.request({ hostname: 'api.mercadopago.com', path: mpPath, method, headers }, r => {
+      let data = '';
+      r.on('data', c => data += c);
+      r.on('end', () => { let p; try { p = data ? JSON.parse(data) : {}; } catch(e) { p = data; } resolve({ status: r.statusCode, body: p }); });
+    });
+    req.on('error', reject);
+    if (payload) req.write(payload);
+    req.end();
+  });
+}
+
+// credita um pagamento aprovado no saldo do usuário — idempotente (só credita 1x)
+async function creditarPagamento(mpId) {
+  const rec = await supabaseGet('pay:' + mpId);
+  if (!rec || rec.status === 'creditado') return rec; // já creditado ou inexistente
+  const lista = await getUsuarios();
+  const u = lista.find(x => x.usuario === rec.usuario);
+  if (u) {
+    u.creditos = (Number(u.creditos) || 0) + rec.creditos;
+    await setUsuarios(lista);
+  }
+  await supabaseSet('pay:' + mpId, { ...rec, status: 'creditado' });
+  console.log(`[pagamento] aprovado: ${rec.usuario} +${rec.creditos} créditos (R$ ${rec.preco})`);
+  return { ...rec, status: 'creditado' };
 }
 
 function supabaseRequest(method, path, body, extraHeaders) {
@@ -537,7 +577,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/pagamento/webhook']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/validade', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -610,6 +650,72 @@ const server = http.createServer(async (req, res) => {
     const usado = await carregarUsoGeocoding(usuario);
     console.log(`[creditos] ${usuario}: +${adicionar} (total comprado ${u.creditos}, por ${req.usuarioAtual.usuario})`);
     return json(res, 200, { ok: true, comprados: u.creditos, saldo: Math.max(0, u.creditos - usado) });
+  }
+
+  // ─── PAGAMENTO: lista de pacotes à venda ───────────────────────────────────
+  if (req.method === 'GET' && pathname === '/api/pagamento/pacotes') {
+    return json(res, 200, { pacotes: PACOTES_CREDITOS, ativo: !!MERCADOPAGO_TOKEN });
+  }
+
+  // ─── PAGAMENTO: cria um PIX no Mercado Pago ────────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/pagamento/criar') {
+    if (!MERCADOPAGO_TOKEN) return json(res, 503, { error: 'Pagamento ainda não configurado pelo administrador.' });
+    const body = await readBody(req);
+    const pacote = PACOTES_CREDITOS.find(p => p.id === body.pacoteId);
+    if (!pacote) return json(res, 400, { error: 'Pacote inválido' });
+    const usuario = req.usuarioAtual.usuario;
+    try {
+      const mp = await mpRequest('POST', '/v1/payments', {
+        transaction_amount: pacote.preco,
+        description: `PackScan — ${pacote.creditos} créditos`,
+        payment_method_id: 'pix',
+        payer: { email: `${usuario}@packscan.app` }
+      });
+      if (mp.status >= 300 || !mp.body || !mp.body.id) {
+        console.error('[pagamento criar]', mp.status, JSON.stringify(mp.body));
+        return json(res, 502, { error: 'Não foi possível gerar o PIX. Tente de novo.' });
+      }
+      const id = String(mp.body.id);
+      await supabaseSet('pay:' + id, { usuario, creditos: pacote.creditos, preco: pacote.preco, status: 'pendente' });
+      const td = (mp.body.point_of_interaction && mp.body.point_of_interaction.transaction_data) || {};
+      return json(res, 200, { id, qrBase64: td.qr_code_base64 || '', copiaECola: td.qr_code || '' });
+    } catch(e) {
+      console.error('[pagamento criar]', e.message);
+      return json(res, 502, { error: 'Erro ao falar com o Mercado Pago.' });
+    }
+  }
+
+  // ─── PAGAMENTO: consulta status (frontend faz polling) ─────────────────────
+  if (req.method === 'GET' && pathname === '/api/pagamento/status') {
+    const id = (parsedUrl.query.id || '').toString();
+    let rec = await supabaseGet('pay:' + id);
+    if (!rec) return json(res, 404, { error: 'Pagamento não encontrado' });
+    if (rec.usuario !== req.usuarioAtual.usuario && !req.usuarioAtual.admin) return json(res, 403, { error: 'Não autorizado' });
+    // se ainda pendente, confirma direto no Mercado Pago
+    if (rec.status !== 'creditado' && MERCADOPAGO_TOKEN) {
+      try {
+        const mp = await mpRequest('GET', '/v1/payments/' + id);
+        if (mp.body && mp.body.status === 'approved') rec = await creditarPagamento(id);
+      } catch(e) { console.error('[pagamento status]', e.message); }
+    }
+    return json(res, 200, { status: rec.status });
+  }
+
+  // ─── PAGAMENTO: webhook do Mercado Pago (público) ──────────────────────────
+  if (pathname === '/api/pagamento/webhook') {
+    // o MP avisa via POST {type:'payment', data:{id}} ou via querystring ?type=payment&data.id=...
+    let body = {};
+    if (req.method === 'POST') { try { body = await readBody(req); } catch(e) {} }
+    const tipo = body.type || parsedUrl.query.type || parsedUrl.query.topic;
+    const id = (body.data && body.data.id) || parsedUrl.query['data.id'] || parsedUrl.query.id;
+    if (tipo === 'payment' && id && MERCADOPAGO_TOKEN) {
+      try {
+        const mp = await mpRequest('GET', '/v1/payments/' + id);
+        if (mp.body && mp.body.status === 'approved') await creditarPagamento(String(id));
+      } catch(e) { console.error('[pagamento webhook]', e.message); }
+    }
+    // sempre 200 pro MP parar de reenviar
+    return json(res, 200, { ok: true });
   }
 
   // ─── PAINEL ADMIN: uso da Google Geocoding API no mês atual ────────────────

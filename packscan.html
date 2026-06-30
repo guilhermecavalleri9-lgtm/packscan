@@ -137,7 +137,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div style="font-size:34px;margin-bottom:.5rem">🪙</div>
     <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:.5rem">Seus créditos acabaram</div>
     <div style="font-size:13px;color:var(--text2);margin-bottom:1.25rem">Compre mais créditos para continuar geocodificando pacotes.</div>
-    <a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-bottom:.5rem" href="https://wa.me/5554981194621" target="_blank" rel="noopener">💬 Comprar créditos no WhatsApp</a>
+    <button class="btn btn-p" style="width:100%;justify-content:center;margin-bottom:.5rem" onclick="document.getElementById('creditos-bg').style.display='none';comprarAbrir()">🪙 Comprar com PIX</button>
+    <a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-bottom:.5rem" href="https://wa.me/5554981194621" target="_blank" rel="noopener">💬 Comprar no WhatsApp</a>
     <button class="btn" style="width:100%;justify-content:center" onclick="recarregarSaldo()">↻ Já comprei — atualizar saldo</button>
   </div>
 </div>
@@ -147,7 +148,27 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <span style="color:var(--text3);font-size:11px;font-family:var(--mono)">// roteirização com geocodificação IA</span>
   <span style="flex:1"></span>
   <span id="auth-user-info" style="font-size:12px;color:var(--text2);font-family:var(--mono)"></span>
+  <button class="btn btn-sm" onclick="comprarAbrir()">🪙 Comprar</button>
   <button class="btn btn-sm" onclick="authLogout()">Sair</button>
+</div>
+
+<!-- modal: comprar créditos via PIX -->
+<div id="comprar-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:10002;align-items:center;justify-content:center;overflow:auto">
+  <div class="auth-box" style="width:420px">
+    <div style="display:flex;align-items:center;margin-bottom:1rem">
+      <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">Comprar créditos</div>
+      <button class="btn btn-sm" onclick="comprarFechar()">✕</button>
+    </div>
+    <div id="comprar-lista" style="font-size:13px;color:var(--text3)">Carregando...</div>
+    <div id="comprar-pix" style="display:none;text-align:center">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:.6rem">Pague o PIX abaixo. O crédito cai automaticamente após a confirmação.</div>
+      <img id="comprar-qr" alt="QR PIX" style="width:200px;height:200px;background:#fff;border-radius:8px;padding:6px;margin:0 auto .6rem;display:block">
+      <label style="font-size:11px;color:var(--text3)">PIX copia e cola</label>
+      <textarea id="comprar-copia" readonly style="width:100%;height:64px;font-size:11px;font-family:var(--mono);margin:4px 0"></textarea>
+      <button class="btn btn-sm" style="width:100%;justify-content:center" onclick="comprarCopiar()">📋 Copiar código</button>
+      <div id="comprar-status" style="font-size:13px;color:var(--amber);margin-top:.75rem">⏳ Aguardando pagamento...</div>
+    </div>
+  </div>
 </div>
 
 <div class="tab-bar">
@@ -578,6 +599,72 @@ function recarregarSaldo() {
       atualizarHeaderInfo();
       if (AUTH_CREDITOS === null || AUTH_CREDITOS > 0) document.getElementById('creditos-bg').style.display = 'none';
     }).catch(function(){});
+}
+
+// ── compra de créditos via PIX (Mercado Pago) ──────────────────────────────────
+var _comprarPoll = null;
+function comprarAbrir() {
+  document.getElementById('comprar-bg').style.display = 'flex';
+  document.getElementById('comprar-pix').style.display = 'none';
+  var lista = document.getElementById('comprar-lista');
+  lista.style.display = 'block';
+  lista.innerHTML = 'Carregando...';
+  apiFetch(BACKEND + '/api/pagamento/pacotes').then(function(r){ return r.json(); }).then(function(d){
+    if (!d.ativo) {
+      lista.innerHTML = '<div style="color:var(--amber);font-size:13px">Pagamento automático ainda não está configurado. Fale no WhatsApp:</div>'
+        + '<a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-top:.6rem" href="' + WHATSAPP_COMPRA + '" target="_blank" rel="noopener">💬 Comprar no WhatsApp</a>';
+      return;
+    }
+    var html = '<div style="font-size:12px;color:var(--text3);margin-bottom:.6rem">Escolha um pacote (PIX):</div>';
+    for (var i = 0; i < d.pacotes.length; i++) {
+      var p = d.pacotes[i];
+      html += '<button class="btn" style="width:100%;justify-content:space-between;margin-bottom:6px" onclick="comprarPacote(\'' + p.id + '\')">'
+        + '<span>' + p.creditos.toLocaleString('pt-BR') + ' créditos</span>'
+        + '<strong>R$ ' + p.preco.toFixed(2).replace('.', ',') + '</strong></button>';
+    }
+    lista.innerHTML = html;
+  }).catch(function(e){ lista.innerHTML = '<div style="color:var(--red)">Erro: ' + esc(e.message) + '</div>'; });
+}
+function comprarPacote(pacoteId) {
+  var lista = document.getElementById('comprar-lista');
+  lista.innerHTML = 'Gerando PIX...';
+  apiFetch(BACKEND + '/api/pagamento/criar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pacoteId:pacoteId}) })
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+    .then(function(res){
+      if (!res.ok) { lista.innerHTML = '<div style="color:var(--red)">' + esc(res.d.error||'Erro ao gerar PIX') + '</div>'; return; }
+      lista.style.display = 'none';
+      document.getElementById('comprar-pix').style.display = 'block';
+      document.getElementById('comprar-qr').src = res.d.qrBase64 ? ('data:image/png;base64,' + res.d.qrBase64) : '';
+      document.getElementById('comprar-copia').value = res.d.copiaECola || '';
+      document.getElementById('comprar-status').textContent = '⏳ Aguardando pagamento...';
+      document.getElementById('comprar-status').style.color = 'var(--amber)';
+      comprarIniciarPoll(res.d.id);
+    }).catch(function(e){ lista.innerHTML = '<div style="color:var(--red)">Erro: ' + esc(e.message) + '</div>'; });
+}
+function comprarIniciarPoll(id) {
+  if (_comprarPoll) clearInterval(_comprarPoll);
+  _comprarPoll = setInterval(function(){
+    apiFetch(BACKEND + '/api/pagamento/status?id=' + encodeURIComponent(id)).then(function(r){ return r.json(); }).then(function(d){
+      if (d.status === 'creditado') {
+        clearInterval(_comprarPoll); _comprarPoll = null;
+        var st = document.getElementById('comprar-status');
+        st.textContent = '✓ Pagamento confirmado! Créditos adicionados.';
+        st.style.color = 'var(--green)';
+        recarregarSaldo();
+        setTimeout(comprarFechar, 2500);
+      }
+    }).catch(function(){});
+  }, 4000);
+}
+function comprarCopiar() {
+  var t = document.getElementById('comprar-copia');
+  t.select();
+  try { document.execCommand('copy'); } catch(e){}
+  if (navigator.clipboard) navigator.clipboard.writeText(t.value).catch(function(){});
+}
+function comprarFechar() {
+  if (_comprarPoll) { clearInterval(_comprarPoll); _comprarPoll = null; }
+  document.getElementById('comprar-bg').style.display = 'none';
 }
 
 function authMostrarAba(aba) {
