@@ -163,6 +163,10 @@ async function supabaseDelete(cacheKey) {
 // NUNCA pode travar/derrubar o fluxo de geocodificação: tudo em try/catch e sem await
 // obrigatório no chamador.
 async function logGoogleCall(usuario, cep, apiType, tokens) {
+  // contabiliza o consumo de créditos: só requisições ao Google contam (1 req = 1 crédito)
+  if (usuario && (apiType || 'geocoding') === 'geocoding') {
+    if (typeof usoGeocoding[usuario] === 'number') usoGeocoding[usuario]++;
+  }
   if (!SUPABASE_URL || !SUPABASE_KEY) return;
   try {
     await supabaseRequest('POST', '/rest/v1/google_api_log', {
@@ -173,6 +177,38 @@ async function logGoogleCall(usuario, cep, apiType, tokens) {
       output_tokens: (tokens && tokens.output) || null
     });
   } catch(e) { console.error('[google-log]', e.message); }
+}
+
+// ─── CRÉDITOS PRÉ-PAGOS ────────────────────────────────────────────────────────
+// 1 crédito = 1 requisição ao Google. O usuário tem um total comprado (campo
+// "creditos" no registro) e um consumo histórico (linhas 'geocoding' no log). Saldo
+// = creditos - consumo. Pra não consultar o banco a cada pacote, o consumo de cada
+// usuário é carregado uma vez (lazy) e mantido em memória, incrementado a cada chamada.
+const usoGeocoding = {}; // usuario -> nº de requisições Google já feitas (histórico)
+
+async function carregarUsoGeocoding(usuario) {
+  if (typeof usoGeocoding[usuario] === 'number') return usoGeocoding[usuario];
+  if (!SUPABASE_URL || !SUPABASE_KEY) { usoGeocoding[usuario] = 0; return 0; }
+  try {
+    const enc = encodeURIComponent(usuario);
+    const r = await supabaseRequest('GET',
+      `/rest/v1/google_api_log?usuario=eq.${enc}&api_type=eq.geocoding&select=id`,
+      null, { 'Prefer': 'count=exact', 'Range': '0-0' });
+    // Content-Range vem como "0-0/123" — o total fica depois da barra
+    const cr = (r.headers && (r.headers['content-range'] || r.headers['Content-Range'])) || '';
+    const total = parseInt((cr.split('/')[1] || '0'), 10);
+    usoGeocoding[usuario] = Number.isFinite(total) ? total : 0;
+  } catch(e) { console.error('[creditos uso]', e.message); usoGeocoding[usuario] = 0; }
+  return usoGeocoding[usuario];
+}
+
+// saldo restante de um usuário (Infinity para admin = ilimitado)
+async function saldoCreditos(usuarioRec) {
+  if (!usuarioRec) return 0;
+  if (usuarioRec.admin) return Infinity;
+  const comprados = Number(usuarioRec.creditos) || 0;
+  const usado = await carregarUsoGeocoding(usuarioRec.usuario);
+  return comprados - usado;
 }
 
 function supabaseRequest(method, path, body, extraHeaders) {
@@ -194,7 +230,7 @@ function supabaseRequest(method, path, body, extraHeaders) {
         let parsed;
         try { parsed = data ? JSON.parse(data) : {}; }
         catch(e) { parsed = data; }
-        resolve({ status: r.statusCode, body: parsed });
+        resolve({ status: r.statusCode, body: parsed, headers: r.headers });
       });
     });
     req.on('error', reject);
@@ -503,7 +539,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/validade', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/validade', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -543,7 +579,8 @@ const server = http.createServer(async (req, res) => {
     if (!u || !senhaConfere(senha, u.senhaHash)) return json(res, 401, { error: 'Usuário ou senha inválidos' });
     if (u.status !== 'aprovado') return json(res, 403, { error: 'Cadastro ainda não foi aprovado por um administrador' });
     if (u.expiraEm && u.expiraEm < Date.now()) return json(res, 403, { error: 'Seu tempo de acesso expirou. Fale com o administrador.' });
-    return json(res, 200, { ok: true, token: gerarToken(u.usuario, u.admin, u.expiraEm), usuario: u.usuario, admin: !!u.admin, expiraEm: u.expiraEm || null });
+    const saldoLogin = await saldoCreditos(u);
+    return json(res, 200, { ok: true, token: gerarToken(u.usuario, u.admin, u.expiraEm), usuario: u.usuario, admin: !!u.admin, expiraEm: u.expiraEm || null, creditos: saldoLogin === Infinity ? null : Math.max(0, saldoLogin) });
   }
 
   if (req.method === 'GET' && pathname === '/api/auth/me') {
@@ -551,7 +588,28 @@ const server = http.createServer(async (req, res) => {
     const u = lista.find(x => x.usuario === req.usuarioAtual.usuario);
     // se o acesso expirou desde o último login, derruba a sessão
     if (u && u.expiraEm && u.expiraEm < Date.now()) return json(res, 401, { error: 'Acesso expirado' });
-    return json(res, 200, { usuario: req.usuarioAtual.usuario, admin: req.usuarioAtual.admin, expiraEm: u ? (u.expiraEm || null) : null });
+    const saldo = await saldoCreditos(u);
+    return json(res, 200, {
+      usuario: req.usuarioAtual.usuario, admin: req.usuarioAtual.admin,
+      expiraEm: u ? (u.expiraEm || null) : null,
+      creditos: saldo === Infinity ? null : Math.max(0, saldo) // null = ilimitado (admin)
+    });
+  }
+
+  // ─── CRÉDITOS: admin recarrega o saldo de um usuário ───────────────────────
+  if (req.method === 'POST' && pathname === '/api/auth/creditos') {
+    const body = await readBody(req);
+    const usuario = (body.usuario || '').trim().toLowerCase();
+    const adicionar = Number(body.adicionar);
+    if (!Number.isFinite(adicionar)) return json(res, 400, { error: 'adicionar inválido' });
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === usuario);
+    if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
+    u.creditos = Math.max(0, (Number(u.creditos) || 0) + adicionar);
+    await setUsuarios(lista);
+    const usado = await carregarUsoGeocoding(usuario);
+    console.log(`[creditos] ${usuario}: +${adicionar} (total comprado ${u.creditos}, por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true, comprados: u.creditos, saldo: Math.max(0, u.creditos - usado) });
   }
 
   // ─── PAINEL ADMIN: uso da Google Geocoding API no mês atual ────────────────
@@ -650,13 +708,21 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { pendentes: lista.filter(u => u.status === 'pendente').map(u => ({ usuario: u.usuario, criadoEm: u.criadoEm })) });
   }
 
-  // lista todos os usuários com status, admin e validade de acesso (admin)
+  // lista todos os usuários com status, admin, validade e saldo de créditos (admin)
   if (req.method === 'GET' && pathname === '/api/auth/usuarios') {
     const lista = await getUsuarios();
-    return json(res, 200, { usuarios: lista.map(u => ({
-      usuario: u.usuario, status: u.status, admin: !!u.admin,
-      criadoEm: u.criadoEm || null, expiraEm: u.expiraEm || null
-    })) });
+    const out = [];
+    for (const u of lista) {
+      const comprados = Number(u.creditos) || 0;
+      const usado = u.admin ? 0 : await carregarUsoGeocoding(u.usuario);
+      out.push({
+        usuario: u.usuario, status: u.status, admin: !!u.admin,
+        criadoEm: u.criadoEm || null, expiraEm: u.expiraEm || null,
+        creditosComprados: comprados, creditosUsados: usado,
+        saldo: u.admin ? null : Math.max(0, comprados - usado)
+      });
+    }
+    return json(res, 200, { usuarios: out });
   }
 
   // define a validade de acesso de um usuário: dias>0 = expira em N dias a partir de agora; dias=0 = sem limite (admin)
@@ -838,6 +904,15 @@ const server = http.createServer(async (req, res) => {
     if (cached) {
       console.log(`[cache] ${(endereco||cep||'').substring(0,35)}`);
       return json(res, 200, { ...cached, fromCache: true });
+    }
+
+    // gate de créditos: cache hit (acima) não consome; daqui pra baixo vai bater no
+    // Google, então exige saldo. Admin é ilimitado.
+    {
+      const usuarios = await getUsuarios();
+      const meuRec = usuarios.find(u => u.usuario === (req.usuarioAtual && req.usuarioAtual.usuario));
+      const saldo = await saldoCreditos(meuRec);
+      if (saldo <= 0) return json(res, 402, { error: 'Seus créditos acabaram. Compre mais para continuar.', semCreditos: true });
     }
 
     try {

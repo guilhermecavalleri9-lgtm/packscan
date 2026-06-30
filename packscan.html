@@ -131,6 +131,17 @@ tr:hover td{background:rgba(255,255,255,.02)}
   </div>
 </div>
 
+<!-- overlay: créditos esgotados -->
+<div id="creditos-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:10001;align-items:center;justify-content:center">
+  <div class="auth-box" style="text-align:center">
+    <div style="font-size:34px;margin-bottom:.5rem">🪙</div>
+    <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:.5rem">Seus créditos acabaram</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:1.25rem">Compre mais créditos para continuar geocodificando pacotes.</div>
+    <a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-bottom:.5rem" href="https://wa.me/5554981194621" target="_blank" rel="noopener">💬 Comprar créditos no WhatsApp</a>
+    <button class="btn" style="width:100%;justify-content:center" onclick="recarregarSaldo()">↻ Já comprei — atualizar saldo</button>
+  </div>
+</div>
+
 <div class="header">
   <div class="logo">PACK<span>SCAN</span></div>
   <span style="color:var(--text3);font-size:11px;font-family:var(--mono)">// roteirização com geocodificação IA</span>
@@ -459,7 +470,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
      ═══════════════════════════════════════════════════════════════════════════ -->
 <div class="page" id="p7">
   <div style="max-width:760px">
-    <div class="alert alert-blue">ℹ <div>Painel do administrador. Aqui você aprova cadastros novos e define por quanto tempo cada usuário pode usar o sistema. Quando o tempo acaba, o login é bloqueado automaticamente.</div></div>
+    <div class="alert alert-blue">ℹ <div>Painel do administrador. Aqui você aprova cadastros novos e recarrega os créditos pré-pagos de cada usuário (1 crédito = 1 requisição ao Google). Quando o saldo zera, o usuário é bloqueado até comprar mais.</div></div>
 
     <div class="card" style="margin-bottom:1rem">
       <div class="card-title">cadastros pendentes de aprovação</div>
@@ -467,8 +478,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
     </div>
 
     <div class="card">
-      <div class="card-title">usuários e tempo de acesso</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Defina o tempo de uso de cada usuário. "Sem limite" = acesso permanente.</div>
+      <div class="card-title">usuários e créditos</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Saldo pré-pago de cada usuário. Recarregue depois que a pessoa pagar.</div>
       <div id="auth-usuarios-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Carregando...</div>
     </div>
 
@@ -525,24 +536,48 @@ var AUTH_TOKEN = localStorage.getItem('packscan_token') || '';
 var AUTH_USUARIO = localStorage.getItem('packscan_usuario') || '';
 var AUTH_ADMIN = localStorage.getItem('packscan_admin') === '1';
 var AUTH_EXPIRA = Number(localStorage.getItem('packscan_expira')) || 0;
+var AUTH_CREDITOS = null; // null = ilimitado (admin); número = saldo de requisições
 
-// texto curto de dias restantes para o cabeçalho
-function diasRestantesTexto(expiraEm) {
-  if (!expiraEm) return 'acesso ilimitado';
-  var dias = Math.ceil((expiraEm - Date.now()) / 86400000);
-  if (dias <= 0) return 'plano expirado';
-  return dias + ' dia(s) restante(s)';
+// link de compra/recarga (WhatsApp)
+var WHATSAPP_COMPRA = 'https://wa.me/5554981194621';
+
+// texto curto de saldo para o cabeçalho
+function saldoTexto() {
+  if (AUTH_CREDITOS === null) return 'créditos ilimitados';
+  return AUTH_CREDITOS.toLocaleString('pt-BR') + ' créditos';
 }
 
 // fetch com o header de autenticação embutido; se a sessão expirou/foi invalidada,
-// volta pra tela de login automaticamente
+// volta pra tela de login automaticamente; se acabaram os créditos, avisa
 function apiFetch(url, opts) {
   opts = opts || {};
   opts.headers = Object.assign({}, opts.headers, AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {});
   return fetch(url, opts).then(function(r) {
     if (r.status === 401) { authLogout(); throw new Error('Sessão expirada, faça login novamente.'); }
+    if (r.status === 402) { mostrarSemCreditos(); }
     return r;
   });
+}
+
+function mostrarSemCreditos() {
+  AUTH_CREDITOS = 0;
+  atualizarHeaderInfo();
+  document.getElementById('creditos-bg').style.display = 'flex';
+}
+function atualizarHeaderInfo() {
+  var info = AUTH_USUARIO + (AUTH_ADMIN ? ' (admin)' : '') + ' · ' + saldoTexto();
+  var el = document.getElementById('auth-user-info');
+  if (el) el.textContent = info;
+}
+// reconsulta o saldo no servidor (depois que o admin recarregou) e fecha o aviso se houver crédito
+function recarregarSaldo() {
+  fetch(BACKEND+'/api/auth/me', { headers:{ 'Authorization':'Bearer '+AUTH_TOKEN } })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      AUTH_CREDITOS = (d.creditos === null || d.creditos === undefined) ? null : d.creditos;
+      atualizarHeaderInfo();
+      if (AUTH_CREDITOS === null || AUTH_CREDITOS > 0) document.getElementById('creditos-bg').style.display = 'none';
+    }).catch(function(){});
 }
 
 function authMostrarAba(aba) {
@@ -555,9 +590,7 @@ function authMostrarAba(aba) {
 }
 
 function authAplicarPermissoes() {
-  var info = AUTH_USUARIO + (AUTH_ADMIN ? ' (admin)' : '');
-  info += ' · ' + diasRestantesTexto(AUTH_EXPIRA);
-  document.getElementById('auth-user-info').textContent = info;
+  atualizarHeaderInfo();
   var els = document.querySelectorAll('.admin-only');
   for (var i=0;i<els.length;i++) els[i].style.display = AUTH_ADMIN ? '' : 'none';
 }
@@ -578,6 +611,7 @@ async function authLogin() {
       return;
     }
     AUTH_TOKEN = d.token; AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin; AUTH_EXPIRA = d.expiraEm || 0;
+    AUTH_CREDITOS = (d.creditos === null || d.creditos === undefined) ? null : d.creditos;
     localStorage.setItem('packscan_token', AUTH_TOKEN);
     localStorage.setItem('packscan_usuario', AUTH_USUARIO);
     localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
@@ -621,6 +655,7 @@ async function authBootstrap() {
     if (!r.ok) { authLogout(); return; }
     var d = await r.json();
     AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin; AUTH_EXPIRA = d.expiraEm || 0;
+    AUTH_CREDITOS = (d.creditos === null || d.creditos === undefined) ? null : d.creditos;
     localStorage.setItem('packscan_usuario', AUTH_USUARIO);
     localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
     localStorage.setItem('packscan_expira', String(AUTH_EXPIRA));
@@ -680,38 +715,49 @@ async function carregarUsuarios() {
     if (!lista.length) { el.textContent = 'Nenhum usuário aprovado.'; return; }
     el.innerHTML = lista.map(function(u) {
       var nome = esc(u.usuario).replace(/'/g,"\\'");
-      return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
+      var saldoTxt = u.admin ? '<span style="color:var(--accent)">ilimitado</span>'
+        : '<strong style="color:'+((u.saldo||0) <= 0 ? 'var(--red)' : ((u.saldo||0) <= 100 ? 'var(--amber)' : 'var(--green)'))+'">'+(u.saldo||0).toLocaleString('pt-BR')+'</strong> créditos';
+      var linha = '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
         + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
         +   '<div style="flex:1;min-width:120px;font-weight:500;color:var(--text)">'+esc(u.usuario)+(u.admin?' <span style="color:var(--accent);font-size:10px">(admin)</span>':'')+'</div>'
-        +   '<div style="font-size:11px">'+_fmtValidade(u.expiraEm)+'</div>'
-        + '</div>'
+        +   '<div style="font-size:12px">'+saldoTxt+'</div>'
+        + '</div>';
+      if (!u.admin) {
+        linha += '<div style="font-size:10px;color:var(--text3);margin-top:2px">comprou '+(u.creditosComprados||0).toLocaleString('pt-BR')+' · usou '+(u.creditosUsados||0).toLocaleString('pt-BR')+'</div>'
         + '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">'
-        +   '<span style="font-size:11px;color:var(--text3)">definir:</span>'
-        +   '<button class="btn btn-sm" onclick="authDefinirValidade(\''+nome+'\',3)">3 dias</button>'
-        +   '<button class="btn btn-sm" onclick="authDefinirValidade(\''+nome+'\',7)">7 dias</button>'
-        +   '<button class="btn btn-sm" onclick="authDefinirValidade(\''+nome+'\',30)">30 dias</button>'
-        +   '<button class="btn btn-sm" onclick="authDefinirValidadeCustom(\''+nome+'\')">outro…</button>'
-        +   '<button class="btn btn-sm" onclick="authDefinirValidade(\''+nome+'\',0)">sem limite</button>'
-        +   '<button class="btn btn-r btn-sm" onclick="authExpirarAgora(\''+nome+'\')">⏱ expirar agora</button>'
-        + '</div>'
-      + '</div>';
+        +   '<span style="font-size:11px;color:var(--text3)">recarregar:</span>'
+        +   '<button class="btn btn-sm" onclick="authAddCreditos(\''+nome+'\',1000)">+1.000</button>'
+        +   '<button class="btn btn-sm" onclick="authAddCreditos(\''+nome+'\',2000)">+2.000</button>'
+        +   '<button class="btn btn-sm" onclick="authAddCreditos(\''+nome+'\',5000)">+5.000</button>'
+        +   '<button class="btn btn-sm" onclick="authAddCreditosCustom(\''+nome+'\')">outro…</button>'
+        +   '<button class="btn btn-r btn-sm" onclick="authZerarCreditos(\''+nome+'\')">zerar</button>'
+        + '</div>';
+      }
+      return linha + '</div>';
     }).join('');
   } catch(e) { el.textContent = 'Erro ao carregar: '+e.message; }
 }
-async function authDefinirValidade(usuario, dias) {
-  await apiFetch(BACKEND+'/api/auth/validade', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,dias:dias}) });
+async function authAddCreditos(usuario, qtd) {
+  await apiFetch(BACKEND+'/api/auth/creditos', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,adicionar:qtd}) });
   carregarUsuarios();
 }
-function authExpirarAgora(usuario) {
-  if (!confirm('Expirar o acesso de "'+usuario+'" agora? Ele precisará reativar para entrar de novo.')) return;
-  authDefinirValidade(usuario, -1);
-}
-function authDefinirValidadeCustom(usuario) {
-  var v = prompt('Quantos dias de acesso para "'+usuario+'"? (0 = sem limite)', '15');
+function authAddCreditosCustom(usuario) {
+  var v = prompt('Quantos créditos adicionar para "'+usuario+'"?', '1000');
   if (v === null) return;
-  var dias = Number(v);
-  if (!Number.isFinite(dias) || dias < 0) { alert('Número inválido.'); return; }
-  authDefinirValidade(usuario, dias);
+  var q = Number(v);
+  if (!Number.isFinite(q) || q <= 0) { alert('Número inválido.'); return; }
+  authAddCreditos(usuario, q);
+}
+async function authZerarCreditos(usuario) {
+  if (!confirm('Zerar o saldo de créditos de "'+usuario+'"? Ele não conseguirá geocodificar até comprar mais.')) return;
+  // zera = remove tudo que ainda está comprado (subtrai um número grande, o backend trava em 0... então recarrega o registro)
+  var r = await apiFetch(BACKEND+'/api/auth/usuarios');
+  var d = await r.json();
+  var u = (d.usuarios || []).find(function(x){ return x.usuario === usuario; });
+  if (!u) return;
+  // para zerar o saldo, deixamos "comprados" = "usados"
+  var alvo = (u.creditosUsados||0) - (u.creditosComprados||0); // negativo, traz comprados pra igual usados
+  await authAddCreditos(usuario, alvo);
 }
 
 // ── contador de uso da Google Geocoding API (ES5) ──────────────────────────────
