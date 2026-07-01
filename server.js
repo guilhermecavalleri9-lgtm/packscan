@@ -15,6 +15,8 @@ const PACOTES_CREDITOS = [
   { id: 'p5000',  creditos: 5000,  preco: 175.00 },
   { id: 'p10000', creditos: 10000, preco: 350.00 }
 ];
+// plano mensal com chave própria: paga R$10 e usa as próprias chaves de API por 30 dias (sem gastar créditos)
+const PLANO_MENSAL = { id: 'plano_mensal', preco: 10.00, dias: 30 };
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 const ROTAS_FILE = path.join(__dirname, 'rotas_salvas.json');
@@ -236,18 +238,26 @@ function mpRequest(method, mpPath, body, extraHeaders) {
   });
 }
 
-// credita um pagamento aprovado no saldo do usuário — idempotente (só credita 1x)
+// aplica um pagamento aprovado — idempotente (só aplica 1x). Pode ser compra de
+// créditos (rec.tipo='creditos') ou renovação do plano mensal (rec.tipo='plano').
 async function creditarPagamento(mpId) {
   const rec = await supabaseGet('pay:' + mpId);
-  if (!rec || rec.status === 'creditado') return rec; // já creditado ou inexistente
+  if (!rec || rec.status === 'creditado') return rec; // já aplicado ou inexistente
   const lista = await getUsuarios();
   const u = lista.find(x => x.usuario === rec.usuario);
   if (u) {
-    u.creditos = (Number(u.creditos) || 0) + rec.creditos;
+    if (rec.tipo === 'plano') {
+      // renova a partir de agora ou do vencimento futuro (acumula se renovar antes)
+      const base = (u.planoAte && u.planoAte > Date.now()) ? u.planoAte : Date.now();
+      u.planoProprio = true;
+      u.planoAte = base + (rec.dias || 30) * 24 * 60 * 60 * 1000;
+    } else {
+      u.creditos = (Number(u.creditos) || 0) + rec.creditos;
+    }
     await setUsuarios(lista);
   }
   await supabaseSet('pay:' + mpId, { ...rec, status: 'creditado' });
-  console.log(`[pagamento] aprovado: ${rec.usuario} +${rec.creditos} créditos (R$ ${rec.preco})`);
+  console.log(`[pagamento] aprovado: ${rec.usuario} ${rec.tipo === 'plano' ? '+plano mensal' : '+'+rec.creditos+' créditos'} (R$ ${rec.preco})`);
   return { ...rec, status: 'creditado' };
 }
 
@@ -362,7 +372,7 @@ async function ruaPeloCep(cep, ctx) {
   const query = encodeURIComponent(`${cepFmt}, Brasil`);
   try {
     const d = await httpsGet('maps.googleapis.com',
-      `/maps/api/geocode/json?address=${query}&key=${GOOGLE_KEY}&language=pt-BR&region=BR`
+      `/maps/api/geocode/json?address=${query}&key=${(ctx && ctx.googleKey) || GOOGLE_KEY}&language=pt-BR&region=BR`
     );
     // chamada real ao Google (passou do cache de CEP) — conta no contador
     logGoogleCall(ctx && ctx.usuario, cep, 'geocoding');
@@ -437,7 +447,10 @@ function extrairQuadraLote(textoBruto) {
 async function extrairInfoIA(textoBruto, ruaCep, ctx) {
   textoBruto = textoBruto || '';
   if (!textoBruto.trim()) return { rua: '', complemento: 'S/N' };
-  if (!ANTHROPIC_KEY) return extrairNumeroLocal(textoBruto);
+  // chave da IA: usa a do usuário (plano próprio) se houver; se for plano próprio sem
+  // chave de IA, NÃO cai na chave global (usa extração por regex, sem custo pro admin)
+  const anthropicKey = (ctx && ctx.anthropicKey) || (ctx && ctx.forcarChavePropria ? '' : ANTHROPIC_KEY);
+  if (!anthropicKey) return extrairNumeroLocal(textoBruto);
 
   const prompt = `Você recebe o texto bruto de um endereço de entrega. Extraia duas coisas e responda em JSON.
 
@@ -458,7 +471,7 @@ Responda APENAS com um JSON válido de uma linha, sem markdown: {"rua":"...","co
 
   try {
     const result = await httpsPost('api.anthropic.com', '/v1/messages',
-      { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+      { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
       JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 150, messages: [{ role: 'user', content: prompt }] })
     );
     // chamada real à API da Anthropic — conta no contador com os tokens usados (pra estimar custo)
@@ -515,7 +528,7 @@ async function geocodificarValidado(enderecoCompleto, cepInfo, ctx) {
 async function geocodificarEndereco(enderecoCompleto, ctx) {
   const query = encodeURIComponent(enderecoCompleto);
   const d = await httpsGet('maps.googleapis.com',
-    `/maps/api/geocode/json?address=${query}&key=${GOOGLE_KEY}&language=pt-BR&region=BR`
+    `/maps/api/geocode/json?address=${query}&key=${(ctx && ctx.googleKey) || GOOGLE_KEY}&language=pt-BR&region=BR`
   );
   // chamada real ao Google (passou do cache de endereço) — conta no contador
   logGoogleCall(ctx && ctx.usuario, ctx && ctx.cep, 'geocoding');
@@ -620,7 +633,13 @@ const server = http.createServer(async (req, res) => {
     if (u.status !== 'aprovado') return json(res, 403, { error: 'Cadastro ainda não foi aprovado por um administrador' });
     if (u.expiraEm && u.expiraEm < Date.now()) return json(res, 403, { error: 'Seu tempo de acesso expirou. Fale com o administrador.' });
     const saldoLogin = await saldoCreditos(u);
-    return json(res, 200, { ok: true, token: gerarToken(u.usuario, u.admin, u.expiraEm), usuario: u.usuario, admin: !!u.admin, expiraEm: u.expiraEm || null, creditos: saldoLogin === Infinity ? null : Math.max(0, saldoLogin) });
+    return json(res, 200, {
+      ok: true, token: gerarToken(u.usuario, u.admin, u.expiraEm), usuario: u.usuario, admin: !!u.admin,
+      expiraEm: u.expiraEm || null,
+      creditos: saldoLogin === Infinity ? null : Math.max(0, saldoLogin),
+      planoAtivo: !!(u.planoProprio && u.planoAte && u.planoAte > Date.now()),
+      planoAte: u.planoAte || null
+    });
   }
 
   if (req.method === 'GET' && pathname === '/api/auth/me') {
@@ -632,8 +651,41 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, {
       usuario: req.usuarioAtual.usuario, admin: req.usuarioAtual.admin,
       expiraEm: u ? (u.expiraEm || null) : null,
-      creditos: saldo === Infinity ? null : Math.max(0, saldo) // null = ilimitado (admin)
+      creditos: saldo === Infinity ? null : Math.max(0, saldo), // null = ilimitado (admin)
+      planoProprio: !!(u && u.planoProprio),
+      planoAte: (u && u.planoAte) || null,
+      planoAtivo: !!(u && u.planoProprio && u.planoAte && u.planoAte > Date.now()),
+      temGoogleKey: !!(u && u.googleKey),
+      temAnthropicKey: !!(u && u.anthropicKey)
     });
+  }
+
+  // ─── CHAVES: o usuário salva as próprias chaves de API (plano próprio) ──────
+  if (req.method === 'POST' && pathname === '/api/auth/chaves') {
+    const body = await readBody(req);
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === req.usuarioAtual.usuario);
+    if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
+    // envia "" pra limpar; undefined mantém o que já tem
+    if (typeof body.googleKey === 'string') u.googleKey = body.googleKey.trim();
+    if (typeof body.anthropicKey === 'string') u.anthropicKey = body.anthropicKey.trim();
+    await setUsuarios(lista);
+    console.log(`[chaves] ${u.usuario} atualizou suas chaves de API`);
+    return json(res, 200, { ok: true, temGoogleKey: !!u.googleKey, temAnthropicKey: !!u.anthropicKey });
+  }
+
+  // ─── CHAVES: testa uma chave do Google (geocodifica um endereço conhecido) ──
+  if (req.method === 'POST' && pathname === '/api/chaves/testar') {
+    const body = await readBody(req);
+    const gkey = (body.googleKey || '').trim();
+    if (!gkey) return json(res, 400, { error: 'Informe a chave do Google para testar.' });
+    try {
+      const d = await httpsGet('maps.googleapis.com',
+        `/maps/api/geocode/json?address=${encodeURIComponent('Avenida Paulista, São Paulo')}&key=${gkey}&language=pt-BR`);
+      if (d.status === 'OK') return json(res, 200, { ok: true });
+      const msg = d.error_message || d.status || 'chave inválida';
+      return json(res, 200, { ok: false, erro: msg });
+    } catch(e) { return json(res, 200, { ok: false, erro: e.message }); }
   }
 
   // ─── CRÉDITOS: admin recarrega o saldo de um usuário ───────────────────────
@@ -654,21 +706,24 @@ const server = http.createServer(async (req, res) => {
 
   // ─── PAGAMENTO: lista de pacotes à venda ───────────────────────────────────
   if (req.method === 'GET' && pathname === '/api/pagamento/pacotes') {
-    return json(res, 200, { pacotes: PACOTES_CREDITOS, ativo: !!MERCADOPAGO_TOKEN });
+    return json(res, 200, { pacotes: PACOTES_CREDITOS, plano: PLANO_MENSAL, ativo: !!MERCADOPAGO_TOKEN });
   }
 
   // ─── PAGAMENTO: cria um PIX no Mercado Pago ────────────────────────────────
   if (req.method === 'POST' && pathname === '/api/pagamento/criar') {
     if (!MERCADOPAGO_TOKEN) return json(res, 503, { error: 'Pagamento ainda não configurado pelo administrador.' });
     const body = await readBody(req);
-    const pacote = PACOTES_CREDITOS.find(p => p.id === body.pacoteId);
-    if (!pacote) return json(res, 400, { error: 'Pacote inválido' });
     const usuario = req.usuarioAtual.usuario;
+    // pode ser compra de créditos ou o plano mensal com chave própria
+    const ehPlano = body.pacoteId === PLANO_MENSAL.id;
+    const pacote = ehPlano ? PLANO_MENSAL : PACOTES_CREDITOS.find(p => p.id === body.pacoteId);
+    if (!pacote) return json(res, 400, { error: 'Pacote inválido' });
+    const descricao = ehPlano ? 'PackScan — plano mensal (chave própria)' : `PackScan — ${pacote.creditos} créditos`;
     try {
       const idemKey = crypto.randomBytes(16).toString('hex'); // MP exige X-Idempotency-Key
       const mp = await mpRequest('POST', '/v1/payments', {
         transaction_amount: pacote.preco,
-        description: `PackScan — ${pacote.creditos} créditos`,
+        description: descricao,
         payment_method_id: 'pix',
         payer: { email: `${usuario}@packscan.app`, first_name: usuario }
       }, { 'X-Idempotency-Key': idemKey });
@@ -680,7 +735,10 @@ const server = http.createServer(async (req, res) => {
         return json(res, 502, { error: 'Mercado Pago recusou: ' + detalhe });
       }
       const id = String(mp.body.id);
-      await supabaseSet('pay:' + id, { usuario, creditos: pacote.creditos, preco: pacote.preco, status: 'pendente' });
+      const rec = ehPlano
+        ? { usuario, tipo: 'plano', dias: PLANO_MENSAL.dias, preco: pacote.preco, status: 'pendente' }
+        : { usuario, tipo: 'creditos', creditos: pacote.creditos, preco: pacote.preco, status: 'pendente' };
+      await supabaseSet('pay:' + id, rec);
       const td = (mp.body.point_of_interaction && mp.body.point_of_interaction.transaction_data) || {};
       return json(res, 200, { id, qrBase64: td.qr_code_base64 || '', copiaECola: td.qr_code || '' });
     } catch(e) {
@@ -1016,13 +1074,26 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ...cached, fromCache: true });
     }
 
-    // gate de créditos: cache hit (acima) não consome; daqui pra baixo vai bater no
-    // Google, então exige saldo. Admin é ilimitado.
+    // gate: cache hit (acima) não consome. Daqui pra baixo vai bater no Google.
+    // Três caminhos: admin (ilimitado, chaves globais) | plano com chave própria
+    // (usa as chaves do usuário, sem gastar créditos) | créditos pré-pagos.
     {
       const usuarios = await getUsuarios();
       const meuRec = usuarios.find(u => u.usuario === (req.usuarioAtual && req.usuarioAtual.usuario));
-      const saldo = await saldoCreditos(meuRec);
-      if (saldo <= 0) return json(res, 402, { error: 'Seus créditos acabaram. Compre mais para continuar.', semCreditos: true });
+      const planoAtivo = meuRec && meuRec.planoProprio && meuRec.planoAte && meuRec.planoAte > Date.now();
+      if (meuRec && meuRec.admin) {
+        // admin usa as chaves globais, sem limite
+      } else if (meuRec && meuRec.planoProprio && !planoAtivo) {
+        return json(res, 402, { error: 'Seu plano mensal expirou. Renove por R$10 para continuar.', planoExpirado: true });
+      } else if (planoAtivo) {
+        if (!meuRec.googleKey) return json(res, 402, { error: 'Configure sua chave de API do Google para usar seu plano.', semChaves: true });
+        ctx.googleKey = meuRec.googleKey;
+        ctx.anthropicKey = meuRec.anthropicKey || '';
+        ctx.forcarChavePropria = true; // não usa a chave de IA global (custo é do usuário)
+      } else {
+        const saldo = await saldoCreditos(meuRec);
+        if (saldo <= 0) return json(res, 402, { error: 'Seus créditos acabaram. Compre mais para continuar.', semCreditos: true });
+      }
     }
 
     try {

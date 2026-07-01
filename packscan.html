@@ -148,6 +148,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <span style="color:var(--text3);font-size:11px;font-family:var(--mono)">// roteirização com geocodificação IA</span>
   <span style="flex:1"></span>
   <span id="auth-user-info" style="font-size:12px;color:var(--text2);font-family:var(--mono)"></span>
+  <button class="btn btn-sm" onclick="chavesAbrir()">🔑 Minhas chaves</button>
   <button class="btn btn-sm" onclick="comprarAbrir()">🪙 Comprar</button>
   <button class="btn btn-sm" onclick="authLogout()">Sair</button>
 </div>
@@ -167,6 +168,66 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <textarea id="comprar-copia" readonly style="width:100%;height:64px;font-size:11px;font-family:var(--mono);margin:4px 0"></textarea>
       <button class="btn btn-sm" style="width:100%;justify-content:center" onclick="comprarCopiar()">📋 Copiar código</button>
       <div id="comprar-status" style="font-size:13px;color:var(--amber);margin-top:.75rem">⏳ Aguardando pagamento...</div>
+    </div>
+  </div>
+</div>
+
+<!-- modal: minhas chaves de API (plano próprio) + tutorial pra leigos -->
+<div id="chaves-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:10002;align-items:flex-start;justify-content:center;overflow:auto;padding:20px">
+  <div class="auth-box" style="width:520px;max-width:96vw">
+    <div style="display:flex;align-items:center;margin-bottom:1rem">
+      <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">🔑 Minhas chaves de API</div>
+      <button class="btn btn-sm" onclick="chavesFechar()">✕</button>
+    </div>
+
+    <div id="chaves-status" style="font-size:12px;padding:8px 10px;border-radius:var(--radius);background:var(--bg3);margin-bottom:1rem"></div>
+
+    <div style="font-size:13px;color:var(--text2);line-height:1.5;margin-bottom:1rem">
+      No <strong>plano de R$ 10/mês</strong> você usa a <strong>sua própria chave</strong> do Google — assim você tem <strong>10.000 buscas grátis por mês</strong> direto do Google e não gasta créditos aqui. Cole sua chave abaixo. Não sabe pegar? Siga o passo a passo mais embaixo. 👇
+    </div>
+
+    <div class="auth-field">
+      <label>Chave do Google (obrigatória)</label>
+      <input type="text" id="chave-google" placeholder="Cole aqui: AIza..." autocomplete="off" spellcheck="false">
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button class="btn btn-sm" onclick="chavesTestar()">🔍 Testar chave</button>
+        <span id="chave-teste-msg" style="font-size:12px;align-self:center"></span>
+      </div>
+    </div>
+
+    <div class="auth-field">
+      <label>Chave da IA / Anthropic (opcional)</label>
+      <input type="text" id="chave-anthropic" placeholder="Cole aqui: sk-ant-... (opcional)" autocomplete="off" spellcheck="false">
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Sem esta, o sistema usa um leitor simples de endereço (funciona bem na maioria dos casos).</div>
+    </div>
+
+    <button class="btn btn-p" style="width:100%;justify-content:center" onclick="chavesSalvar()">💾 Salvar minhas chaves</button>
+    <div id="chaves-salvar-msg" style="font-size:12px;text-align:center;min-height:16px;margin-top:.5rem"></div>
+
+    <!-- TUTORIAL -->
+    <div style="border-top:1px solid var(--border);margin-top:1.25rem;padding-top:1rem">
+      <button class="btn btn-sm" style="width:100%;justify-content:space-between" onclick="chavesTutorial('google')">
+        <span>📘 Como pegar a chave do Google (passo a passo)</span><span>▼</span></button>
+      <div id="tut-google" style="display:none;font-size:13px;color:var(--text2);line-height:1.6;padding:.75rem 2px">
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;margin-bottom:.75rem;font-size:12px">⏱ Leva ~10 minutos na primeira vez. Você vai precisar de uma conta Google (a mesma do Gmail) e de um cartão (o Google pede pra cadastrar, mas <strong>não cobra</strong> dentro das 10.000 buscas grátis/mês).</div>
+        <div style="margin-bottom:.6rem"><strong>1.</strong> Abra este link e entre com sua conta Google:<br><a href="https://console.cloud.google.com/" target="_blank" rel="noopener" style="color:var(--accent)">console.cloud.google.com</a></div>
+        <div style="margin-bottom:.6rem"><strong>2.</strong> No topo da tela, clique em <strong>"Selecionar projeto"</strong> → <strong>"Novo projeto"</strong> → dê um nome qualquer (ex: "PackScan") → <strong>Criar</strong>. Espere uns segundos e selecione esse projeto.</div>
+        <div style="margin-bottom:.6rem"><strong>3.</strong> Cadastre um cartão (o Google exige pra liberar). Clique no menu <strong>☰</strong> (canto superior esquerdo) → <strong>"Faturamento" / "Billing"</strong> → siga pra adicionar forma de pagamento. Fique tranquilo: dentro das 10.000 buscas/mês é <strong>gratuito</strong>.</div>
+        <div style="margin-bottom:.6rem"><strong>4.</strong> Ative a API de mapas. No campo de busca lá em cima, digite <strong>"Geocoding API"</strong>, clique nela e aperte <strong>"Ativar" / "Enable"</strong>.</div>
+        <div style="margin-bottom:.6rem"><strong>5.</strong> Agora crie a chave. Busque por <strong>"Credenciais" / "Credentials"</strong> → botão <strong>"Criar credenciais"</strong> → <strong>"Chave de API"</strong>. Vai aparecer um código começando com <strong>AIza...</strong></div>
+        <div style="margin-bottom:.6rem"><strong>6.</strong> Copie esse código e <strong>cole no campo "Chave do Google"</strong> aqui em cima. Clique em <strong>🔍 Testar chave</strong> — se aparecer ✓ funcionando, clique em <strong>💾 Salvar</strong>. Pronto!</div>
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;font-size:12px">💡 Dica: se o teste falhar dizendo algo sobre "billing", volte no passo 3 (cartão) e no passo 4 (ativar a Geocoding API). São os dois esquecimentos mais comuns.</div>
+      </div>
+
+      <button class="btn btn-sm" style="width:100%;justify-content:space-between;margin-top:.5rem" onclick="chavesTutorial('anthropic')">
+        <span>📗 Como pegar a chave da IA (opcional)</span><span>▼</span></button>
+      <div id="tut-anthropic" style="display:none;font-size:13px;color:var(--text2);line-height:1.6;padding:.75rem 2px">
+        <div style="background:var(--bg3);border-radius:var(--radius);padding:10px;margin-bottom:.75rem;font-size:12px">A chave da IA é <strong>opcional</strong>. Ela melhora um pouco a leitura de endereços difíceis. Se não quiser, pule — o sistema funciona sem ela.</div>
+        <div style="margin-bottom:.6rem"><strong>1.</strong> Acesse <a href="https://console.anthropic.com/" target="_blank" rel="noopener" style="color:var(--accent)">console.anthropic.com</a> e crie uma conta.</div>
+        <div style="margin-bottom:.6rem"><strong>2.</strong> Adicione créditos (a Anthropic é pré-paga; uns poucos dólares duram bastante).</div>
+        <div style="margin-bottom:.6rem"><strong>3.</strong> No menu, vá em <strong>"API Keys"</strong> → <strong>"Create Key"</strong> → dê um nome → copie o código que começa com <strong>sk-ant-...</strong></div>
+        <div><strong>4.</strong> Cole no campo <strong>"Chave da IA / Anthropic"</strong> aqui em cima e clique em <strong>💾 Salvar</strong>.</div>
+      </div>
     </div>
   </div>
 </div>
@@ -558,13 +619,26 @@ var AUTH_USUARIO = localStorage.getItem('packscan_usuario') || '';
 var AUTH_ADMIN = localStorage.getItem('packscan_admin') === '1';
 var AUTH_EXPIRA = Number(localStorage.getItem('packscan_expira')) || 0;
 var AUTH_CREDITOS = null; // null = ilimitado (admin); número = saldo de requisições
+var AUTH_PLANO_ATIVO = false; // plano mensal com chave própria ativo
+var AUTH_PLANO_ATE = null;    // timestamp de validade do plano
 
 // link de compra/recarga (WhatsApp)
 var WHATSAPP_COMPRA = 'https://wa.me/5554981194621';
 
-// texto curto de saldo para o cabeçalho
+// guarda os campos de plano/chaves vindos do /me ou /login
+function guardarDadosConta(d) {
+  AUTH_CREDITOS = (d.creditos === null || d.creditos === undefined) ? null : d.creditos;
+  AUTH_PLANO_ATIVO = !!d.planoAtivo;
+  AUTH_PLANO_ATE = d.planoAte || null;
+}
+
+// texto curto de saldo/plano para o cabeçalho
 function saldoTexto() {
   if (AUTH_CREDITOS === null) return 'créditos ilimitados';
+  if (AUTH_PLANO_ATIVO) {
+    var dias = AUTH_PLANO_ATE ? Math.ceil((AUTH_PLANO_ATE - Date.now()) / 86400000) : 0;
+    return 'plano ativo (' + dias + 'd)';
+  }
   return AUTH_CREDITOS.toLocaleString('pt-BR') + ' créditos';
 }
 
@@ -595,9 +669,9 @@ function recarregarSaldo() {
   fetch(BACKEND+'/api/auth/me', { headers:{ 'Authorization':'Bearer '+AUTH_TOKEN } })
     .then(function(r){ return r.json(); })
     .then(function(d){
-      AUTH_CREDITOS = (d.creditos === null || d.creditos === undefined) ? null : d.creditos;
+      guardarDadosConta(d);
       atualizarHeaderInfo();
-      if (AUTH_CREDITOS === null || AUTH_CREDITOS > 0) document.getElementById('creditos-bg').style.display = 'none';
+      if (AUTH_CREDITOS === null || AUTH_CREDITOS > 0 || AUTH_PLANO_ATIVO) document.getElementById('creditos-bg').style.display = 'none';
     }).catch(function(){});
 }
 
@@ -615,17 +689,25 @@ function comprarAbrir() {
         + '<a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-top:.6rem" href="' + WHATSAPP_COMPRA + '" target="_blank" rel="noopener">💬 Comprar no WhatsApp</a>';
       return;
     }
-    var html = '<div style="font-size:12px;color:var(--text3);margin-bottom:.6rem">Escolha um pacote (PIX):</div>';
+    var html = '<div style="font-size:12px;color:var(--text3);margin-bottom:.6rem">Créditos avulsos (PIX):</div>';
     for (var i = 0; i < d.pacotes.length; i++) {
       var p = d.pacotes[i];
       html += '<button class="btn" style="width:100%;justify-content:space-between;margin-bottom:6px" onclick="comprarPacote(\'' + p.id + '\')">'
         + '<span>' + p.creditos.toLocaleString('pt-BR') + ' créditos</span>'
         + '<strong>R$ ' + p.preco.toFixed(2).replace('.', ',') + '</strong></button>';
     }
+    if (d.plano) {
+      html += '<div style="border-top:1px solid var(--border);margin:.9rem 0 .6rem;padding-top:.6rem;font-size:12px;color:var(--text3)">Ou o plano com <strong>sua própria chave</strong>:</div>'
+        + '<button class="btn btn-g" style="width:100%;justify-content:space-between" onclick="comprarPacote(\'' + d.plano.id + '\')">'
+        + '<span>🔑 Plano mensal · sem limite</span><strong>R$ ' + d.plano.preco.toFixed(2).replace('.', ',') + '/mês</strong></button>'
+        + '<div style="font-size:11px;color:var(--text3);margin-top:.4rem">Você usa sua chave do Google (10 mil buscas grátis/mês). Depois de pagar, cadastre a chave em "🔑 Minhas chaves".</div>';
+    }
     lista.innerHTML = html;
   }).catch(function(e){ lista.innerHTML = '<div style="color:var(--red)">Erro: ' + esc(e.message) + '</div>'; });
 }
+var _comprarEhPlano = false;
 function comprarPacote(pacoteId) {
+  _comprarEhPlano = (pacoteId === 'plano_mensal');
   var lista = document.getElementById('comprar-lista');
   lista.innerHTML = 'Gerando PIX...';
   apiFetch(BACKEND + '/api/pagamento/criar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pacoteId:pacoteId}) })
@@ -648,10 +730,11 @@ function comprarIniciarPoll(id) {
       if (d.status === 'creditado') {
         clearInterval(_comprarPoll); _comprarPoll = null;
         var st = document.getElementById('comprar-status');
-        st.textContent = '✓ Pagamento confirmado! Créditos adicionados.';
+        st.textContent = _comprarEhPlano ? '✓ Plano ativado! Agora cadastre sua chave.' : '✓ Pagamento confirmado! Créditos adicionados.';
         st.style.color = 'var(--green)';
         recarregarSaldo();
-        setTimeout(comprarFechar, 2500);
+        if (_comprarEhPlano) { setTimeout(function(){ comprarFechar(); chavesAbrir(); }, 2000); }
+        else { setTimeout(comprarFechar, 2500); }
       }
     }).catch(function(){});
   }, 4000);
@@ -665,6 +748,55 @@ function comprarCopiar() {
 function comprarFechar() {
   if (_comprarPoll) { clearInterval(_comprarPoll); _comprarPoll = null; }
   document.getElementById('comprar-bg').style.display = 'none';
+}
+
+// ── minhas chaves de API (plano próprio) ───────────────────────────────────────
+function chavesAbrir() {
+  document.getElementById('chaves-bg').style.display = 'flex';
+  document.getElementById('chave-teste-msg').textContent = '';
+  document.getElementById('chaves-salvar-msg').textContent = '';
+  // status do plano (reconsulta pra ficar atualizado)
+  fetch(BACKEND+'/api/auth/me', { headers:{ 'Authorization':'Bearer '+AUTH_TOKEN } })
+    .then(function(r){ return r.json(); }).then(function(d){
+      guardarDadosConta(d); atualizarHeaderInfo();
+      var el = document.getElementById('chaves-status');
+      if (d.admin) {
+        el.innerHTML = '<span style="color:var(--accent)">Você é admin — usa as chaves do sistema, sem precisar cadastrar.</span>';
+      } else if (d.planoAtivo) {
+        var dias = d.planoAte ? Math.ceil((d.planoAte - Date.now())/86400000) : 0;
+        el.innerHTML = '<span style="color:var(--green)">✓ Plano ativo — faltam ' + dias + ' dia(s).</span> '
+          + (d.temGoogleKey ? 'Chave do Google cadastrada.' : '<span style="color:var(--amber)">Falta cadastrar sua chave do Google abaixo.</span>');
+      } else {
+        el.innerHTML = '<span style="color:var(--amber)">Plano inativo.</span> Assine por R$10/mês em "🪙 Comprar" pra usar suas próprias chaves.';
+      }
+    }).catch(function(){});
+}
+function chavesFechar() { document.getElementById('chaves-bg').style.display = 'none'; }
+function chavesTutorial(qual) {
+  var el = document.getElementById('tut-' + qual);
+  el.style.display = (el.style.display === 'none') ? 'block' : 'none';
+}
+function chavesTestar() {
+  var gkey = document.getElementById('chave-google').value.trim();
+  var msg = document.getElementById('chave-teste-msg');
+  if (!gkey) { msg.textContent = 'Cole a chave primeiro.'; msg.style.color = 'var(--amber)'; return; }
+  msg.textContent = 'Testando...'; msg.style.color = 'var(--text3)';
+  apiFetch(BACKEND+'/api/chaves/testar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({googleKey:gkey}) })
+    .then(function(r){ return r.json(); }).then(function(d){
+      if (d.ok) { msg.textContent = '✓ Funcionando!'; msg.style.color = 'var(--green)'; }
+      else { msg.textContent = '✗ ' + (d.erro || 'inválida'); msg.style.color = 'var(--red)'; }
+    }).catch(function(e){ msg.textContent = 'Erro: ' + e.message; msg.style.color = 'var(--red)'; });
+}
+function chavesSalvar() {
+  var gkey = document.getElementById('chave-google').value.trim();
+  var akey = document.getElementById('chave-anthropic').value.trim();
+  var msg = document.getElementById('chaves-salvar-msg');
+  msg.textContent = 'Salvando...'; msg.style.color = 'var(--text3)';
+  apiFetch(BACKEND+'/api/auth/chaves', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({googleKey:gkey, anthropicKey:akey}) })
+    .then(function(r){ return r.json(); }).then(function(d){
+      if (d.ok) { msg.textContent = '✓ Chaves salvas! Já pode usar o sistema.'; msg.style.color = 'var(--green)'; }
+      else { msg.textContent = '✗ ' + (d.error || 'erro'); msg.style.color = 'var(--red)'; }
+    }).catch(function(e){ msg.textContent = 'Erro: ' + e.message; msg.style.color = 'var(--red)'; });
 }
 
 function authMostrarAba(aba) {
@@ -698,7 +830,7 @@ async function authLogin() {
       return;
     }
     AUTH_TOKEN = d.token; AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin; AUTH_EXPIRA = d.expiraEm || 0;
-    AUTH_CREDITOS = (d.creditos === null || d.creditos === undefined) ? null : d.creditos;
+    guardarDadosConta(d);
     localStorage.setItem('packscan_token', AUTH_TOKEN);
     localStorage.setItem('packscan_usuario', AUTH_USUARIO);
     localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
@@ -742,7 +874,7 @@ async function authBootstrap() {
     if (!r.ok) { authLogout(); return; }
     var d = await r.json();
     AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin; AUTH_EXPIRA = d.expiraEm || 0;
-    AUTH_CREDITOS = (d.creditos === null || d.creditos === undefined) ? null : d.creditos;
+    guardarDadosConta(d);
     localStorage.setItem('packscan_usuario', AUTH_USUARIO);
     localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
     localStorage.setItem('packscan_expira', String(AUTH_EXPIRA));
