@@ -220,10 +220,10 @@ async function saldoCreditos(usuarioRec) {
 }
 
 // ─── PAGAMENTO (Mercado Pago — PIX) ────────────────────────────────────────────
-function mpRequest(method, mpPath, body) {
+function mpRequest(method, mpPath, body, extraHeaders) {
   return new Promise((resolve, reject) => {
     const payload = body ? Buffer.from(JSON.stringify(body)) : null;
-    const headers = { 'Authorization': 'Bearer ' + MERCADOPAGO_TOKEN, 'Content-Type': 'application/json' };
+    const headers = { 'Authorization': 'Bearer ' + MERCADOPAGO_TOKEN, 'Content-Type': 'application/json', ...(extraHeaders || {}) };
     if (payload) headers['Content-Length'] = payload.length;
     const req = https.request({ hostname: 'api.mercadopago.com', path: mpPath, method, headers }, r => {
       let data = '';
@@ -665,15 +665,19 @@ const server = http.createServer(async (req, res) => {
     if (!pacote) return json(res, 400, { error: 'Pacote inválido' });
     const usuario = req.usuarioAtual.usuario;
     try {
+      const idemKey = crypto.randomBytes(16).toString('hex'); // MP exige X-Idempotency-Key
       const mp = await mpRequest('POST', '/v1/payments', {
         transaction_amount: pacote.preco,
         description: `PackScan — ${pacote.creditos} créditos`,
         payment_method_id: 'pix',
-        payer: { email: `${usuario}@packscan.app` }
-      });
+        payer: { email: `${usuario}@packscan.app`, first_name: usuario }
+      }, { 'X-Idempotency-Key': idemKey });
       if (mp.status >= 300 || !mp.body || !mp.body.id) {
         console.error('[pagamento criar]', mp.status, JSON.stringify(mp.body));
-        return json(res, 502, { error: 'Não foi possível gerar o PIX. Tente de novo.' });
+        // devolve o motivo real do Mercado Pago pra facilitar o diagnóstico
+        const b = mp.body || {};
+        const detalhe = b.message || (b.cause && b.cause[0] && (b.cause[0].description || b.cause[0].code)) || ('HTTP ' + mp.status);
+        return json(res, 502, { error: 'Mercado Pago recusou: ' + detalhe });
       }
       const id = String(mp.body.id);
       await supabaseSet('pay:' + id, { usuario, creditos: pacote.creditos, preco: pacote.preco, status: 'pendente' });
