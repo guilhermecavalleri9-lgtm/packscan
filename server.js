@@ -240,7 +240,16 @@ function mpRequest(method, mpPath, body, extraHeaders) {
 
 // aplica um pagamento aprovado — idempotente (só aplica 1x). Pode ser compra de
 // créditos (rec.tipo='creditos') ou renovação do plano mensal (rec.tipo='plano').
+// O lock em memória evita crédito em dobro quando o webhook e o polling do
+// frontend confirmam o mesmo pagamento ao mesmo tempo.
+const _creditandoAgora = new Set();
 async function creditarPagamento(mpId) {
+  if (_creditandoAgora.has(mpId)) return await supabaseGet('pay:' + mpId);
+  _creditandoAgora.add(mpId);
+  try { return await _creditarPagamentoInterno(mpId); }
+  finally { _creditandoAgora.delete(mpId); }
+}
+async function _creditarPagamentoInterno(mpId) {
   const rec = await supabaseGet('pay:' + mpId);
   if (!rec || rec.status === 'creditado') return rec; // já aplicado ou inexistente
   const lista = await getUsuarios();
@@ -323,7 +332,7 @@ function base64url(buf) { return Buffer.from(buf).toString('base64').replace(/\+
 function base64urlDecode(str) { return Buffer.from(str.replace(/-/g,'+').replace(/_/g,'/'), 'base64'); }
 
 function gerarToken(usuario, admin, expiraEm) {
-  // exp do token = padrão 7 dias, mas nunca depois da validade de acesso do usuário (se houver)
+  // exp do token = TOKEN_VALIDADE_MS (login diário), mas nunca depois da validade de acesso do usuário (se houver)
   let exp = Date.now() + TOKEN_VALIDADE_MS;
   if (expiraEm && expiraEm < exp) exp = expiraEm;
   const payload = JSON.stringify({ u: usuario, a: !!admin, exp });
@@ -374,8 +383,9 @@ async function ruaPeloCep(cep, ctx) {
     const d = await httpsGet('maps.googleapis.com',
       `/maps/api/geocode/json?address=${query}&key=${(ctx && ctx.googleKey) || GOOGLE_KEY}&language=pt-BR&region=BR`
     );
-    // chamada real ao Google (passou do cache de CEP) — conta no contador
-    logGoogleCall(ctx && ctx.usuario, cep, 'geocoding');
+    // chamada real ao Google (passou do cache de CEP) — conta no contador.
+    // chave própria (plano) é registrada com tipo separado: não gasta crédito nem entra no custo do admin
+    logGoogleCall(ctx && ctx.usuario, cep, (ctx && ctx.googleKey) ? 'geocoding_propria' : 'geocoding');
     if (d.status === 'OK' && d.results[0]) {
       const comps = d.results[0].address_components;
       const get = type => (comps.find(c => c.types.includes(type)) || {}).long_name || '';
@@ -474,8 +484,9 @@ Responda APENAS com um JSON válido de uma linha, sem markdown: {"rua":"...","co
       { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
       JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: 150, messages: [{ role: 'user', content: prompt }] })
     );
-    // chamada real à API da Anthropic — conta no contador com os tokens usados (pra estimar custo)
-    logGoogleCall(ctx && ctx.usuario, ctx && ctx.cep, 'anthropic', {
+    // chamada real à API da Anthropic — conta no contador com os tokens usados (pra estimar custo).
+    // chave própria (plano) tem tipo separado: não entra no custo do admin
+    logGoogleCall(ctx && ctx.usuario, ctx && ctx.cep, (ctx && ctx.anthropicKey) ? 'anthropic_propria' : 'anthropic', {
       input: (result.usage && result.usage.input_tokens) || 0,
       output: (result.usage && result.usage.output_tokens) || 0
     });
@@ -530,8 +541,9 @@ async function geocodificarEndereco(enderecoCompleto, ctx) {
   const d = await httpsGet('maps.googleapis.com',
     `/maps/api/geocode/json?address=${query}&key=${(ctx && ctx.googleKey) || GOOGLE_KEY}&language=pt-BR&region=BR`
   );
-  // chamada real ao Google (passou do cache de endereço) — conta no contador
-  logGoogleCall(ctx && ctx.usuario, ctx && ctx.cep, 'geocoding');
+  // chamada real ao Google (passou do cache de endereço) — conta no contador.
+  // chave própria (plano) é registrada com tipo separado: não gasta crédito nem entra no custo do admin
+  logGoogleCall(ctx && ctx.usuario, ctx && ctx.cep, (ctx && ctx.googleKey) ? 'geocoding_propria' : 'geocoding');
   if (d.status !== 'OK' || !d.results[0]) return null;
   const r = d.results[0];
   const comps = r.address_components;
@@ -769,7 +781,9 @@ const server = http.createServer(async (req, res) => {
     let body = {};
     if (req.method === 'POST') { try { body = await readBody(req); } catch(e) {} }
     const tipo = body.type || parsedUrl.query.type || parsedUrl.query.topic;
-    const id = (body.data && body.data.id) || parsedUrl.query['data.id'] || parsedUrl.query.id;
+    let id = (body.data && body.data.id) || parsedUrl.query['data.id'] || parsedUrl.query.id;
+    // endpoint público: só aceita id numérico (formato dos pagamentos do MP)
+    id = /^\d+$/.test(String(id || '')) ? String(id) : null;
     if (tipo === 'payment' && id && MERCADOPAGO_TOKEN) {
       try {
         const mp = await mpRequest('GET', '/v1/payments/' + id);

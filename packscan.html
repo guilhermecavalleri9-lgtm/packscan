@@ -650,12 +650,18 @@ function apiFetch(url, opts) {
   return fetch(url, opts).then(function(r) {
     if (r.status === 401) { authLogout(); throw new Error('Sessão expirada, faça login novamente.'); }
     if (r.status === 402) {
-      // 402 pode ser: sem créditos | plano com chave faltando | plano expirado
-      r.clone().json().then(function(d){
-        if (d && d.semChaves) { chavesAbrir(); }             // pagou o plano mas não cadastrou a chave
-        else if (d && d.planoExpirado) { comprarAbrir(); alert('Seu plano mensal expirou. Renove por R$10 para continuar.'); }
-        else { mostrarSemCreditos(); }                        // créditos acabaram
-      }).catch(function(){ mostrarSemCreditos(); });
+      // 402 pode ser: sem créditos | plano com chave faltando | plano expirado.
+      // O guard de 5s evita abrir o aviso repetidamente quando várias requisições
+      // falham em sequência (ex: lote de pacotes).
+      var agora = Date.now();
+      if (!apiFetch._ultimo402 || agora - apiFetch._ultimo402 > 5000) {
+        apiFetch._ultimo402 = agora;
+        r.clone().json().then(function(d){
+          if (d && d.semChaves) { chavesAbrir(); }             // pagou o plano mas não cadastrou a chave
+          else if (d && d.planoExpirado) { comprarAbrir(); alert('Seu plano mensal expirou. Renove por R$10 para continuar.'); }
+          else { mostrarSemCreditos(); }                        // créditos acabaram
+        }).catch(function(){ mostrarSemCreditos(); });
+      }
     }
     return r;
   });
@@ -1040,7 +1046,7 @@ function carregarUsoGoogle() {
 
     // por API (nomes amigáveis + custo)
     var porApi = d.porApi || [];
-    var nomesApi = { geocoding: 'Google Geocoding', anthropic: 'IA (Anthropic)' };
+    var nomesApi = { geocoding: 'Google Geocoding', anthropic: 'IA (Anthropic)', geocoding_propria: 'Google (chave do usuário)', anthropic_propria: 'IA (chave do usuário)' };
     if (porApi.length) {
       html += '<div style="margin-top:1rem;font-size:11px;color:var(--text3);font-family:var(--mono);text-transform:uppercase;letter-spacing:1px">por API</div>';
       html += '<table style="margin-top:.3rem"><thead><tr><th>API</th><th style="text-align:right">Chamadas</th><th style="text-align:right">Custo est.</th></tr></thead><tbody>';
@@ -1272,6 +1278,12 @@ async function iniciarGeo(forcar) {
         method:'POST', headers:{'Content-Type':'application/json'},
         body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:!!forcar})
       });
+      // 402 = créditos acabaram / plano expirado / falta chave — não adianta insistir nos
+      // próximos pacotes, o apiFetch já abriu a tela certa; para o lote aqui
+      if (r.status === 402) {
+        log.innerHTML = '<span class="err">⛔ Processamento pausado: sem créditos/plano. Os pacotes já feitos foram mantidos.</span><br>'+log.innerHTML;
+        break;
+      }
       var d = await r.json();
       if (r.ok && d.lat) {
         var j=(Math.random()-.5)*0.0003;
@@ -2049,6 +2061,7 @@ async function regeocodificarPacotes(lista, statusEl) {
     var p = lista[i];
     try {
       var r = await apiFetch(BACKEND+'/api/geocode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:true})});
+      if (r.status === 402) break; // sem créditos/plano — para o lote, o apiFetch já mostrou o aviso
       var d = await r.json();
       if (r.ok && d.lat) {
         var j=(Math.random()-.5)*0.0003;
