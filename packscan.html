@@ -649,7 +649,14 @@ function apiFetch(url, opts) {
   opts.headers = Object.assign({}, opts.headers, AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {});
   return fetch(url, opts).then(function(r) {
     if (r.status === 401) { authLogout(); throw new Error('Sessão expirada, faça login novamente.'); }
-    if (r.status === 402) { mostrarSemCreditos(); }
+    if (r.status === 402) {
+      // 402 pode ser: sem créditos | plano com chave faltando | plano expirado
+      r.clone().json().then(function(d){
+        if (d && d.semChaves) { chavesAbrir(); }             // pagou o plano mas não cadastrou a chave
+        else if (d && d.planoExpirado) { comprarAbrir(); alert('Seu plano mensal expirou. Renove por R$10 para continuar.'); }
+        else { mostrarSemCreditos(); }                        // créditos acabaram
+      }).catch(function(){ mostrarSemCreditos(); });
+    }
     return r;
   });
 }
