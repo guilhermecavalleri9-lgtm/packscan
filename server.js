@@ -10,6 +10,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MERCADOPAGO_TOKEN = process.env.MERCADOPAGO_TOKEN || '';
 // pacotes de créditos à venda (1 crédito = 1 requisição). Preço com ~30% de margem, arredondado.
 const PACOTES_CREDITOS = [
+  { id: 'teste1', creditos: 25,    preco: 1.00 }, // pacote de teste — remover depois de validar
   { id: 'p1000',  creditos: 1000,  preco: 35.00 },
   { id: 'p2000',  creditos: 2000,  preco: 70.00 },
   { id: 'p5000',  creditos: 5000,  preco: 175.00 },
