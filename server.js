@@ -15,7 +15,7 @@ const PACOTES_CREDITOS = [
   { id: 'p5000', creditos: 5000, preco: 174.90 }
 ];
 // plano mensal com chave própria: usa a própria chave do Google (obrigatória; a da IA é opcional) por 30 dias, sem gastar créditos
-const PLANO_MENSAL = { id: 'plano_mensal', preco: 1.00, dias: 30 }; // TESTE — voltar pra 24.90 depois
+const PLANO_MENSAL = { id: 'plano_mensal', preco: 24.90, dias: 30 };
 // créditos de boas-vindas pra testar o sistema ao se registrar
 const CREDITOS_BOAS_VINDAS = 500;
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -967,7 +967,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
     fs.readFile(path.join(__dirname, 'packscan.html'), (err, data) => {
       if (err) { res.writeHead(404); res.end('Not found'); return; }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
       res.end(data);
     });
     return;
@@ -977,7 +977,7 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/scanner') {
     fs.readFile(path.join(__dirname, 'scanner.html'), (err, data) => {
       if (err) { res.writeHead(404); res.end('Not found'); return; }
-      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
       res.end(data);
     });
     return;
