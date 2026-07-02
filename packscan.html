@@ -119,7 +119,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="auth-field"><label>Usuário</label><input type="text" id="auth-reg-usuario" autocomplete="username"></div>
       <div class="auth-field"><label>Senha (mín. 4 caracteres)</label><input type="password" id="auth-reg-senha" autocomplete="new-password"></div>
       <button class="btn btn-p" style="width:100%" onclick="authRegistrar()">Registrar</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:.6rem">Após registrar, um administrador precisa aprovar seu acesso antes que você consiga entrar.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:.6rem">Após registrar, um administrador precisa aprovar seu acesso antes que você consiga entrar. Ao ser aprovado, você ganha <strong style="color:var(--green)">500 créditos grátis</strong> para testar.</div>
     </div>
 
     <div id="auth-msg"></div>
@@ -863,7 +863,7 @@ async function authRegistrar() {
     var d = await r.json();
     if (!r.ok) { msg.textContent='✗ '+(d.error||'Erro ao registrar.'); msg.style.color='var(--red)'; return; }
     if (d.pendente) {
-      msg.textContent='✓ Cadastro enviado! Aguarde um administrador aprovar seu acesso.'; msg.style.color='var(--green)';
+      msg.textContent='✓ Cadastro enviado! Aguarde a aprovação — você começa com '+(d.creditosGratis||500)+' créditos grátis para testar.'; msg.style.color='var(--green)';
     } else {
       msg.textContent='✓ Cadastro criado e aprovado automaticamente (primeiro usuário do sistema). Já pode entrar.'; msg.style.color='var(--green)';
     }

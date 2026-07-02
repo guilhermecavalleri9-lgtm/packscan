@@ -8,15 +8,17 @@ const PORT = process.env.PORT || 3000;
 const GOOGLE_KEY = process.env.GOOGLE_MAPS_KEY || 'AIzaSyCHRl5eRHAfw0-WVEBj0wC5tpbJ81265gk';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MERCADOPAGO_TOKEN = process.env.MERCADOPAGO_TOKEN || '';
-// pacotes de créditos à venda (1 crédito = 1 requisição). Preço com ~30% de margem, arredondado.
+// pacotes de créditos à venda (1 crédito = 1 requisição). Preço = custo de API × 1,3 (~30% de margem), arredondado.
 const PACOTES_CREDITOS = [
-  { id: 'p1000',  creditos: 1000,  preco: 35.00 },
-  { id: 'p2000',  creditos: 2000,  preco: 70.00 },
+  { id: 'p3000',  creditos: 3000,  preco: 105.00 },
   { id: 'p5000',  creditos: 5000,  preco: 175.00 },
-  { id: 'p10000', creditos: 10000, preco: 350.00 }
+  { id: 'p10000', creditos: 10000, preco: 350.00 },
+  { id: 'p20000', creditos: 20000, preco: 700.00 }
 ];
-// plano mensal com chave própria: paga R$10 e usa as próprias chaves de API por 30 dias (sem gastar créditos)
-const PLANO_MENSAL = { id: 'plano_mensal', preco: 10.00, dias: 30 };
+// plano mensal com chave própria: usa a própria chave do Google (obrigatória; a da IA é opcional) por 30 dias, sem gastar créditos
+const PLANO_MENSAL = { id: 'plano_mensal', preco: 24.90, dias: 30 };
+// créditos de boas-vindas pra testar o sistema ao se registrar
+const CREDITOS_BOAS_VINDAS = 500;
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 
@@ -644,11 +646,12 @@ const server = http.createServer(async (req, res) => {
       usuario, senhaHash: hashSenha(senha),
       status: ehPrimeiro ? 'aprovado' : 'pendente',
       admin: ehPrimeiro,
+      creditos: CREDITOS_BOAS_VINDAS, // créditos grátis pra testar (liberados após aprovação)
       criadoEm: new Date().toISOString()
     });
     await setUsuarios(lista);
-    console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ' (pendente)'}`);
-    return json(res, 200, { ok: true, pendente: !ehPrimeiro });
+    console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ` (pendente, +${CREDITOS_BOAS_VINDAS} créditos de teste)`}`);
+    return json(res, 200, { ok: true, pendente: !ehPrimeiro, creditosGratis: CREDITOS_BOAS_VINDAS });
   }
 
   if (req.method === 'POST' && pathname === '/api/auth/login') {
