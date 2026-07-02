@@ -10,9 +10,9 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MERCADOPAGO_TOKEN = process.env.MERCADOPAGO_TOKEN || '';
 // pacotes de créditos à venda (1 crédito = 1 requisição). Preço = custo de API × 1,3 (~30% de margem), arredondado.
 const PACOTES_CREDITOS = [
-  { id: 'p1000', creditos: 1000, preco: 35.00 },
-  { id: 'p2500', creditos: 2500, preco: 90.00 },
-  { id: 'p5000', creditos: 5000, preco: 175.00 }
+  { id: 'p1000', creditos: 1000, preco: 34.90 },
+  { id: 'p2500', creditos: 2500, preco: 86.90 },
+  { id: 'p5000', creditos: 5000, preco: 174.90 }
 ];
 // plano mensal com chave própria: usa a própria chave do Google (obrigatória; a da IA é opcional) por 30 dias, sem gastar créditos
 const PLANO_MENSAL = { id: 'plano_mensal', preco: 24.90, dias: 30 };
