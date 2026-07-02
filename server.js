@@ -19,7 +19,6 @@ const PACOTES_CREDITOS = [
 const PLANO_MENSAL = { id: 'plano_mensal', preco: 10.00, dias: 30 };
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
-const ROTAS_FILE = path.join(__dirname, 'rotas_salvas.json');
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
 function readBody(req) {
@@ -37,13 +36,6 @@ function json(res, code, data) {
     'Access-Control-Allow-Origin': '*'
   });
   res.end(JSON.stringify(data));
-}
-
-function loadJSON(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch(e) { return {}; }
-}
-function saveJSON(file, data) {
-  try { fs.writeFileSync(file, JSON.stringify(data)); } catch(e) {}
 }
 
 function httpsGet(hostname, reqPath) {
@@ -331,10 +323,8 @@ function senhaConfere(senha, hashArmazenado) {
 function base64url(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 function base64urlDecode(str) { return Buffer.from(str.replace(/-/g,'+').replace(/_/g,'/'), 'base64'); }
 
-function gerarToken(usuario, admin, expiraEm) {
-  // exp do token = TOKEN_VALIDADE_MS (login diário), mas nunca depois da validade de acesso do usuário (se houver)
-  let exp = Date.now() + TOKEN_VALIDADE_MS;
-  if (expiraEm && expiraEm < exp) exp = expiraEm;
+function gerarToken(usuario, admin) {
+  const exp = Date.now() + TOKEN_VALIDADE_MS; // login diário
   const payload = JSON.stringify({ u: usuario, a: !!admin, exp });
   const payloadB64 = base64url(payload);
   const assinatura = base64url(crypto.createHmac('sha256', AUTH_SECRET).update(payloadB64).digest());
@@ -357,6 +347,32 @@ async function autenticar(req) {
   const auth = req.headers['authorization'] || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
   return verificarToken(token);
+}
+
+// ─── PROTEÇÃO CONTRA FORÇA BRUTA NO LOGIN ─────────────────────────────────────
+// 5 senhas erradas seguidas (por IP+usuário) bloqueia novas tentativas por 15 min.
+// Em memória: zera num restart do servidor, o que é aceitável pra este fim.
+const loginFalhas = {}; // "ip|usuario" -> { erros, bloqueadoAte }
+const LOGIN_MAX_ERROS = 5;
+const LOGIN_BLOQUEIO_MS = 15 * 60 * 1000;
+
+function ipDoRequest(req) {
+  const xff = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return xff || (req.socket && req.socket.remoteAddress) || 'ip-desconhecido';
+}
+function loginBloqueadoAte(chave) {
+  const rec = loginFalhas[chave];
+  if (!rec || !rec.bloqueadoAte) return 0;
+  if (rec.bloqueadoAte <= Date.now()) { delete loginFalhas[chave]; return 0; } // bloqueio venceu
+  return rec.bloqueadoAte;
+}
+function registrarFalhaLogin(chave) {
+  const rec = loginFalhas[chave] || (loginFalhas[chave] = { erros: 0, bloqueadoAte: 0 });
+  rec.erros++;
+  if (rec.erros >= LOGIN_MAX_ERROS) {
+    rec.bloqueadoAte = Date.now() + LOGIN_BLOQUEIO_MS;
+    console.warn(`[auth] bloqueio por força bruta: ${chave} (${rec.erros} erros)`);
+  }
 }
 
 // ─── PASSO 1: rua pelo CEP via Google ────────────────────────────────────────
@@ -604,7 +620,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/pagamento/webhook']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/validade', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -639,15 +655,24 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     const usuario = (body.usuario || '').trim().toLowerCase();
     const senha = body.senha || '';
+    // proteção contra força bruta: bloqueia depois de muitas senhas erradas
+    const chaveLogin = ipDoRequest(req) + '|' + usuario;
+    const bloqueadoAte = loginBloqueadoAte(chaveLogin);
+    if (bloqueadoAte) {
+      const min = Math.ceil((bloqueadoAte - Date.now()) / 60000);
+      return json(res, 429, { error: `Muitas tentativas erradas. Tente de novo em ${min} minuto(s).` });
+    }
     const lista = await getUsuarios();
     const u = lista.find(x => x.usuario === usuario);
-    if (!u || !senhaConfere(senha, u.senhaHash)) return json(res, 401, { error: 'Usuário ou senha inválidos' });
+    if (!u || !senhaConfere(senha, u.senhaHash)) {
+      registrarFalhaLogin(chaveLogin);
+      return json(res, 401, { error: 'Usuário ou senha inválidos' });
+    }
+    delete loginFalhas[chaveLogin]; // acertou a senha — zera o contador
     if (u.status !== 'aprovado') return json(res, 403, { error: 'Cadastro ainda não foi aprovado por um administrador' });
-    if (u.expiraEm && u.expiraEm < Date.now()) return json(res, 403, { error: 'Seu tempo de acesso expirou. Fale com o administrador.' });
     const saldoLogin = await saldoCreditos(u);
     return json(res, 200, {
-      ok: true, token: gerarToken(u.usuario, u.admin, u.expiraEm), usuario: u.usuario, admin: !!u.admin,
-      expiraEm: u.expiraEm || null,
+      ok: true, token: gerarToken(u.usuario, u.admin), usuario: u.usuario, admin: !!u.admin,
       creditos: saldoLogin === Infinity ? null : Math.max(0, saldoLogin),
       planoAtivo: !!(u.planoProprio && u.planoAte && u.planoAte > Date.now()),
       planoAte: u.planoAte || null
@@ -657,12 +682,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/auth/me') {
     const lista = await getUsuarios();
     const u = lista.find(x => x.usuario === req.usuarioAtual.usuario);
-    // se o acesso expirou desde o último login, derruba a sessão
-    if (u && u.expiraEm && u.expiraEm < Date.now()) return json(res, 401, { error: 'Acesso expirado' });
     const saldo = await saldoCreditos(u);
     return json(res, 200, {
       usuario: req.usuarioAtual.usuario, admin: req.usuarioAtual.admin,
-      expiraEm: u ? (u.expiraEm || null) : null,
       creditos: saldo === Infinity ? null : Math.max(0, saldo), // null = ilimitado (admin)
       planoProprio: !!(u && u.planoProprio),
       planoAte: (u && u.planoAte) || null,
@@ -899,7 +921,7 @@ const server = http.createServer(async (req, res) => {
       const usado = u.admin ? 0 : await carregarUsoGeocoding(u.usuario);
       out.push({
         usuario: u.usuario, status: u.status, admin: !!u.admin,
-        criadoEm: u.criadoEm || null, expiraEm: u.expiraEm || null,
+        criadoEm: u.criadoEm || null,
         creditosComprados: comprados, creditosUsados: usado,
         saldo: u.admin ? null : Math.max(0, comprados - usado)
       });
@@ -907,33 +929,15 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { usuarios: out });
   }
 
-  // define a validade de acesso de um usuário: dias>0 = expira em N dias a partir de agora; dias=0 = sem limite (admin)
-  if (req.method === 'POST' && pathname === '/api/auth/validade') {
-    const body = await readBody(req);
-    const usuario = (body.usuario || '').trim().toLowerCase();
-    const dias = Number(body.dias);
-    if (!Number.isFinite(dias)) return json(res, 400, { error: 'dias inválido' });
-    const lista = await getUsuarios();
-    const u = lista.find(x => x.usuario === usuario);
-    if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
-    // dias>0 expira em N dias; dias=0 sem limite; dias<0 expira imediatamente (corte/teste)
-    u.expiraEm = dias === 0 ? null : Date.now() + dias * 24 * 60 * 60 * 1000;
-    await setUsuarios(lista);
-    console.log(`[auth] validade de ${usuario}: ${dias > 0 ? dias + ' dias' : 'sem limite'} (por ${req.usuarioAtual.usuario})`);
-    return json(res, 200, { ok: true, expiraEm: u.expiraEm });
-  }
-
   if (req.method === 'POST' && pathname === '/api/auth/aprovar') {
     const body = await readBody(req);
     const usuario = (body.usuario || '').trim().toLowerCase();
-    const dias = Number(body.dias);
     const lista = await getUsuarios();
     const u = lista.find(x => x.usuario === usuario);
     if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
     u.status = 'aprovado';
-    if (Number.isFinite(dias) && dias > 0) u.expiraEm = Date.now() + dias * 24 * 60 * 60 * 1000;
     await setUsuarios(lista);
-    console.log(`[auth] aprovado: ${usuario}${Number.isFinite(dias) && dias > 0 ? ' ('+dias+' dias)' : ''} (por ${req.usuarioAtual.usuario})`);
+    console.log(`[auth] aprovado: ${usuario} (por ${req.usuarioAtual.usuario})`);
     return json(res, 200, { ok: true });
   }
 
@@ -1272,63 +1276,58 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
-  // ─── PACOTES ──────────────────────────────────────────────────────────────
+  // ─── PACOTES (importação do dia — separada POR USUÁRIO) ───────────────────
+  // cada usuário tem sua própria importação salva (chave "pacotes:<usuario>");
+  // um cliente não vê nem sobrescreve os dados de outro
   if (req.method === 'POST' && pathname === '/api/pacotes/salvar') {
     const body = await readBody(req);
     if (!body || !body.pacotes) return json(res, 400, { error: 'pacotes obrigatório' });
-    try {
-      // salva como um único registro no Supabase
-      await supabaseRequest('DELETE', '/rest/v1/pacotes_dia?id=neq.0');
-      await supabaseRequest('POST', '/rest/v1/pacotes_dia', {
-        dados: body.pacotes,
-        arquivo: body.arquivo || '',
-        total: body.pacotes.length,
-        salvo_em: new Date().toISOString()
-      });
-      console.log(`[pacotes] ${body.pacotes.length} pacotes salvos`);
-      return json(res, 200, { ok: true, total: body.pacotes.length });
-    } catch(e) {
-      console.error('[pacotes save]', e.message);
-      return json(res, 500, { error: e.message });
-    }
+    await supabaseSet('pacotes:' + req.usuarioAtual.usuario, {
+      pacotes: body.pacotes,
+      arquivo: body.arquivo || '',
+      total: body.pacotes.length,
+      salvoEm: new Date().toISOString()
+    });
+    console.log(`[pacotes] ${body.pacotes.length} pacotes salvos (${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true, total: body.pacotes.length });
   }
 
   if (req.method === 'GET' && pathname === '/api/pacotes/carregar') {
-    try {
-      const r = await supabaseRequest('GET', '/rest/v1/pacotes_dia?select=*&limit=1&order=salvo_em.desc');
-      const result = r.body;
-      if (result && result[0]) return json(res, 200, { pacotes: result[0].dados, arquivo: result[0].arquivo, salvoEm: result[0].salvo_em, total: result[0].total });
-      return json(res, 200, { pacotes: [], salvoEm: null });
-    } catch(e) {
-      return json(res, 500, { error: e.message });
-    }
+    const d = await supabaseGet('pacotes:' + req.usuarioAtual.usuario);
+    if (d && d.pacotes) return json(res, 200, { pacotes: d.pacotes, arquivo: d.arquivo, salvoEm: d.salvoEm, total: d.total });
+    return json(res, 200, { pacotes: [], salvoEm: null });
   }
 
+  // admin apaga a própria importação, ou a de outro usuário passando {usuario}
   if (req.method === 'POST' && pathname === '/api/pacotes/apagar') {
-    try {
-      await supabaseRequest('DELETE', '/rest/v1/pacotes_dia?id=neq.0');
-      return json(res, 200, { ok: true });
-    } catch(e) {
-      return json(res, 500, { error: e.message });
-    }
+    const body = await readBody(req);
+    const alvo = ((body && body.usuario) || req.usuarioAtual.usuario).trim().toLowerCase();
+    await supabaseDelete('pacotes:' + alvo);
+    console.log(`[pacotes] importação apagada (${alvo}, por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true });
   }
 
-  // ─── ROTAS ────────────────────────────────────────────────────────────────
+  // ─── ROTAS (separadas POR USUÁRIO, persistidas no Supabase) ────────────────
+  // antes ficavam num arquivo local do servidor, que se perdia a cada deploy
   if (req.method === 'POST' && pathname === '/api/rotas/salvar') {
     const body = await readBody(req);
     if (!body || !body.rotas) return json(res, 400, { error: 'rotas obrigatório' });
-    saveJSON(ROTAS_FILE, { rotas: body.rotas, salvoEm: new Date().toISOString() });
-    console.log(`[rotas] ${body.rotas.length} rotas salvas`);
+    await supabaseSet('rotas:' + req.usuarioAtual.usuario, { rotas: body.rotas, salvoEm: new Date().toISOString() });
+    console.log(`[rotas] ${body.rotas.length} rotas salvas (${req.usuarioAtual.usuario})`);
     return json(res, 200, { ok: true, total: body.rotas.length });
   }
 
   if (req.method === 'GET' && pathname === '/api/rotas/carregar') {
-    const data = loadJSON(ROTAS_FILE);
-    return json(res, 200, data.rotas ? data : { rotas: [], salvoEm: null });
+    const d = await supabaseGet('rotas:' + req.usuarioAtual.usuario);
+    return json(res, 200, (d && d.rotas) ? d : { rotas: [], salvoEm: null });
   }
 
+  // admin apaga as próprias rotas, ou as de outro usuário passando {usuario}
   if (req.method === 'POST' && pathname === '/api/rotas/apagar') {
-    saveJSON(ROTAS_FILE, { rotas: [], salvoEm: null });
+    const body = await readBody(req);
+    const alvo = ((body && body.usuario) || req.usuarioAtual.usuario).trim().toLowerCase();
+    await supabaseDelete('rotas:' + alvo);
+    console.log(`[rotas] apagadas (${alvo}, por ${req.usuarioAtual.usuario})`);
     return json(res, 200, { ok: true });
   }
 

@@ -617,7 +617,6 @@ var BACKEND = '';
 var AUTH_TOKEN = localStorage.getItem('packscan_token') || '';
 var AUTH_USUARIO = localStorage.getItem('packscan_usuario') || '';
 var AUTH_ADMIN = localStorage.getItem('packscan_admin') === '1';
-var AUTH_EXPIRA = Number(localStorage.getItem('packscan_expira')) || 0;
 var AUTH_CREDITOS = null; // null = ilimitado (admin); número = saldo de requisições
 var AUTH_PLANO_ATIVO = false; // plano mensal com chave própria ativo
 var AUTH_PLANO_ATE = null;    // timestamp de validade do plano
@@ -842,12 +841,11 @@ async function authLogin() {
       document.getElementById('auth-reativar').style.display = (r.status===403 && /expir/i.test(d.error||'')) ? 'block' : 'none';
       return;
     }
-    AUTH_TOKEN = d.token; AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin; AUTH_EXPIRA = d.expiraEm || 0;
+    AUTH_TOKEN = d.token; AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin;
     guardarDadosConta(d);
     localStorage.setItem('packscan_token', AUTH_TOKEN);
     localStorage.setItem('packscan_usuario', AUTH_USUARIO);
     localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
-    localStorage.setItem('packscan_expira', String(AUTH_EXPIRA));
     document.getElementById('auth-bg').classList.add('hide');
     authAplicarPermissoes();
     iniciarApp();
@@ -874,7 +872,7 @@ async function authRegistrar() {
 }
 
 function authLogout() {
-  AUTH_TOKEN=''; AUTH_USUARIO=''; AUTH_ADMIN=false; AUTH_EXPIRA=0;
+  AUTH_TOKEN=''; AUTH_USUARIO=''; AUTH_ADMIN=false;
   localStorage.removeItem('packscan_token'); localStorage.removeItem('packscan_usuario'); localStorage.removeItem('packscan_admin'); localStorage.removeItem('packscan_expira');
   document.getElementById('auth-bg').classList.remove('hide');
   authMostrarAba('login');
@@ -886,11 +884,10 @@ async function authBootstrap() {
     var r = await fetch(BACKEND+'/api/auth/me', { headers:{ 'Authorization':'Bearer '+AUTH_TOKEN } });
     if (!r.ok) { authLogout(); return; }
     var d = await r.json();
-    AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin; AUTH_EXPIRA = d.expiraEm || 0;
+    AUTH_USUARIO = d.usuario; AUTH_ADMIN = !!d.admin;
     guardarDadosConta(d);
     localStorage.setItem('packscan_usuario', AUTH_USUARIO);
     localStorage.setItem('packscan_admin', AUTH_ADMIN ? '1' : '0');
-    localStorage.setItem('packscan_expira', String(AUTH_EXPIRA));
     document.getElementById('auth-bg').classList.add('hide');
     authAplicarPermissoes();
     iniciarApp();
@@ -909,7 +906,6 @@ async function carregarPendentes() {
       var u = esc(p.usuario).replace(/'/g,"\\'");
       return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);flex-wrap:wrap">'
         + '<div style="flex:1;min-width:120px">'+esc(p.usuario)+'</div>'
-        + '<select id="pend-dias-'+u+'" style="width:auto;font-size:11px"><option value="0">sem limite</option><option value="3">3 dias</option><option value="7">7 dias</option><option value="30">30 dias</option></select>'
         + '<button class="btn btn-g btn-sm" onclick="authAprovar(\''+u+'\')">✓ Aprovar</button>'
         + '<button class="btn btn-r btn-sm" onclick="authRejeitar(\''+u+'\')">✕ Rejeitar</button>'
       + '</div>';
@@ -917,24 +913,13 @@ async function carregarPendentes() {
   } catch(e) { el.textContent = 'Erro ao carregar: '+e.message; }
 }
 async function authAprovar(usuario) {
-  var sel = document.getElementById('pend-dias-'+usuario);
-  var dias = sel ? Number(sel.value) : 0;
-  await apiFetch(BACKEND+'/api/auth/aprovar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,dias:dias}) });
+  await apiFetch(BACKEND+'/api/auth/aprovar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario}) });
   carregarPendentes(); carregarUsuarios();
 }
 async function authRejeitar(usuario) {
   if (!confirm('Rejeitar/remover o cadastro de "'+usuario+'"?')) return;
   await apiFetch(BACKEND+'/api/auth/rejeitar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario}) });
   carregarPendentes(); carregarUsuarios();
-}
-
-function _fmtValidade(expiraEm) {
-  if (!expiraEm) return '<span style="color:var(--green)">sem limite</span>';
-  var restanteMs = expiraEm - Date.now();
-  if (restanteMs <= 0) return '<span style="color:var(--red)">expirado</span>';
-  var dias = Math.ceil(restanteMs / 86400000);
-  var cor = dias <= 3 ? 'var(--amber)' : 'var(--text2)';
-  return '<span style="color:'+cor+'">'+dias+' dia(s) restante(s)</span>';
 }
 
 async function carregarUsuarios() {
