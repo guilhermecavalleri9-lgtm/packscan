@@ -1104,7 +1104,7 @@ const server = http.createServer(async (req, res) => {
       if (meuRec && meuRec.admin) {
         // admin usa as chaves globais, sem limite
       } else if (meuRec && meuRec.planoProprio && !planoAtivo) {
-        return json(res, 402, { error: 'Seu plano mensal expirou. Renove por R$10 para continuar.', planoExpirado: true });
+        return json(res, 402, { error: 'Seu plano mensal expirou. Renove por R$ 24,90 para continuar.', planoExpirado: true });
       } else if (planoAtivo) {
         if (!meuRec.googleKey) return json(res, 402, { error: 'Configure sua chave de API do Google para usar seu plano.', semChaves: true });
         ctx.googleKey = meuRec.googleKey;
