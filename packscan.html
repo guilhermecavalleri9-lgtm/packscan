@@ -932,15 +932,25 @@ async function carregarUsuarios() {
     if (!lista.length) { el.textContent = 'Nenhum usuário aprovado.'; return; }
     el.innerHTML = lista.map(function(u) {
       var nome = esc(u.usuario).replace(/'/g,"\\'");
-      var saldoTxt = u.admin ? '<span style="color:var(--accent)">ilimitado</span>'
-        : '<strong style="color:'+((u.saldo||0) <= 0 ? 'var(--red)' : ((u.saldo||0) <= 100 ? 'var(--amber)' : 'var(--green)'))+'">'+(u.saldo||0).toLocaleString('pt-BR')+'</strong> créditos';
+      var saldoTxt;
+      if (u.admin) {
+        saldoTxt = '<span style="color:var(--accent)">ilimitado</span>';
+      } else if (u.planoAtivo) {
+        var diasPlano = u.planoAte ? Math.ceil((u.planoAte - Date.now()) / 86400000) : 0;
+        var corPlano = diasPlano <= 3 ? 'var(--amber)' : 'var(--green)';
+        saldoTxt = '<strong style="color:'+corPlano+'">🔑 plano ativo · '+diasPlano+'d</strong>'
+          + (u.temGoogleKey ? '' : ' <span style="color:var(--amber);font-size:10px">(sem chave!)</span>');
+      } else {
+        saldoTxt = '<strong style="color:'+((u.saldo||0) <= 0 ? 'var(--red)' : ((u.saldo||0) <= 100 ? 'var(--amber)' : 'var(--green)'))+'">'+(u.saldo||0).toLocaleString('pt-BR')+'</strong> créditos';
+      }
       var linha = '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
         + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
         +   '<div style="flex:1;min-width:120px;font-weight:500;color:var(--text)">'+esc(u.usuario)+(u.admin?' <span style="color:var(--accent);font-size:10px">(admin)</span>':'')+'</div>'
         +   '<div style="font-size:12px">'+saldoTxt+'</div>'
         + '</div>';
       if (!u.admin) {
-        linha += '<div style="font-size:10px;color:var(--text3);margin-top:2px">comprou '+(u.creditosComprados||0).toLocaleString('pt-BR')+' · usou '+(u.creditosUsados||0).toLocaleString('pt-BR')+'</div>'
+        linha += '<div style="font-size:10px;color:var(--text3);margin-top:2px">comprou '+(u.creditosComprados||0).toLocaleString('pt-BR')+' · usou '+(u.creditosUsados||0).toLocaleString('pt-BR')
+          + (u.planoAtivo && u.planoAte ? ' · plano até '+new Date(u.planoAte).toLocaleDateString('pt-BR') : '')+'</div>'
         + '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">'
         +   '<span style="font-size:11px;color:var(--text3)">recarregar:</span>'
         +   '<button class="btn btn-sm" onclick="authAddCreditos(\''+nome+'\',1000)">+1.000</button>'

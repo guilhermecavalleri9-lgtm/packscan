@@ -925,7 +925,10 @@ const server = http.createServer(async (req, res) => {
         usuario: u.usuario, status: u.status, admin: !!u.admin,
         criadoEm: u.criadoEm || null,
         creditosComprados: comprados, creditosUsados: usado,
-        saldo: u.admin ? null : Math.max(0, comprados - usado)
+        saldo: u.admin ? null : Math.max(0, comprados - usado),
+        planoAtivo: !!(u.planoProprio && u.planoAte && u.planoAte > Date.now()),
+        planoAte: u.planoAte || null,
+        temGoogleKey: !!u.googleKey
       });
     }
     return json(res, 200, { usuarios: out });
