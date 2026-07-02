@@ -15,7 +15,7 @@ const PACOTES_CREDITOS = [
   { id: 'p5000', creditos: 5000, preco: 174.90 }
 ];
 // plano mensal com chave própria: usa a própria chave do Google (obrigatória; a da IA é opcional) por 30 dias, sem gastar créditos
-const PLANO_MENSAL = { id: 'plano_mensal', preco: 24.90, dias: 30 };
+const PLANO_MENSAL = { id: 'plano_mensal', preco: 1.00, dias: 30 }; // TESTE — voltar pra 24.90 depois
 // créditos de boas-vindas pra testar o sistema ao se registrar
 const CREDITOS_BOAS_VINDAS = 500;
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
