@@ -153,6 +153,13 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <button class="btn btn-sm" onclick="authLogout()">Sair</button>
 </div>
 
+<!-- faixa de aviso: plano perto de vencer -->
+<div id="plano-aviso" style="display:none;align-items:center;gap:10px;padding:8px 1rem;font-size:13px;flex-wrap:wrap">
+  <span id="plano-aviso-texto" style="flex:1;min-width:200px"></span>
+  <button class="btn btn-sm" onclick="comprarAbrir()">🔄 Renovar agora</button>
+  <button class="btn btn-sm" onclick="document.getElementById('plano-aviso').style.display='none'">✕</button>
+</div>
+
 <!-- modal: comprar créditos via PIX -->
 <div id="comprar-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:10002;align-items:center;justify-content:center;overflow:auto">
   <div class="auth-box" style="width:420px">
@@ -683,6 +690,7 @@ function recarregarSaldo() {
     .then(function(d){
       guardarDadosConta(d);
       atualizarHeaderInfo();
+      avisoPlanoVencendo();
       if (AUTH_CREDITOS === null || AUTH_CREDITOS > 0 || AUTH_PLANO_ATIVO) document.getElementById('creditos-bg').style.display = 'none';
     }).catch(function(){});
 }
@@ -822,8 +830,29 @@ function authMostrarAba(aba) {
 
 function authAplicarPermissoes() {
   atualizarHeaderInfo();
+  avisoPlanoVencendo();
   var els = document.querySelectorAll('.admin-only');
   for (var i=0;i<els.length;i++) els[i].style.display = AUTH_ADMIN ? '' : 'none';
+}
+
+// faixa de alerta quando o plano mensal está perto de vencer (3 dias) ou vence hoje
+function avisoPlanoVencendo() {
+  var faixa = document.getElementById('plano-aviso');
+  if (!faixa) return;
+  if (!AUTH_PLANO_ATIVO || !AUTH_PLANO_ATE) { faixa.style.display = 'none'; return; }
+  var dias = Math.ceil((AUTH_PLANO_ATE - Date.now()) / 86400000);
+  if (dias > 3) { faixa.style.display = 'none'; return; }
+  var texto = document.getElementById('plano-aviso-texto');
+  if (dias <= 1) {
+    faixa.style.background = 'rgba(255,60,60,.15)';
+    faixa.style.borderBottom = '1px solid var(--red)';
+    texto.innerHTML = '🚨 <strong style="color:var(--red)">Seu plano vence HOJE!</strong> Renove agora para não parar suas entregas amanhã.';
+  } else {
+    faixa.style.background = 'rgba(255,180,60,.12)';
+    faixa.style.borderBottom = '1px solid var(--amber)';
+    texto.innerHTML = '⏳ <strong style="color:var(--amber)">Seu plano vence em ' + dias + ' dias</strong> (' + new Date(AUTH_PLANO_ATE).toLocaleDateString('pt-BR') + '). Renove para não interromper o uso.';
+  }
+  faixa.style.display = 'flex';
 }
 
 async function authLogin() {
