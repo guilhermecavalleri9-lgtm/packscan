@@ -1336,6 +1336,20 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
+  // ─── SESSÃO DE TRABALHO (sincronização automática entre aparelhos) ─────────
+  // o app envia o dia de trabalho inteiro (pacotes + bipagens + rotas) a cada
+  // mudança; qualquer aparelho logado na MESMA conta recupera ao entrar/recarregar
+  if (req.method === 'POST' && pathname === '/api/sessao/salvar') {
+    const body = await readBody(req);
+    if (!body || !body.estado) return json(res, 400, { error: 'estado obrigatório' });
+    await supabaseSet('sessao:' + req.usuarioAtual.usuario, body.estado);
+    return json(res, 200, { ok: true });
+  }
+  if (req.method === 'GET' && pathname === '/api/sessao/carregar') {
+    const d = await supabaseGet('sessao:' + req.usuarioAtual.usuario);
+    return json(res, 200, { estado: d || null });
+  }
+
   res.writeHead(404); res.end('Not found');
 });
 

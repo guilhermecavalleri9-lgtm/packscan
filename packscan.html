@@ -2352,8 +2352,12 @@ async function apagarSessao() {
   atualizarGeoInfo(); goTabCorrigir();
   if (map) plotarPontos();
   renderRotasList(); renderMotList(); renderEtSelect(); renderMotDownload();
-  // limpa servidor também
+  // limpa servidor também (importação salva + sessão sincronizada entre aparelhos)
   try { await apiFetch(BACKEND + '/api/pacotes/apagar', { method: 'POST' }); } catch(e){}
+  try {
+    await apiFetch(BACKEND + '/api/sessao/salvar', { method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ estado: { pacotes: [], bipados: {}, arquivo: '', rotas: [], salvoEm: Date.now() } }) });
+  } catch(e){}
   el.textContent = '✓ Importação apagada (navegador e servidor).';
   el.style.color = 'var(--text3)';
 }
@@ -2371,13 +2375,59 @@ function snapshotRotas() {
   });
 }
 
-function persistirLocal() {
+function montarEstado() {
+  var rotasData = (rotas.length && map) ? snapshotRotas() : (_rotasPendentes || []);
+  return { pacotes: pacotes, bipados: bipados, arquivo: _arquivoNome, rotas: rotasData, salvoEm: Date.now() };
+}
+
+function persistirLocal(semSync) {
   try {
-    var rotasData = (rotas.length && map) ? snapshotRotas() : (_rotasPendentes || []);
-    localStorage.setItem('packscan_estado', JSON.stringify({
-      pacotes: pacotes, bipados: bipados, arquivo: _arquivoNome, rotas: rotasData
-    }));
+    localStorage.setItem('packscan_estado', JSON.stringify(montarEstado()));
   } catch(e) { /* localStorage cheio ou indisponível */ }
+  // sincroniza com o servidor (com atraso, pra agrupar mudanças em sequência)
+  if (!semSync) agendarSyncServidor();
+}
+
+// ── SINCRONIZAÇÃO ENTRE APARELHOS (mesma conta) ────────────────────────────────
+var _syncTimer = null;
+function agendarSyncServidor() {
+  if (!AUTH_TOKEN) return;
+  if (_syncTimer) clearTimeout(_syncTimer);
+  _syncTimer = setTimeout(enviarEstadoServidor, 3000);
+}
+async function enviarEstadoServidor() {
+  _syncTimer = null;
+  if (!AUTH_TOKEN) return;
+  try {
+    await apiFetch(BACKEND + '/api/sessao/salvar', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: montarEstado() })
+    });
+  } catch(e) { /* sem rede/sessão — o próximo persistir tenta de novo */ }
+}
+// ao entrar/recarregar: se o servidor tem um estado mais novo que o deste
+// aparelho, usa o do servidor (última alteração vence)
+async function sincronizarDoServidor() {
+  try {
+    var r = await apiFetch(BACKEND + '/api/sessao/carregar');
+    var d = await r.json();
+    var srv = d.estado;
+    if (!srv || !srv.pacotes || !srv.pacotes.length) return;
+    var localTs = 0;
+    try {
+      var raw = localStorage.getItem('packscan_estado');
+      if (raw) localTs = JSON.parse(raw).salvoEm || 0;
+    } catch(e) {}
+    if ((srv.salvoEm || 0) <= localTs) return; // este aparelho está igual ou mais atualizado
+    pacotes = srv.pacotes;
+    bipados = srv.bipados || {};
+    _arquivoNome = srv.arquivo || '';
+    _rotasPendentes = (srv.rotas && srv.rotas.length) ? srv.rotas : null;
+    finImport();
+    atualizarGeoInfo();
+    persistirLocal(true); // atualiza a cópia local sem reenviar ao servidor
+    console.log('[sync] estado mais novo carregado do servidor');
+  } catch(e) {}
 }
 
 function restaurarLocal() {
@@ -2595,6 +2645,7 @@ function scBiparManual(codigo) {
 // init — só roda depois de autenticado (authBootstrap chama isto)
 function iniciarApp() {
   restaurarLocal();
+  sincronizarDoServidor(); // puxa o estado de outro aparelho se for mais novo
   renderRegioes();
   verificarSessao();
   carregarCorrecoesNome();
