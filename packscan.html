@@ -274,7 +274,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
       </div>
       <div class="btn-row">
         <button class="btn btn-p" onclick="confirmarImport()">✓ Confirmar importação</button>
+        <button class="btn btn-g" onclick="adicionarImport()">➕ Adicionar à importação atual</button>
       </div>
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">➕ <strong>Adicionar</strong>: pra quando chegam pacotes novos no meio do dia. Suba a planilha completa — os que já existem são ignorados e os novos entram sem mudar a numeração de ninguém.</div>
     </div>
     <div class="card">
       <div class="card-title">sessão salva no servidor</div>
@@ -1196,7 +1198,16 @@ function handleFile(inp) {
   if (ext==='csv') reader.readAsText(_pFile,'UTF-8'); else reader.readAsBinaryString(_pFile);
 }
 
-function confirmarImport() {
+function confirmarImport() { _importarPlanilha(false); }
+
+// adiciona uma planilha à importação existente: trackings que já existem são
+// ignorados, os novos entram no fim SEM mexer em nada do que já foi feito
+function adicionarImport() {
+  if (!pacotes.length) { alert('Não há importação em andamento. Use "Confirmar importação".'); return; }
+  _importarPlanilha(true);
+}
+
+function _importarPlanilha(adicionar) {
   if (!_pFile) { alert('Selecione um arquivo.'); return; }
   var cols = ['c0','c1','c2','c3','c4'].map(function(id){ return document.getElementById(id).value; });
   if (cols[0]==='—'||cols[1]==='—') { alert('Mapeie pelo menos Tracking e Endereço.'); return; }
@@ -1209,13 +1220,26 @@ function confirmarImport() {
       var hdrs = lines[0].split(/[,;\t]/).map(function(h){ return h.trim().replace(/"/g,''); });
       rows = lines.slice(1).map(function(l){ var v=l.split(/[,;\t]/); var o={}; hdrs.forEach(function(h,i){ o[h]=(v[i]||'').trim().replace(/"/g,''); }); return o; });
     } else { var wb=XLSX.read(e.target.result,{type:'binary'}); rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); }
-    pacotes = rows.filter(function(r){ return r[cols[0]]; }).map(function(r,i){
-      return { id:i+1, tracking:String(r[cols[0]]||'').trim(), endereco:String(r[cols[1]]||'').trim(),
+    var linhas = rows.filter(function(r){ return r[cols[0]]; }).map(function(r){
+      return { tracking:String(r[cols[0]]||'').trim(), endereco:String(r[cols[1]]||'').trim(),
         bairro:cols[2]!=='—'?String(r[cols[2]]||'').trim():'', cep:String(r[cols[3]]||'').trim().replace(/\D/g,''),
         cidade:cols[4]!=='—'?String(r[cols[4]]||'').trim():'', lat:null,lng:null,enderecoNorm:null,precisao:null,rota:null,numNaRota:null };
     });
-    finImport();
-    persistirLocal(); // importação nova de verdade — salva e sincroniza
+    if (!adicionar) {
+      pacotes = linhas.map(function(l,i){ l.id = i+1; return l; });
+      finImport();
+    } else {
+      var existentes = {};
+      pacotes.forEach(function(p){ existentes[p.tracking] = true; });
+      var novos = linhas.filter(function(l){ return !existentes[l.tracking]; });
+      var base = pacotes.length;
+      novos.forEach(function(n,i){ n.id = base+i+1; pacotes.push(n); });
+      finImport();
+      document.getElementById('import-msg').innerHTML = '<div class="alert alert-green">✓ <strong>'+novos.length+' pacotes novos adicionados.</strong> '
+        + (linhas.length-novos.length)+' já existiam e foram mantidos como estavam. Total agora: '+pacotes.length+'. Vá em Geocodificar — só os novos serão processados.</div>';
+      atualizarGeoInfo();
+    }
+    persistirLocal(); // importação/adição de verdade — salva e sincroniza
   };
   if (ext==='csv') reader.readAsText(_pFile,'UTF-8'); else reader.readAsBinaryString(_pFile);
 }
@@ -1491,7 +1515,15 @@ function finalizarRotas() {
     for (var i=0;i<rotas.length;i++) { if (rotas[i].layer instanceof L.Polygon&&isInPoly(p.lat,p.lng,rotas[i].layer)) { rotas[i].pkgs.push(p);p.rota=rotas[i].id;ok=true;break; } }
     if (!ok) semRota.push(p);
   });
-  rotas.forEach(function(r){ r.pkgs=reordenarNN(r.pkgs);r.pkgs.forEach(function(p,i){ p.numNaRota=i+1; }); });
+  rotas.forEach(function(r){
+    // preserva a ordem/numeração de quem JÁ tinha número (pacotes adicionados depois
+    // entram no FIM da rota) — recalcular não embaralha o que já foi enumerado
+    var jaNumerados = r.pkgs.filter(function(p){ return p.numNaRota; }).sort(function(a,b){ return a.numNaRota-b.numNaRota; });
+    var semNumero = r.pkgs.filter(function(p){ return !p.numNaRota; });
+    if (!jaNumerados.length) r.pkgs = reordenarNN(r.pkgs);
+    else r.pkgs = jaNumerados.concat(reordenarNN(semNumero));
+    r.pkgs.forEach(function(p,i){ p.numNaRota=i+1; });
+  });
   plotarPontos();
   var resumo=rotas.map(function(r){ return r.motorista+': '+r.pkgs.length; }).join('\n');
   if (semRota.length) alert('Rotas calculadas!\n'+resumo+'\n\n⚠ '+semRota.length+' pacotes fora dos polígonos.');
