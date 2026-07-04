@@ -2344,7 +2344,7 @@ async function apagarSessao() {
   // limpa memória
   if (map) { rotas.forEach(function(r){ try{ map.removeLayer(r.layer); }catch(e){} }); if (drawnItems) drawnItems.clearLayers(); }
   pacotes = []; rotas = []; bipados = {}; motAtivo = null; _arquivoNome = ''; _rotasPendentes = null;
-  try { localStorage.removeItem('packscan_estado'); } catch(e){}
+  try { localStorage.removeItem(chaveEstadoLocal()); localStorage.removeItem('packscan_estado'); } catch(e){}
   // limpa UI
   document.getElementById('import-msg').innerHTML = '';
   document.getElementById('preview-tabela').innerHTML = '';
@@ -2380,9 +2380,13 @@ function montarEstado() {
   return { pacotes: pacotes, bipados: bipados, arquivo: _arquivoNome, rotas: rotasData, salvoEm: Date.now() };
 }
 
+// o estado local é separado POR CONTA — trocar de conta no mesmo aparelho não
+// mistura os dados de uma com os da outra
+function chaveEstadoLocal() { return 'packscan_estado_' + (AUTH_USUARIO || 'anon'); }
+
 function persistirLocal(semSync) {
   try {
-    localStorage.setItem('packscan_estado', JSON.stringify(montarEstado()));
+    localStorage.setItem(chaveEstadoLocal(), JSON.stringify(montarEstado()));
   } catch(e) { /* localStorage cheio ou indisponível */ }
   // sincroniza com o servidor (com atraso, pra agrupar mudanças em sequência)
   if (!semSync) agendarSyncServidor();
@@ -2420,12 +2424,14 @@ async function sincronizarDoServidor() {
     }
     var localTs = 0;
     try {
-      var raw = localStorage.getItem('packscan_estado');
+      var raw = localStorage.getItem(chaveEstadoLocal());
       if (raw) localTs = JSON.parse(raw).salvoEm || 0;
     } catch(e) {}
-    if ((srv.salvoEm || 0) <= localTs) {
+    // um aparelho SEM pacotes nunca "segura" dados do servidor, mesmo que o estado
+    // local vazio seja mais recente (ex: aparelho usado pra outra coisa antes)
+    if (pacotes.length && (srv.salvoEm || 0) <= localTs) {
       // este aparelho está igual ou mais atualizado — garante que o servidor tenha a versão dele
-      if (pacotes.length && (srv.salvoEm || 0) < localTs) agendarSyncServidor();
+      if ((srv.salvoEm || 0) < localTs) agendarSyncServidor();
       return;
     }
     pacotes = srv.pacotes;
@@ -2441,7 +2447,19 @@ async function sincronizarDoServidor() {
 
 function restaurarLocal() {
   var raw;
-  try { raw = localStorage.getItem('packscan_estado'); } catch(e){ return; }
+  try {
+    raw = localStorage.getItem(chaveEstadoLocal());
+    if (!raw) {
+      // migração: o formato antigo não separava por conta — a primeira conta que
+      // entrar depois da atualização assume esse estado, e a chave antiga some
+      var legado = localStorage.getItem('packscan_estado');
+      if (legado) {
+        localStorage.setItem(chaveEstadoLocal(), legado);
+        localStorage.removeItem('packscan_estado');
+        raw = legado;
+      }
+    }
+  } catch(e){ return; }
   if (!raw) return;
   var s;
   try { s = JSON.parse(raw); } catch(e){ return; }
