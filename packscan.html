@@ -2440,6 +2440,12 @@ async function sincronizarDoServidor() {
     _rotasPendentes = (srv.rotas && srv.rotas.length) ? srv.rotas : null;
     finImport();
     atualizarGeoInfo();
+    // se o usuário já abriu o mapa antes do sync terminar (comum no celular),
+    // redesenha as rotas e os pontos agora — senão a rota nunca apareceria
+    if (typeof mapaInit !== 'undefined' && mapaInit && map) {
+      if (_rotasPendentes) reconstruirRotasLocais();
+      else plotarPontos();
+    }
     persistirLocal(true); // atualiza a cópia local sem reenviar ao servidor
     console.log('[sync] estado mais novo carregado do servidor');
   } catch(e) {}
