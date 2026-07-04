@@ -2412,13 +2412,22 @@ async function sincronizarDoServidor() {
     var r = await apiFetch(BACKEND + '/api/sessao/carregar');
     var d = await r.json();
     var srv = d.estado;
-    if (!srv || !srv.pacotes || !srv.pacotes.length) return;
+    // servidor vazio mas este aparelho tem dados (ex: importação feita antes da
+    // sincronização existir) → sobe o estado local pro servidor
+    if (!srv || !srv.pacotes || !srv.pacotes.length) {
+      if (pacotes.length) agendarSyncServidor();
+      return;
+    }
     var localTs = 0;
     try {
       var raw = localStorage.getItem('packscan_estado');
       if (raw) localTs = JSON.parse(raw).salvoEm || 0;
     } catch(e) {}
-    if ((srv.salvoEm || 0) <= localTs) return; // este aparelho está igual ou mais atualizado
+    if ((srv.salvoEm || 0) <= localTs) {
+      // este aparelho está igual ou mais atualizado — garante que o servidor tenha a versão dele
+      if (pacotes.length && (srv.salvoEm || 0) < localTs) agendarSyncServidor();
+      return;
+    }
     pacotes = srv.pacotes;
     bipados = srv.bipados || {};
     _arquivoNome = srv.arquivo || '';
