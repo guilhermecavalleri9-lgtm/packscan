@@ -1215,6 +1215,7 @@ function confirmarImport() {
         cidade:cols[4]!=='—'?String(r[cols[4]]||'').trim():'', lat:null,lng:null,enderecoNorm:null,precisao:null,rota:null,numNaRota:null };
     });
     finImport();
+    persistirLocal(); // importação nova de verdade — salva e sincroniza
   };
   if (ext==='csv') reader.readAsText(_pFile,'UTF-8'); else reader.readAsBinaryString(_pFile);
 }
@@ -1222,6 +1223,7 @@ function confirmarImport() {
 function carregarDemo() {
   pacotes = DEMO.map(function(d,i){ return Object.assign({},d,{id:i+1,lat:null,lng:null,enderecoNorm:null,precisao:null,rota:null,numNaRota:null}); });
   finImport();
+  persistirLocal();
 }
 
 function finImport() {
@@ -1233,7 +1235,8 @@ function finImport() {
   document.getElementById('preview-tabela').innerHTML = html;
   document.getElementById('gm-total').textContent = pacotes.length;
   if (_pFile) _arquivoNome = _pFile.name;
-  persistirLocal();
+  // NÃO persiste aqui: finImport também roda ao restaurar/sincronizar, e persistir
+  // nesses casos carimbava dado velho como "novo", quebrando o sync entre aparelhos
 }
 
 function atualizarGeoInfo() {
@@ -1388,6 +1391,7 @@ function onPolyCreated(e) {
   drawnItems.addLayer(e.layer);
   rotas.push({id:rotas.length+1,motorista:nome,cor:cor,layer:e.layer,pkgs:[]});
   renderRotasList();
+  persistirLocal(); // salva/sincroniza já no desenho, não só no "Finalizar"
   document.getElementById('mot-nome').value='';
   var usadas=rotas.map(function(r){ return r.cor; });
   setCorAtiva(CORES.find(function(c){ return !usadas.includes(c); })||CORES[rotas.length%CORES.length]);
@@ -2330,6 +2334,7 @@ async function carregarSessao() {
     }
     pacotes = d.pacotes;
     finImport();
+    persistirLocal(); // carregamento manual é ação do usuário — salva e sincroniza
     var dt = d.salvoEm ? new Date(d.salvoEm).toLocaleString('pt-BR') : '';
     el.innerHTML = '<span style="color:var(--green)">✓ ' + pacotes.length + ' pacotes carregados</span>' + (d.arquivo ? ' · <strong>' + esc(d.arquivo) + '</strong>' : '') + ' · ' + dt;
   } catch(e) {
@@ -2394,8 +2399,9 @@ function persistirLocal(semSync) {
 
 // ── SINCRONIZAÇÃO ENTRE APARELHOS (mesma conta) ────────────────────────────────
 var _syncTimer = null;
+var _aplicandoSync = false; // true enquanto aplicamos estado vindo do servidor — não re-envia (eco)
 function agendarSyncServidor() {
-  if (!AUTH_TOKEN) return;
+  if (!AUTH_TOKEN || _aplicandoSync) return;
   if (_syncTimer) clearTimeout(_syncTimer);
   _syncTimer = setTimeout(enviarEstadoServidor, 3000);
 }
@@ -2434,20 +2440,25 @@ async function sincronizarDoServidor() {
       if ((srv.salvoEm || 0) < localTs) agendarSyncServidor();
       return;
     }
-    pacotes = srv.pacotes;
-    bipados = srv.bipados || {};
-    _arquivoNome = srv.arquivo || '';
-    _rotasPendentes = (srv.rotas && srv.rotas.length) ? srv.rotas : null;
-    finImport();
-    atualizarGeoInfo();
-    // se o usuário já abriu o mapa antes do sync terminar (comum no celular),
-    // redesenha as rotas e os pontos agora — senão a rota nunca apareceria
-    if (typeof mapaInit !== 'undefined' && mapaInit && map) {
-      if (_rotasPendentes) reconstruirRotasLocais();
-      else plotarPontos();
-    }
-    persistirLocal(true); // atualiza a cópia local sem reenviar ao servidor
-    console.log('[sync] estado mais novo carregado do servidor');
+    _aplicandoSync = true; // nada aqui dentro dispara re-upload (eco)
+    try {
+      pacotes = srv.pacotes;
+      bipados = srv.bipados || {};
+      _arquivoNome = srv.arquivo || '';
+      // rotas: só substitui se o servidor TEM rotas — um estado sem rotas nunca
+      // apaga as rotas que este aparelho já tem (proteção contra eco vazio)
+      if (srv.rotas && srv.rotas.length) _rotasPendentes = srv.rotas;
+      finImport();
+      atualizarGeoInfo();
+      // se o usuário já abriu o mapa antes do sync terminar (comum no celular),
+      // redesenha as rotas e os pontos agora — senão a rota nunca apareceria
+      if (typeof mapaInit !== 'undefined' && mapaInit && map) {
+        if (_rotasPendentes) reconstruirRotasLocais();
+        else plotarPontos();
+      }
+      persistirLocal(true); // atualiza a cópia local sem reenviar ao servidor
+      console.log('[sync] estado mais novo carregado do servidor');
+    } finally { _aplicandoSync = false; }
   } catch(e) {}
 }
 
