@@ -357,6 +357,22 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <button class="btn btn-p" style="width:100%;justify-content:center" onclick="ativarDesenho()">✏ Desenhar área</button>
         <p style="font-size:11px;color:var(--text3);margin-top:8px;font-family:var(--mono);line-height:1.6">Clique no mapa para criar vértices. Feche no primeiro ponto.</p>
       </div>
+      <div class="card" style="padding:1rem">
+        <div class="card-title">início e fim da rota</div>
+        <div style="font-size:11px;color:var(--text3);margin-bottom:.5rem;line-height:1.5">A numeração começa perto do <strong>início</strong> (ex: seu galpão) e termina perto do <strong>fim</strong>. Opcional.</div>
+        <div style="margin-bottom:.5rem">
+          <label>🚩 Início (lat, lng)</label>
+          <input type="text" id="rota-ini" placeholder="-27.5935, -48.5591" style="margin-bottom:4px">
+          <button class="btn btn-sm" style="width:100%;justify-content:center" onclick="marcarPontoNoMapa('ini')">📍 Marcar clicando no mapa</button>
+        </div>
+        <div style="margin-bottom:.5rem">
+          <label>🏁 Fim (lat, lng)</label>
+          <input type="text" id="rota-fim" placeholder="opcional" style="margin-bottom:4px">
+          <button class="btn btn-sm" style="width:100%;justify-content:center" onclick="marcarPontoNoMapa('fim')">📍 Marcar clicando no mapa</button>
+        </div>
+        <button class="btn btn-p btn-sm" style="width:100%;justify-content:center" onclick="rotaCfgSalvar()">💾 Salvar pontos</button>
+        <div id="rotacfg-status" style="font-size:11px;font-family:var(--mono);color:var(--text3);margin-top:4px;min-height:14px"></div>
+      </div>
       <div class="card" style="padding:1rem;overflow-y:auto;max-height:260px">
         <div class="card-title">rotas criadas</div>
         <div id="rotas-lista"></div>
@@ -1423,6 +1439,7 @@ function onPolyCreated(e) {
 
 function plotarPontos() {
   if (!map) return;
+  desenharPontosRef();
   marcadores.forEach(function(m){ map.removeLayer(m); }); marcadores=[];
   var geo=pacotes.filter(function(p){ return p.lat&&p.lng; });
   if (!geo.length) return;
@@ -1483,6 +1500,108 @@ function renderRotasList() {
 
 function removerRota(i) { map.removeLayer(rotas[i].layer); rotas.splice(i,1); rotas.forEach(function(r,j){ r.id=j+1; }); renderRotasList(); persistirLocal(); }
 
+// ── PONTO DE INÍCIO/FIM DA ROTA (configurável) ─────────────────────────────────
+var _rotaCfg = { ini: null, fim: null }; // {lat,lng} ou null
+var _refMarkers = [];
+
+function rotaCfgChave() { return 'packscan_rotacfg_' + (AUTH_USUARIO || 'anon'); }
+function rotaCfgCarregar() {
+  try { var raw = localStorage.getItem(rotaCfgChave()); if (raw) _rotaCfg = JSON.parse(raw); } catch(e) {}
+  rotaCfgPreencherInputs();
+}
+function rotaCfgPreencherInputs() {
+  var i1 = document.getElementById('rota-ini'), i2 = document.getElementById('rota-fim');
+  if (i1) i1.value = _rotaCfg.ini ? _rotaCfg.ini.lat.toFixed(6)+', '+_rotaCfg.ini.lng.toFixed(6) : '';
+  if (i2) i2.value = _rotaCfg.fim ? _rotaCfg.fim.lat.toFixed(6)+', '+_rotaCfg.fim.lng.toFixed(6) : '';
+}
+function _parsePonto(txt) {
+  var m = String(txt||'').trim().match(/(-?\d+[.,]?\d*)\s*[,;]\s*(-?\d+[.,]?\d*)/);
+  if (!m) return null;
+  var lat = parseFloat(m[1].replace(',','.')), lng = parseFloat(m[2].replace(',','.'));
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat: lat, lng: lng };
+}
+function rotaCfgSalvar() {
+  _rotaCfg.ini = _parsePonto(document.getElementById('rota-ini').value);
+  _rotaCfg.fim = _parsePonto(document.getElementById('rota-fim').value);
+  try { localStorage.setItem(rotaCfgChave(), JSON.stringify(_rotaCfg)); } catch(e) {}
+  persistirLocal(); // sincroniza entre aparelhos junto com o resto
+  desenharPontosRef();
+  var st = document.getElementById('rotacfg-status');
+  st.textContent = '✓ Salvo. Clique em "Finalizar e calcular" pra reordenar.';
+  st.style.color = 'var(--green)';
+}
+function marcarPontoNoMapa(qual) {
+  if (!mapaInit || !map) { alert('Abra o mapa primeiro (ele carrega nesta aba).'); return; }
+  var st = document.getElementById('rotacfg-status');
+  st.textContent = '👆 Clique no mapa onde fica o ' + (qual==='ini'?'INÍCIO':'FIM') + '...';
+  st.style.color = 'var(--amber)';
+  map.once('click', function(e) {
+    document.getElementById('rota-'+qual).value = e.latlng.lat.toFixed(6)+', '+e.latlng.lng.toFixed(6);
+    rotaCfgSalvar();
+  });
+}
+function desenharPontosRef() {
+  if (!mapaInit || !map) return;
+  _refMarkers.forEach(function(m){ try{ map.removeLayer(m); }catch(e){} });
+  _refMarkers = [];
+  [['ini','🚩 Início','#34c97e'],['fim','🏁 Fim','#f05252']].forEach(function(cfg) {
+    var p = _rotaCfg[cfg[0]];
+    if (!p) return;
+    var m = L.circleMarker([p.lat, p.lng], { radius: 9, color: cfg[2], fillColor: cfg[2], fillOpacity: .4, weight: 3 });
+    m.bindTooltip(cfg[1], { permanent: true, direction: 'top' });
+    m.addTo(map); _refMarkers.push(m);
+  });
+}
+
+function _distP(a, b) { var dx=a.lat-b.lat, dy=a.lng-b.lng; return Math.sqrt(dx*dx+dy*dy); }
+
+// vizinho mais próximo começando de um PONTO virtual (início configurado)
+function nnAPartirDe(pkgs, ponto) {
+  var resto = pkgs.slice(), res = [], cur = ponto;
+  while (resto.length) {
+    var bi = 0, bd = Infinity;
+    for (var j = 0; j < resto.length; j++) {
+      var d = _distP(cur, resto[j]);
+      if (d < bd) { bd = d; bi = j; }
+    }
+    cur = resto[bi]; res.push(cur); resto.splice(bi, 1);
+  }
+  return res;
+}
+
+// caminho com início E fim fixos — inserção mais barata (cada pacote entra na
+// posição do caminho onde aumenta menos a distância total)
+function caminhoComExtremos(pkgs, ini, fim) {
+  var caminho = [], resto = pkgs.slice();
+  while (resto.length) {
+    var mi = 0, mPos = 0, mCusto = Infinity;
+    for (var i = 0; i < resto.length; i++) {
+      for (var pos = 0; pos <= caminho.length; pos++) {
+        var a = pos === 0 ? ini : caminho[pos-1];
+        var b = pos === caminho.length ? fim : caminho[pos];
+        var custo = _distP(a, resto[i]) + _distP(resto[i], b) - _distP(a, b);
+        if (custo < mCusto) { mCusto = custo; mi = i; mPos = pos; }
+      }
+    }
+    caminho.splice(mPos, 0, resto[mi]);
+    resto.splice(mi, 1);
+  }
+  return caminho;
+}
+
+// ordena uma rota respeitando os pontos configurados (partidaCustom permite
+// continuar do último pacote já numerado, no caso de adição no meio do dia)
+function ordenarRota(pkgs, partidaCustom) {
+  if (pkgs.length <= 1) return pkgs;
+  var ini = partidaCustom || _rotaCfg.ini;
+  var fim = _rotaCfg.fim;
+  if (ini && fim) return caminhoComExtremos(pkgs, ini, fim);
+  if (ini) return nnAPartirDe(pkgs, ini);
+  if (fim) return nnAPartirDe(pkgs, fim).reverse();
+  return reordenarNN(pkgs);
+}
+
 function reordenarNN(pkgs) {
   if (pkgs.length<=1) return pkgs;
   var vis=new Array(pkgs.length).fill(false),res=[],cur=0;
@@ -1520,8 +1639,8 @@ function finalizarRotas() {
     // entram no FIM da rota) — recalcular não embaralha o que já foi enumerado
     var jaNumerados = r.pkgs.filter(function(p){ return p.numNaRota; }).sort(function(a,b){ return a.numNaRota-b.numNaRota; });
     var semNumero = r.pkgs.filter(function(p){ return !p.numNaRota; });
-    if (!jaNumerados.length) r.pkgs = reordenarNN(r.pkgs);
-    else r.pkgs = jaNumerados.concat(reordenarNN(semNumero));
+    if (!jaNumerados.length) r.pkgs = ordenarRota(r.pkgs);
+    else r.pkgs = jaNumerados.concat(ordenarRota(semNumero, jaNumerados[jaNumerados.length-1]));
     r.pkgs.forEach(function(p,i){ p.numNaRota=i+1; });
   });
   plotarPontos();
@@ -2239,7 +2358,7 @@ function arGerar() {
 
   // Reordena cada rota internamente por vizinho mais próximo
   _arRotasGeradas.forEach(function(r) {
-    r.pkgs = reordenarNN(r.pkgs);
+    r.pkgs = ordenarRota(r.pkgs);
     r.pkgs.forEach(function(p, i){ p._previewNum = i+1; });
   });
 
@@ -2414,7 +2533,7 @@ function snapshotRotas() {
 
 function montarEstado() {
   var rotasData = (rotas.length && map) ? snapshotRotas() : (_rotasPendentes || []);
-  return { pacotes: pacotes, bipados: bipados, arquivo: _arquivoNome, rotas: rotasData, salvoEm: Date.now() };
+  return { pacotes: pacotes, bipados: bipados, arquivo: _arquivoNome, rotas: rotasData, rotaCfg: _rotaCfg, salvoEm: Date.now() };
 }
 
 // o estado local é separado POR CONTA — trocar de conta no mesmo aparelho não
@@ -2480,6 +2599,11 @@ async function sincronizarDoServidor() {
       // rotas: só substitui se o servidor TEM rotas — um estado sem rotas nunca
       // apaga as rotas que este aparelho já tem (proteção contra eco vazio)
       if (srv.rotas && srv.rotas.length) _rotasPendentes = srv.rotas;
+      if (srv.rotaCfg && (srv.rotaCfg.ini || srv.rotaCfg.fim)) {
+        _rotaCfg = srv.rotaCfg;
+        try { localStorage.setItem(rotaCfgChave(), JSON.stringify(_rotaCfg)); } catch(e) {}
+        rotaCfgPreencherInputs();
+      }
       finImport();
       atualizarGeoInfo();
       // se o usuário já abriu o mapa antes do sync terminar (comum no celular),
@@ -2720,6 +2844,7 @@ function scBiparManual(codigo) {
 
 // init — só roda depois de autenticado (authBootstrap chama isto)
 function iniciarApp() {
+  rotaCfgCarregar();
   restaurarLocal();
   sincronizarDoServidor(); // puxa o estado de outro aparelho se for mais novo
   renderRegioes();
