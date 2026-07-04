@@ -362,7 +362,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div style="font-size:11px;color:var(--text3);margin-bottom:.5rem;line-height:1.5">A numeração começa perto do <strong>início</strong> (ex: seu galpão) e termina perto do <strong>fim</strong>. Opcional.</div>
         <div style="margin-bottom:.5rem">
           <label>🚩 Início (lat, lng)</label>
-          <input type="text" id="rota-ini" placeholder="-27.5935, -48.5591" style="margin-bottom:4px">
+          <input type="text" id="rota-ini" placeholder="padrão: -27.609528, -48.660556" style="margin-bottom:4px">
           <button class="btn btn-sm" style="width:100%;justify-content:center" onclick="marcarPontoNoMapa('ini')">📍 Marcar clicando no mapa</button>
         </div>
         <div style="margin-bottom:.5rem">
@@ -1503,10 +1503,20 @@ function removerRota(i) { map.removeLayer(rotas[i].layer); rotas.splice(i,1); ro
 // ── PONTO DE INÍCIO/FIM DA ROTA (configurável) ─────────────────────────────────
 var _rotaCfg = { ini: null, fim: null }; // {lat,lng} ou null
 var _refMarkers = [];
+// ponto de partida PADRÃO do sistema (27°36'34.3"S 48°39'38.0"W) — vale pra todo
+// usuário que nunca configurou o próprio; pode ser trocado (início e fim) no card
+var ROTA_INICIO_PADRAO = { lat: -27.609528, lng: -48.660556 };
 
 function rotaCfgChave() { return 'packscan_rotacfg_' + (AUTH_USUARIO || 'anon'); }
 function rotaCfgCarregar() {
-  try { var raw = localStorage.getItem(rotaCfgChave()); if (raw) _rotaCfg = JSON.parse(raw); } catch(e) {}
+  var raw = null;
+  try { raw = localStorage.getItem(rotaCfgChave()); } catch(e) {}
+  if (raw) {
+    try { _rotaCfg = JSON.parse(raw); } catch(e) {}
+  } else {
+    // nunca configurou → usa o padrão do sistema como início (fim fica livre)
+    _rotaCfg = { ini: { lat: ROTA_INICIO_PADRAO.lat, lng: ROTA_INICIO_PADRAO.lng }, fim: null };
+  }
   rotaCfgPreencherInputs();
 }
 function rotaCfgPreencherInputs() {
