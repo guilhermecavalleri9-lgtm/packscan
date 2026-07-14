@@ -231,6 +231,34 @@ function mpRequest(method, mpPath, body, extraHeaders) {
   });
 }
 
+// ─── CUPONS DE DESCONTO ────────────────────────────────────────────────────────
+const CUPONS_KEY = 'cfg:cupons';
+async function getCupons() {
+  const v = await supabaseGet(CUPONS_KEY);
+  return Array.isArray(v) ? v : [];
+}
+async function setCupons(lista) { await supabaseSet(CUPONS_KEY, lista); }
+
+// valida um código de cupom; devolve o cupom ou null
+async function validarCupom(codigo) {
+  if (!codigo) return null;
+  const lista = await getCupons();
+  const c = lista.find(x => x.codigo === String(codigo).trim().toUpperCase());
+  if (!c) return null;
+  if (c.usosMax > 0 && (c.usados || 0) >= c.usosMax) return null; // esgotado
+  return c;
+}
+async function consumirCupom(codigo) {
+  const lista = await getCupons();
+  const c = lista.find(x => x.codigo === codigo);
+  if (c) { c.usados = (c.usados || 0) + 1; await setCupons(lista); }
+}
+function precoComCupom(preco, cupom) {
+  if (!cupom) return preco;
+  const v = Math.round(preco * (1 - cupom.pct / 100) * 100) / 100;
+  return Math.max(0.01, v); // PIX não aceita valor zero
+}
+
 // aplica um pagamento aprovado — idempotente (só aplica 1x). Pode ser compra de
 // créditos (rec.tipo='creditos') ou renovação do plano mensal (rec.tipo='plano').
 // O lock em memória evita crédito em dobro quando o webhook e o polling do
@@ -259,7 +287,8 @@ async function _creditarPagamentoInterno(mpId) {
     await setUsuarios(lista);
   }
   await supabaseSet('pay:' + mpId, { ...rec, status: 'creditado' });
-  console.log(`[pagamento] aprovado: ${rec.usuario} ${rec.tipo === 'plano' ? '+plano mensal' : '+'+rec.creditos+' créditos'} (R$ ${rec.preco})`);
+  if (rec.cupom) await consumirCupom(rec.cupom); // desconta 1 uso do cupom
+  console.log(`[pagamento] aprovado: ${rec.usuario} ${rec.tipo === 'plano' ? '+plano mensal' : '+'+rec.creditos+' créditos'} (R$ ${rec.preco}${rec.cupom ? ', cupom '+rec.cupom : ''})`);
   return { ...rec, status: 'creditado' };
 }
 
@@ -621,7 +650,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/pagamento/webhook']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -740,6 +769,40 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, comprados: u.creditos, saldo: Math.max(0, u.creditos - usado) });
   }
 
+  // ─── CUPONS: admin cria/lista/remove ────────────────────────────────────────
+  if (req.method === 'GET' && pathname === '/api/admin/cupons') {
+    return json(res, 200, { cupons: await getCupons() });
+  }
+  if (req.method === 'POST' && pathname === '/api/admin/cupons') {
+    const body = await readBody(req);
+    const codigo = String(body.codigo || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const pct = Number(body.pct);
+    const usosMax = Math.max(0, parseInt(body.usosMax) || 0); // 0 = ilimitado
+    if (codigo.length < 3) return json(res, 400, { error: 'Código precisa de pelo menos 3 letras/números' });
+    if (!Number.isFinite(pct) || pct < 1 || pct > 99) return json(res, 400, { error: 'Desconto deve ser entre 1% e 99%' });
+    const lista = await getCupons();
+    if (lista.some(c => c.codigo === codigo)) return json(res, 409, { error: 'Já existe um cupom com esse código' });
+    lista.push({ codigo, pct, usosMax, usados: 0, criadoEm: new Date().toISOString() });
+    await setCupons(lista);
+    console.log(`[cupom] criado: ${codigo} (${pct}%, ${usosMax || '∞'} usos) por ${req.usuarioAtual.usuario}`);
+    return json(res, 200, { ok: true, cupons: lista });
+  }
+  if (req.method === 'POST' && pathname === '/api/admin/cupons/remover') {
+    const body = await readBody(req);
+    const codigo = String(body.codigo || '').trim().toUpperCase();
+    const lista = (await getCupons()).filter(c => c.codigo !== codigo);
+    await setCupons(lista);
+    return json(res, 200, { ok: true, cupons: lista });
+  }
+
+  // ─── CUPOM: comprador valida antes de pagar (qualquer usuário logado) ───────
+  if (req.method === 'POST' && pathname === '/api/pagamento/cupom') {
+    const body = await readBody(req);
+    const c = await validarCupom(body.codigo);
+    if (!c) return json(res, 404, { error: 'Cupom inválido ou esgotado' });
+    return json(res, 200, { ok: true, codigo: c.codigo, pct: c.pct });
+  }
+
   // ─── PAGAMENTO: lista de pacotes à venda ───────────────────────────────────
   if (req.method === 'GET' && pathname === '/api/pagamento/pacotes') {
     return json(res, 200, { pacotes: PACOTES_CREDITOS, plano: PLANO_MENSAL, ativo: !!MERCADOPAGO_TOKEN });
@@ -754,11 +817,15 @@ const server = http.createServer(async (req, res) => {
     const ehPlano = body.pacoteId === PLANO_MENSAL.id;
     const pacote = ehPlano ? PLANO_MENSAL : PACOTES_CREDITOS.find(p => p.id === body.pacoteId);
     if (!pacote) return json(res, 400, { error: 'Pacote inválido' });
-    const descricao = ehPlano ? 'PackScan — plano mensal (chave própria)' : `PackScan — ${pacote.creditos} créditos`;
+    let descricao = ehPlano ? 'PackScan — plano mensal (chave própria)' : `PackScan — ${pacote.creditos} créditos`;
+    // cupom de desconto (validado de novo aqui, nunca confia só no frontend)
+    const cupom = await validarCupom(body.cupom);
+    const precoFinal = precoComCupom(pacote.preco, cupom);
+    if (cupom) descricao += ` (cupom ${cupom.codigo} -${cupom.pct}%)`;
     try {
       const idemKey = crypto.randomBytes(16).toString('hex'); // MP exige X-Idempotency-Key
       const mp = await mpRequest('POST', '/v1/payments', {
-        transaction_amount: pacote.preco,
+        transaction_amount: precoFinal,
         description: descricao,
         payment_method_id: 'pix',
         payer: { email: `${usuario}@packscan.app`, first_name: usuario }
@@ -772,8 +839,8 @@ const server = http.createServer(async (req, res) => {
       }
       const id = String(mp.body.id);
       const rec = ehPlano
-        ? { usuario, tipo: 'plano', dias: PLANO_MENSAL.dias, preco: pacote.preco, status: 'pendente' }
-        : { usuario, tipo: 'creditos', creditos: pacote.creditos, preco: pacote.preco, status: 'pendente' };
+        ? { usuario, tipo: 'plano', dias: PLANO_MENSAL.dias, preco: precoFinal, cupom: cupom ? cupom.codigo : null, status: 'pendente' }
+        : { usuario, tipo: 'creditos', creditos: pacote.creditos, preco: precoFinal, cupom: cupom ? cupom.codigo : null, status: 'pendente' };
       await supabaseSet('pay:' + id, rec);
       const td = (mp.body.point_of_interaction && mp.body.point_of_interaction.transaction_data) || {};
       return json(res, 200, { id, qrBase64: td.qr_code_base64 || '', copiaECola: td.qr_code || '' });

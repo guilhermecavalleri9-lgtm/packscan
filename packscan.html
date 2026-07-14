@@ -167,6 +167,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">Comprar créditos</div>
       <button class="btn btn-sm" onclick="comprarFechar()">✕</button>
     </div>
+    <div style="display:flex;gap:6px;margin-bottom:.75rem">
+      <input type="text" id="comprar-cupom" placeholder="Cupom de desconto (opcional)" style="flex:1;text-transform:uppercase" autocomplete="off">
+      <button class="btn btn-sm" onclick="cupomAplicar()">Aplicar</button>
+    </div>
+    <div id="comprar-cupom-msg" style="font-size:11px;font-family:var(--mono);min-height:14px;margin-bottom:.5rem"></div>
     <div id="comprar-lista" style="font-size:13px;color:var(--text3)">Carregando...</div>
     <div id="comprar-pix" style="display:none;text-align:center">
       <div style="font-size:13px;color:var(--text2);margin-bottom:.6rem">Pague o PIX abaixo. O crédito cai automaticamente após a confirmação.</div>
@@ -591,6 +596,18 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div id="auth-usuarios-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Carregando...</div>
     </div>
 
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-title">cupons de desconto</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Crie códigos de desconto pra créditos e plano mensal. O cliente digita o código na tela de compra.</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:.75rem">
+        <input type="text" id="cupom-codigo" placeholder="Código (ex: BEMVINDO10)" style="flex:2;min-width:140px;text-transform:uppercase" autocomplete="off">
+        <input type="number" id="cupom-pct" placeholder="% off" min="1" max="99" style="width:70px">
+        <input type="number" id="cupom-usos" placeholder="usos (0=∞)" min="0" style="width:90px">
+        <button class="btn btn-p btn-sm" onclick="cupomCriar()">➕ Criar</button>
+      </div>
+      <div id="cupons-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Carregando...</div>
+    </div>
+
     <div class="card">
       <div class="card-title">uso da google geocoding api</div>
       <div id="painel-google" style="font-size:13px;color:var(--text3)">Carregando...</div>
@@ -745,6 +762,31 @@ function recarregarSaldo() {
 
 // ── compra de créditos via PIX (Mercado Pago) ──────────────────────────────────
 var _comprarPoll = null;
+var _cupomAtivo = null; // {codigo, pct} validado no servidor
+var _pacotesCache = null; // última lista recebida, pra re-renderizar com desconto
+
+function cupomAplicar() {
+  var cod = document.getElementById('comprar-cupom').value.trim().toUpperCase();
+  var msg = document.getElementById('comprar-cupom-msg');
+  if (!cod) { _cupomAtivo = null; msg.textContent=''; comprarRenderLista(); return; }
+  msg.textContent = 'Verificando...'; msg.style.color = 'var(--text3)';
+  apiFetch(BACKEND + '/api/pagamento/cupom', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({codigo:cod}) })
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+    .then(function(res){
+      if (!res.ok) { _cupomAtivo = null; msg.textContent = '✗ ' + (res.d.error||'Cupom inválido'); msg.style.color = 'var(--red)'; }
+      else { _cupomAtivo = res.d; msg.textContent = '✓ Cupom ' + res.d.codigo + ' aplicado: -' + res.d.pct + '%'; msg.style.color = 'var(--green)'; }
+      comprarRenderLista();
+    }).catch(function(){ msg.textContent = 'Erro ao verificar.'; msg.style.color = 'var(--red)'; });
+}
+function _precoCupom(p) {
+  if (!_cupomAtivo) return p;
+  return Math.max(0.01, Math.round(p * (1 - _cupomAtivo.pct/100) * 100) / 100);
+}
+function _fmtPreco(p, comCupom) {
+  var final = 'R$ ' + _precoCupom(p).toFixed(2).replace('.', ',');
+  if (_cupomAtivo && comCupom !== false) return '<span style="text-decoration:line-through;color:var(--text3);font-weight:400;font-size:11px">R$ '+p.toFixed(2).replace('.', ',')+'</span> ' + final;
+  return final;
+}
 function comprarAbrir() {
   document.getElementById('comprar-bg').style.display = 'flex';
   document.getElementById('comprar-pix').style.display = 'none';
@@ -752,33 +794,41 @@ function comprarAbrir() {
   lista.style.display = 'block';
   lista.innerHTML = 'Carregando...';
   apiFetch(BACKEND + '/api/pagamento/pacotes').then(function(r){ return r.json(); }).then(function(d){
-    if (!d.ativo) {
-      lista.innerHTML = '<div style="color:var(--amber);font-size:13px">Pagamento automático ainda não está configurado. Fale no WhatsApp:</div>'
-        + '<a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-top:.6rem" href="' + WHATSAPP_COMPRA + '" target="_blank" rel="noopener">💬 Comprar no WhatsApp</a>';
-      return;
-    }
-    var html = '<div style="font-size:12px;color:var(--text3);margin-bottom:.6rem">Créditos avulsos (PIX):</div>';
-    for (var i = 0; i < d.pacotes.length; i++) {
-      var p = d.pacotes[i];
-      html += '<button class="btn" style="width:100%;justify-content:space-between;margin-bottom:6px" onclick="comprarPacote(\'' + p.id + '\')">'
-        + '<span>' + p.creditos.toLocaleString('pt-BR') + ' créditos</span>'
-        + '<strong>R$ ' + p.preco.toFixed(2).replace('.', ',') + '</strong></button>';
-    }
-    if (d.plano) {
-      html += '<div style="border-top:1px solid var(--border);margin:.9rem 0 .6rem;padding-top:.6rem;font-size:12px;color:var(--text3)">Ou o plano com <strong>sua própria chave</strong>:</div>'
-        + '<button class="btn btn-g" style="width:100%;justify-content:space-between" onclick="comprarPacote(\'' + d.plano.id + '\')">'
-        + '<span>🔑 Plano mensal · sem limite</span><strong>R$ ' + d.plano.preco.toFixed(2).replace('.', ',') + '/mês</strong></button>'
-        + '<div style="font-size:11px;color:var(--text3);margin-top:.4rem">Você usa sua chave do Google (10 mil buscas grátis/mês). Depois de pagar, cadastre a chave em "🔑 Minhas chaves".</div>';
-    }
-    lista.innerHTML = html;
+    _pacotesCache = d;
+    comprarRenderLista();
   }).catch(function(e){ lista.innerHTML = '<div style="color:var(--red)">Erro: ' + esc(e.message) + '</div>'; });
+}
+
+function comprarRenderLista() {
+  var lista = document.getElementById('comprar-lista');
+  var d = _pacotesCache;
+  if (!d) return;
+  if (!d.ativo) {
+    lista.innerHTML = '<div style="color:var(--amber);font-size:13px">Pagamento automático ainda não está configurado. Fale no WhatsApp:</div>'
+      + '<a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-top:.6rem" href="' + WHATSAPP_COMPRA + '" target="_blank" rel="noopener">💬 Comprar no WhatsApp</a>';
+    return;
+  }
+  var html = '<div style="font-size:12px;color:var(--text3);margin-bottom:.6rem">Créditos avulsos (PIX):</div>';
+  for (var i = 0; i < d.pacotes.length; i++) {
+    var p = d.pacotes[i];
+    html += '<button class="btn" style="width:100%;justify-content:space-between;margin-bottom:6px" onclick="comprarPacote(\'' + p.id + '\')">'
+      + '<span>' + p.creditos.toLocaleString('pt-BR') + ' créditos</span>'
+      + '<strong>' + _fmtPreco(p.preco) + '</strong></button>';
+  }
+  if (d.plano) {
+    html += '<div style="border-top:1px solid var(--border);margin:.9rem 0 .6rem;padding-top:.6rem;font-size:12px;color:var(--text3)">Ou o plano com <strong>sua própria chave</strong>:</div>'
+      + '<button class="btn btn-g" style="width:100%;justify-content:space-between" onclick="comprarPacote(\'' + d.plano.id + '\')">'
+      + '<span>🔑 Plano mensal · sem limite</span><strong>' + _fmtPreco(d.plano.preco) + '/mês</strong></button>'
+      + '<div style="font-size:11px;color:var(--text3);margin-top:.4rem">Você usa sua chave do Google (10 mil buscas grátis/mês). Depois de pagar, cadastre a chave em "🔑 Minhas chaves".</div>';
+  }
+  lista.innerHTML = html;
 }
 var _comprarEhPlano = false;
 function comprarPacote(pacoteId) {
   _comprarEhPlano = (pacoteId === 'plano_mensal');
   var lista = document.getElementById('comprar-lista');
   lista.innerHTML = 'Gerando PIX...';
-  apiFetch(BACKEND + '/api/pagamento/criar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pacoteId:pacoteId}) })
+  apiFetch(BACKEND + '/api/pagamento/criar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pacoteId:pacoteId, cupom:_cupomAtivo ? _cupomAtivo.codigo : null}) })
     .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
     .then(function(res){
       if (!res.ok) { lista.innerHTML = '<div style="color:var(--red)">' + esc(res.d.error||'Erro ao gerar PIX') + '</div>'; return; }
@@ -1064,6 +1114,45 @@ async function authZerarCreditos(usuario) {
   await authAddCreditos(usuario, alvo);
 }
 
+// ── cupons de desconto (admin) ─────────────────────────────────────────────────
+async function carregarCupons() {
+  if (!AUTH_ADMIN) return;
+  var el = document.getElementById('cupons-lista');
+  try {
+    var r = await apiFetch(BACKEND + '/api/admin/cupons');
+    var d = await r.json();
+    var lista = d.cupons || [];
+    if (!lista.length) { el.textContent = 'Nenhum cupom criado.'; return; }
+    el.innerHTML = lista.map(function(c) {
+      var usos = c.usosMax > 0 ? (c.usados||0) + '/' + c.usosMax : (c.usados||0) + '/∞';
+      var esgotado = c.usosMax > 0 && (c.usados||0) >= c.usosMax;
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'
+        + '<strong style="color:' + (esgotado ? 'var(--text3)' : 'var(--green)') + ';min-width:110px">' + esc(c.codigo) + '</strong>'
+        + '<span style="flex:1">-' + c.pct + '%' + (esgotado ? ' · <span style="color:var(--red)">esgotado</span>' : '') + '</span>'
+        + '<span style="color:var(--text3)">usos: ' + usos + '</span>'
+        + '<button class="btn btn-r btn-sm" onclick="cupomRemover(\'' + esc(c.codigo) + '\')">✕</button>'
+      + '</div>';
+    }).join('');
+  } catch(e) { el.textContent = 'Erro: ' + e.message; }
+}
+async function cupomCriar() {
+  var codigo = document.getElementById('cupom-codigo').value.trim();
+  var pct = Number(document.getElementById('cupom-pct').value);
+  var usos = Number(document.getElementById('cupom-usos').value) || 0;
+  var r = await apiFetch(BACKEND + '/api/admin/cupons', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({codigo:codigo, pct:pct, usosMax:usos}) });
+  var d = await r.json();
+  if (!r.ok) { alert(d.error || 'Erro ao criar cupom'); return; }
+  document.getElementById('cupom-codigo').value = '';
+  document.getElementById('cupom-pct').value = '';
+  document.getElementById('cupom-usos').value = '';
+  carregarCupons();
+}
+async function cupomRemover(codigo) {
+  if (!confirm('Remover o cupom "' + codigo + '"? Quem ainda não usou não vai mais conseguir.')) return;
+  await apiFetch(BACKEND + '/api/admin/cupons/remover', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({codigo:codigo}) });
+  carregarCupons();
+}
+
 // ── contador de uso da Google Geocoding API (ES5) ──────────────────────────────
 function carregarUsoGoogle() {
   if (!AUTH_ADMIN) return;
@@ -1205,7 +1294,7 @@ function goTab(n) {
   if (n===3) renderMotDownload();
   if (n===4) renderRegioes();
   if (n===6 && _cepCorrMap) setTimeout(function(){ _cepCorrMap.invalidateSize(); }, 100);
-  if (n===7 && AUTH_ADMIN) { carregarPendentes(); carregarUsuarios(); carregarUsoGoogle(); }
+  if (n===7 && AUTH_ADMIN) { carregarPendentes(); carregarUsuarios(); carregarUsoGoogle(); carregarCupons(); }
   if (n!==5 && n!==8 && _scAtivo) scParar();
   if (n===5) scUsar('pacote');
   if (n===8) scUsar('rota');
