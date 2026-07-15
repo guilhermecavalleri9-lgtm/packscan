@@ -253,6 +253,16 @@ async function consumirCupom(codigo) {
   const c = lista.find(x => x.codigo === codigo);
   if (c) { c.usados = (c.usados || 0) + 1; await setCupons(lista); }
 }
+// monta um e-mail válido pro Mercado Pago: se o usuário JÁ é um e-mail, usa ele;
+// senão limpa caracteres inválidos (espaço, acento, @ extra) e usa @packscan.app
+function emailPagador(usuario) {
+  const u = String(usuario || '').trim().toLowerCase();
+  if (/^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(u)) return u;
+  const limpo = u.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9._-]/g, '').replace(/^[._-]+|[._-]+$/g, '') || 'cliente';
+  return limpo + '@packscan.app';
+}
+
 function precoComCupom(preco, cupom) {
   if (!cupom) return preco;
   const v = Math.round(preco * (1 - cupom.pct / 100) * 100) / 100;
@@ -828,7 +838,7 @@ const server = http.createServer(async (req, res) => {
         transaction_amount: precoFinal,
         description: descricao,
         payment_method_id: 'pix',
-        payer: { email: `${usuario}@packscan.app`, first_name: usuario }
+        payer: { email: emailPagador(usuario) }
       }, { 'X-Idempotency-Key': idemKey });
       if (mp.status >= 300 || !mp.body || !mp.body.id) {
         console.error('[pagamento criar]', mp.status, JSON.stringify(mp.body));
