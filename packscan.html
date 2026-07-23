@@ -138,6 +138,20 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .home-hero .hfoot .hinfo b{font-size:15px;font-weight:650}
 .home-hero .hfoot .hinfo span{display:block;font-size:12px;color:var(--text2)}
 .home-hero .hfoot .open{font-size:12px;color:var(--accent);font-weight:600}
+.home-lista-head{display:flex;align-items:center;gap:10px;margin:22px 0 10px;flex-wrap:wrap}
+.home-lista-head b{font-size:16px;font-weight:650}
+.home-lista-head input{flex:1;min-width:150px;background:var(--bg2);border:1px solid var(--border2);color:var(--text);border-radius:10px;padding:9px 12px;font-size:13px}
+#home-lista{display:flex;flex-direction:column;gap:8px;padding-bottom:28px}
+.pcard{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:11px 12px;display:flex;align-items:center;gap:11px}
+.pcard .pdot{width:11px;height:11px;border-radius:50%;flex-shrink:0}
+.pcard .pmid{flex:1;min-width:0}
+.pcard .pmid .pt{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard .pmid .pe{font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pcard .pmid .pb{font-size:11px;font-family:var(--mono);margin-top:2px}
+.pcard .pact{display:flex;gap:6px;flex-shrink:0}
+.pcard .pact button{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;cursor:pointer;font-size:14px;border:1px solid var(--border2);background:var(--bg3);color:var(--text)}
+.pcard .pact button.del{border-color:var(--red);background:#3a1a1a;color:var(--red)}
+.home-lista-vazio{color:var(--text3);font-size:13px;padding:10px 2px}
 .home-head{display:flex;align-items:center;gap:12px;margin-bottom:14px}
 .home-head .t{flex:1}.home-head .t b{font-size:19px;letter-spacing:-.02em;display:block}.home-head .t span{font-size:12.5px;color:var(--text2)}
 .home-chip{font-size:11.5px;font-weight:600;color:var(--accent);background:var(--accent-soft,rgba(79,142,247,.14));border:1px solid rgba(79,142,247,.3);padding:5px 11px;border-radius:999px}
@@ -366,6 +380,13 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <button class="hact wide ghost" onclick="homeBaixar()"><svg viewBox="0 0 24 24"><path d="M12 3v12M12 15l-4-4M12 15l4-4M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="txt"><span class="lb">Baixar planilha do motorista</span><span class="sub">Excel por rota, na ordem</span></span></button>
     <button class="hact wide scan" onclick="goTab(5)"><svg viewBox="0 0 24 24"><path d="M4 7V6a2 2 0 0 1 2-2h1M17 4h1a2 2 0 0 1 2 2v1M20 17v1a2 2 0 0 1-2 2h-1M7 20H6a2 2 0 0 1-2-2v-1" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8" stroke-linecap="round"/></svg><span class="txt"><span class="lb">Bipar pela câmera</span><span class="sub">separar pacotes por rota</span></span></button>
   </div>
+
+  <!-- lista de todos os pacotes (editável) -->
+  <div class="home-lista-head">
+    <b>Todos os pacotes</b>
+    <input type="text" id="home-lista-busca" placeholder="buscar código ou rua..." oninput="renderListaPacotes()">
+  </div>
+  <div id="home-lista"></div>
 </div>
 
 <!-- sheet roteirizar -->
@@ -2385,11 +2406,18 @@ async function salvarCorrecao() {
   try {
     await apiFetch(BACKEND+'/api/geocode/correcao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cacheKey:(p.cep+'|'+p.endereco).toLowerCase().trim(),lat:lat,lng:lng,enderecoNormalizado:endCorrigido,precisao:'MANUAL',enderecoFormatado:endCorrigido})});
     st.textContent='✓ Correção salva!'; st.style.color='var(--green)';
-    setTimeout(function(){ fecharModal(); goTabCorrigir(); plotarPontos(); },1000);
+    setTimeout(function(){ fecharModal(); posCorrecaoRefresh(); },1000);
   } catch(e) {
     st.textContent='Salvo em memória. Erro servidor: '+e.message; st.style.color='var(--amber)';
-    setTimeout(function(){ fecharModal(); goTabCorrigir(); plotarPontos(); },1500);
+    setTimeout(function(){ fecharModal(); posCorrecaoRefresh(); },1500);
   }
+}
+// atualiza o que estiver na tela após uma correção (sem forçar troca de aba)
+function posCorrecaoRefresh(){
+  try{ if(typeof mapaInit!=='undefined' && mapaInit && map) plotarPontos(); }catch(e){}
+  try{ atualizarGeoInfo(); }catch(e){}
+  try{ if(typeof renderHome==='function'){ renderHome(); } }catch(e){}
+  try{ if(typeof renderListaPacotes==='function') renderListaPacotes(); }catch(e){}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3242,6 +3270,7 @@ function renderHome(){
     else rsub.textContent='automático';
   }
   homeMapPlot();
+  renderListaPacotes();
 }
 
 // ── MAPA DA TELA INICIAL (hero) — pinos + rotas, só leitura ──
@@ -3278,7 +3307,7 @@ function reconstruirRotasHome(){
     rotas.push({id:r.id, motorista:r.motorista, cor:r.cor, layer:null, latlngs:r.latlngs||null, pkgs:pkgs});
   });
 }
-function homeMapPlot(){
+function homeMapPlot(preservarVista){
   homeMapInit(); if(!hmap||!hmapLayer) return;
   reconstruirRotasHome();
   try{ hmapLayer.clearLayers(); }catch(e){ return; }
@@ -3298,11 +3327,53 @@ function homeMapPlot(){
     var rotaNome=(p.rota && rotas[p.rota-1])?rotas[p.rota-1].motorista:'';
     var tkEsc=String(p.tracking||'').replace(/'/g,"\\'");
     var pop='<div style="font-size:12px;line-height:1.35"><b>'+esc(p.tracking||p.codigo||'')+'</b><br>'+esc(p.endereco||'')+(p.bairro?('<br>'+esc(p.bairro)):'')+(rotaNome?('<br><span style="color:'+cor+'">● '+esc(rotaNome)+(p.numNaRota?(' · parada '+p.numNaRota):'')+'</span>'):'')
-      +'<br><button onclick="homeExcluirPacote(\''+tkEsc+'\')" style="margin-top:8px;padding:6px 10px;border-radius:7px;border:1px solid var(--red);background:#3a1a1a;color:var(--red);cursor:pointer;font-size:12px;font-weight:600">🗑 Excluir pacote</button></div>';
-    L.circleMarker([p.lat,p.lng],{radius:6,color:'#0b0f16',weight:1.5,fillColor:cor,fillOpacity:.95}).addTo(hmapLayer).bindPopup(pop);
+      +'<br><span style="font-size:11px;color:var(--text3)">arraste o pino pra ajustar</span>'
+      +'<div style="display:flex;gap:6px;margin-top:8px"><button onclick="homeEditar(\''+tkEsc+'\')" style="flex:1;padding:6px 8px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);cursor:pointer;font-size:12px;font-weight:600">✏ Editar</button>'
+      +'<button onclick="homeExcluirPacote(\''+tkEsc+'\')" style="flex:1;padding:6px 8px;border-radius:7px;border:1px solid var(--red);background:#3a1a1a;color:var(--red);cursor:pointer;font-size:12px;font-weight:600">🗑 Excluir</button></div></div>';
+    var icon=L.divIcon({className:'hpin', html:'<div style="width:15px;height:15px;border-radius:50%;background:'+cor+';border:2px solid #0b0f16;box-shadow:0 0 0 1px rgba(255,255,255,.35)"></div>', iconSize:[15,15], iconAnchor:[8,8], popupAnchor:[0,-8]});
+    var mk=L.marker([p.lat,p.lng],{icon:icon,draggable:true}).addTo(hmapLayer).bindPopup(pop);
+    mk.on('dragend', (function(pkg){ return function(){ var ll=mk.getLatLng(); homeArrastou(pkg.tracking, ll.lat, ll.lng); }; })(p));
     pts.push([p.lat,p.lng]);
   });
-  try{ hmap.invalidateSize(); hmap.fitBounds(pts,{padding:[26,26],maxZoom:15}); }catch(e){}
+  try{ hmap.invalidateSize(); if(!preservarVista) hmap.fitBounds(pts,{padding:[26,26],maxZoom:15}); }catch(e){}
+}
+function homeEditar(tracking){ try{ if(hmap) hmap.closePopup(); }catch(e){} abrirModal(tracking); }
+function renderListaPacotes(){
+  var el=document.getElementById('home-lista'); if(!el) return;
+  var busca=(document.getElementById('home-lista-busca')||{}).value||'';
+  busca=busca.trim().toLowerCase();
+  var lista=pacotes.filter(function(p){
+    if(!busca) return true;
+    return String(p.tracking||'').toLowerCase().indexOf(busca)>=0 || String(p.endereco||'').toLowerCase().indexOf(busca)>=0 || String(p.bairro||'').toLowerCase().indexOf(busca)>=0;
+  });
+  if(!pacotes.length){ el.innerHTML='<div class="home-lista-vazio">Nenhum pacote ainda — importe uma planilha.</div>'; return; }
+  if(!lista.length){ el.innerHTML='<div class="home-lista-vazio">Nada encontrado pra "'+esc(busca)+'".</div>'; return; }
+  var html='';
+  lista.forEach(function(p){
+    var geoOk=!!(p.lat&&p.lng);
+    var cor=(p.rota && rotas[p.rota-1])?rotas[p.rota-1].cor:(geoOk?'#4f8ef7':'#555e7a');
+    var tkEsc=String(p.tracking||'').replace(/'/g,"\\'");
+    var badge = !geoOk ? '<span style="color:var(--amber)">sem coordenada</span>'
+      : (p.rota?('<span style="color:'+cor+'">● '+esc((rotas[p.rota-1]||{}).motorista||('Rota '+p.rota))+(p.numNaRota?(' · parada '+p.numNaRota):'')+'</span>')
+             : '<span style="color:var(--green)">geocodificado</span>');
+    html+='<div class="pcard"><span class="pdot" style="background:'+cor+'"></span>'
+      +'<div class="pmid"><div class="pt">'+esc(p.tracking||p.codigo||'')+'</div>'
+      +'<div class="pe" title="'+esc(p.endereco||'')+'">'+esc(p.endereco||'')+'</div>'
+      +'<div class="pb">'+badge+'</div></div>'
+      +'<div class="pact"><button title="Editar" onclick="homeEditar(\''+tkEsc+'\')">✏</button>'
+      +'<button class="del" title="Excluir" onclick="homeExcluirPacote(\''+tkEsc+'\')">🗑</button></div></div>';
+  });
+  el.innerHTML=html;
+}
+function homeArrastou(tracking, lat, lng){
+  var p=pacotes.find(function(x){ return String(x.tracking)===String(tracking); }); if(!p) return;
+  p.lat=lat; p.lng=lng; p.precisao='MANUAL';
+  persistirLocal();
+  // salva a correção no servidor pra valer também nos próximos dias (mesmo CEP/endereço)
+  try{ apiFetch(BACKEND+'/api/geocode/correcao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cacheKey:(p.cep+'|'+p.endereco).toLowerCase().trim(),lat:lat,lng:lng,enderecoNormalizado:p.enderecoNorm||p.endereco,precisao:'MANUAL',enderecoFormatado:p.enderecoNorm||p.endereco})}).catch(function(){}); }catch(e){}
+  try{ if(typeof mapaInit!=='undefined' && mapaInit && map) plotarPontos(); }catch(e){}
+  renderHome(); homeMapPlot(true); // preserva a vista atual (não dá zoom após arrastar)
+  renderListaPacotes();
 }
 
 function homeExcluirPacote(tracking){
