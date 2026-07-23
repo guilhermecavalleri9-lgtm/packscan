@@ -121,7 +121,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .home-hero .hfoot{pointer-events:none}
 .home-hero .hfoot .ring,.home-hero .hfoot .hinfo{pointer-events:auto}
 .home-hero.hero-full{position:fixed;inset:0;height:100%;width:100%;border-radius:0;border:0;margin:0;z-index:9998}
-.home-hero.hero-full .hfoot{padding-bottom:26px}
+.home-hero.hero-full .hcam,.home-hero.hero-full .hexp{top:calc(env(safe-area-inset-top,0px) + 14px)}
+.home-hero.hero-full .hfoot{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 22px)}
+.home-hero.hero-full #hmap .leaflet-top{top:calc(env(safe-area-inset-top,0px) + 62px)}
 #imp-map{display:flex;flex-direction:column;gap:8px;margin:10px 0}
 #imp-map .irow{display:flex;align-items:center;gap:10px}
 #imp-map .irow label{flex:0 0 118px;font-size:12px;color:var(--text2)}
@@ -2695,22 +2697,38 @@ function arAplicarNoMapa(semIr) {
     var nome = r.conf.nome;
     // atribui pacotes
     r.pkgs.forEach(function(p, j){ p.rota=i+1; p.numNaRota=j+1; });
-    // cria polígono convex hull dos pontos
-    var latlngs = convexHull(r.pkgs).map(function(p){ return [p.lat, p.lng]; });
+    // cria polígono ao redor dos pontos — com margem PARA FORA, pra que a rota
+    // englobe todos os pacotes (inclusive os que ficam na borda) com folga
+    var latlngs = bufferHull(convexHull(r.pkgs), 0.0018);
     if (latlngs.length < 3) {
       // menos de 3 pontos: cria círculo ao redor
       var c = r.pkgs[0];
-      latlngs = [[c.lat+0.005,c.lng],[c.lat,c.lng+0.008],[c.lat-0.005,c.lng],[c.lat,c.lng-0.008]];
+      latlngs = [[c.lat+0.006,c.lng],[c.lat,c.lng+0.009],[c.lat-0.006,c.lng],[c.lat,c.lng-0.009]];
     }
     var layer = L.polygon(latlngs, {color:cor,fillColor:cor,fillOpacity:.12,weight:2});
     layer.bindTooltip('<b>'+nome+'</b> ('+r.pkgs.length+')',{permanent:true,direction:'center'});
     drawnItems.addLayer(layer);
-    rotas.push({id:i+1, motorista:nome, cor:cor, layer:layer, pkgs:r.pkgs});
+    rotas.push({id:i+1, motorista:nome, cor:cor, layer:layer, latlngs:latlngs, pkgs:r.pkgs});
   });
 
   renderRotasList(); renderMotList(); renderEtSelect(); renderMotDownload();
   persistirLocal();
   if (!semIr) goTab(1); // vai para o mapa
+}
+
+// Empurra cada vértice do contorno PARA FORA (radialmente, a partir do centro)
+// por uma margem em graus (~0.0018 ≈ 200m). Como o convex hull já contém todos
+// os pontos, aumentá-lo garante que todos fiquem dentro, com folga.
+function bufferHull(pts, margem) {
+  if (!pts || !pts.length) return [];
+  if (pts.length < 3) return pts.map(function(p){ return [p.lat, p.lng]; });
+  var cx=0, cy=0;
+  pts.forEach(function(p){ cx+=p.lat; cy+=p.lng; });
+  cx/=pts.length; cy/=pts.length;
+  return pts.map(function(p){
+    var dx=p.lat-cx, dy=p.lng-cy, d=Math.sqrt(dx*dx+dy*dy)||1e-9;
+    return [p.lat + dx/d*margem, p.lng + dy/d*margem];
+  });
 }
 
 // Convex Hull (Graham scan) para criar polígono ao redor dos pontos
@@ -2821,16 +2839,17 @@ async function apagarSessao() {
 // ═══════════════════════════════════════════════════════════════════════════════
 function snapshotRotas() {
   return rotas.map(function(r){
+    var ll = (r.layer && r.layer.getLatLngs) ? r.layer.getLatLngs()[0].map(function(x){ return [x.lat, x.lng]; }) : (r.latlngs || []);
     return {
       id: r.id, motorista: r.motorista, cor: r.cor,
-      latlngs: r.layer.getLatLngs()[0].map(function(ll){ return [ll.lat, ll.lng]; }),
+      latlngs: ll,
       trackings: r.pkgs.map(function(p){ return p.tracking; })
     };
   });
 }
 
 function montarEstado() {
-  var rotasData = (rotas.length && map) ? snapshotRotas() : (_rotasPendentes || []);
+  var rotasData = rotas.length ? snapshotRotas() : (_rotasPendentes || []);
   return { pacotes: pacotes, bipados: bipados, arquivo: _arquivoNome, rotas: rotasData, rotaCfg: _rotaCfg, salvoEm: Date.now() };
 }
 
@@ -2909,8 +2928,11 @@ async function sincronizarDoServidor() {
       if (typeof mapaInit !== 'undefined' && mapaInit && map) {
         if (_rotasPendentes) reconstruirRotasLocais();
         else plotarPontos();
+      } else {
+        rotas = []; // força a home a reconstruir as rotas novas vindas do servidor
       }
       persistirLocal(true); // atualiza a cópia local sem reenviar ao servidor
+      if (typeof renderHome === 'function') renderHome(); // atualiza a tela inicial e seu mapa
       console.log('[sync] estado mais novo carregado do servidor');
     } finally { _aplicandoSync = false; }
   } catch(e) {}
@@ -3195,6 +3217,7 @@ function iniciarApp() {
 // NOVA HOME — resumo, geocodificar, roteirizar, menu
 // ═══════════════════════════════════════════════════════════════════════════════
 function renderHome(){
+  if(typeof reconstruirRotasHome==='function') reconstruirRotasHome(); // garante rotas salvas antes de contar
   var geo = pacotes.filter(function(p){return p.lat&&p.lng;}).length;
   var tot = pacotes.length;
   var nrotas = (typeof rotas!=='undefined'?rotas.length:0);
@@ -3232,8 +3255,23 @@ function heroFull(){
   document.body.style.overflow = full ? 'hidden' : '';
   setTimeout(function(){ try{ hmap.invalidateSize(); var g=pacotes.filter(function(p){return p.lat&&p.lng;}).map(function(p){return [p.lat,p.lng];}); if(g.length) hmap.fitBounds(g,{padding:[40,40],maxZoom:15}); }catch(e){} }, 260);
 }
+// reconstrói as rotas salvas (do servidor ou do navegador) SEM precisar abrir o
+// mapa antigo — assim a roteirização continua aparecendo ao fechar/reabrir o app
+// e ao logar em outro celular
+function reconstruirRotasHome(){
+  if(typeof _rotasPendentes==='undefined' || !_rotasPendentes || !_rotasPendentes.length) return;
+  if(typeof rotas!=='undefined' && rotas.length) return; // já reconstruídas
+  pacotes.forEach(function(p){ p.rota=null; p.numNaRota=null; });
+  rotas=[];
+  _rotasPendentes.forEach(function(r){
+    var pkgs=(r.trackings||[]).map(function(t){ return pacotes.find(function(p){ return p.tracking===t; }); }).filter(Boolean);
+    pkgs.forEach(function(p,i){ p.rota=r.id; p.numNaRota=i+1; });
+    rotas.push({id:r.id, motorista:r.motorista, cor:r.cor, layer:null, latlngs:r.latlngs||null, pkgs:pkgs});
+  });
+}
 function homeMapPlot(){
   homeMapInit(); if(!hmap||!hmapLayer) return;
+  reconstruirRotasHome();
   try{ hmapLayer.clearLayers(); }catch(e){ return; }
   var geo=pacotes.filter(function(p){return p.lat&&p.lng;});
   var empty=document.getElementById('hmap-empty'); if(empty) empty.style.display = geo.length? 'none':'flex';
@@ -3241,8 +3279,8 @@ function homeMapPlot(){
   if(typeof rotas!=='undefined' && rotas.length){
     rotas.forEach(function(r){
       if(!r.pkgs||!r.pkgs.length) return;
-      var hull=convexHull(r.pkgs).map(function(p){return [p.lat,p.lng];});
-      if(hull.length>=3) L.polygon(hull,{color:r.cor,fillColor:r.cor,fillOpacity:.12,weight:2}).addTo(hmapLayer);
+      var poly = r.latlngs && r.latlngs.length>=3 ? r.latlngs : bufferHull(convexHull(r.pkgs), 0.0018);
+      if(poly.length>=3) L.polygon(poly,{color:r.cor,fillColor:r.cor,fillOpacity:.12,weight:2}).addTo(hmapLayer);
     });
   }
   var pts=[];
