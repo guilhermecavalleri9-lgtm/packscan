@@ -20,7 +20,7 @@
 :root{--bg:#0f1117;--bg2:#181c27;--bg3:#1e2333;--border:#2a3047;--border2:#3a4460;--text:#e8ecf5;--text2:#8a93b0;--text3:#555e7a;--accent:#4f8ef7;--accent2:#2563c4;--green:#34c97e;--green2:#1a6640;--amber:#f5a623;--red:#f05252;--mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;--radius:8px;--radius-lg:12px}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;min-height:100vh}
-.header{background:var(--bg2);border-bottom:1px solid var(--border);padding:0 2rem;display:flex;align-items:center;gap:1.5rem;height:56px}
+.header{background:var(--bg2);border-bottom:1px solid var(--border);padding:calc(env(safe-area-inset-top,0px) + 6px) 2rem 0;display:flex;align-items:center;gap:1.5rem;height:calc(56px + env(safe-area-inset-top,0px) + 6px);box-sizing:border-box}
 .logo{font-family:var(--mono);font-weight:600;font-size:16px;color:var(--accent);letter-spacing:2px}
 .logo span{color:var(--text2);font-weight:400}
 .tab-bar{display:flex;border-bottom:1px solid var(--border);background:var(--bg2);padding:0 1rem;overflow-x:auto}
