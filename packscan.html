@@ -138,9 +138,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .home-hero .hfoot .hinfo b{font-size:15px;font-weight:650}
 .home-hero .hfoot .hinfo span{display:block;font-size:12px;color:var(--text2)}
 .home-hero .hfoot .open{font-size:12px;color:var(--accent);font-weight:600}
-.edit-rotas-btn{width:100%;margin:-4px 0 14px;padding:12px;border-radius:12px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:9px}
-.edit-rotas-btn svg{width:18px;height:18px}
-.edit-rotas-btn.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.home-hero .hpen{position:absolute;top:14px;right:62px;z-index:3;width:40px;height:40px;border-radius:50%;background:rgba(10,14,21,.72);border:1px solid var(--border2);display:grid;place-items:center;color:var(--text);cursor:pointer}
+.home-hero .hpen svg{width:19px;height:19px}
+.home-hero .hpen.on{background:var(--accent);border-color:var(--accent);color:#fff}
+#edit-rotas-hint{margin:-4px 0 14px;padding:10px 12px;border-radius:11px;border:1px solid var(--accent);background:rgba(79,142,247,.12);color:var(--text);font-size:12.5px;line-height:1.4}
 .rota-count{background:rgba(11,15,22,.82);border:1px solid rgba(255,255,255,.18);border-radius:8px;color:#fff;font-size:12px;font-weight:700;font-family:var(--sans);padding:3px 8px;box-shadow:0 2px 6px rgba(0,0,0,.4);white-space:nowrap}
 .rota-count::before{display:none}
 .leaflet-tooltip.rota-count{color:#fff}
@@ -367,16 +368,14 @@ tr:hover td{background:rgba(255,255,255,.02)}
     </div>
     <button class="hcam" onclick="event.stopPropagation(); goTab(5)" aria-label="Bipar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.4"/></svg></button>
     <button class="hexp" onclick="event.stopPropagation(); heroFull()" aria-label="Expandir mapa"><svg id="hexp-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H3v6M21 9V3h-6M15 21h6v-6M3 15v6h6"/></svg></button>
+    <button class="hpen" id="btn-pen" style="display:none" onclick="event.stopPropagation(); toggleEditarRotas()" aria-label="Editar rotas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
     <div class="hfoot">
       <div class="ring"><svg width="46" height="46" viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="5"/><circle id="home-ring" cx="23" cy="23" r="19" fill="none" stroke="var(--green)" stroke-width="5" stroke-linecap="round" stroke-dasharray="119" stroke-dashoffset="119" transform="rotate(-90 23 23)"/></svg><div class="pc" id="home-ringpc">0%</div></div>
       <div class="hinfo"><b id="home-hero-b">Mapa & rotas</b><span id="home-hero-s">nenhum pacote ainda</span></div>
     </div>
   </div>
 
-  <button id="btn-edit-rotas" class="edit-rotas-btn" style="display:none" onclick="toggleEditarRotas()">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
-    <span id="edit-rotas-txt">Editar rotas no mapa</span>
-  </button>
+  <div id="edit-rotas-hint" style="display:none"></div>
 
   <div class="home-head">
     <div class="t"><b>Rota de hoje</b><span id="home-date"></span></div>
@@ -3280,13 +3279,11 @@ function renderHome(){
     if(nrotas){ var roteir=rotas.reduce(function(a,r){return a+(r.pkgs?r.pkgs.length:0);},0); rsub.innerHTML='✓ '+roteir+' em '+nrotas+(nrotas>1?' rotas':' rota'); }
     else rsub.textContent='automático';
   }
-  var ber=document.getElementById('btn-edit-rotas');
-  if(ber){
-    ber.style.display = nrotas ? 'flex' : 'none';
-    if(!nrotas && _editRotas){ _editRotas=false; }
-    ber.classList.toggle('on', _editRotas);
-    var bert=document.getElementById('edit-rotas-txt'); if(bert) bert.textContent=_editRotas?'✓ Concluir edição de rotas':'Editar rotas no mapa';
-  }
+  if(!nrotas && _editRotas) _editRotas=false;
+  var pen=document.getElementById('btn-pen');
+  if(pen){ pen.style.display = nrotas ? 'grid' : 'none'; pen.classList.toggle('on', _editRotas); }
+  var hint=document.getElementById('edit-rotas-hint');
+  if(hint){ hint.style.display=_editRotas?'block':'none'; if(_editRotas) hint.innerHTML='✏️ <b>Editando rotas</b> — arraste os pontos brancos pra remodelar a área de cada rota. Os pacotes que ficarem dentro passam pra aquela rota. Toque no lápis de novo pra concluir.'; }
   homeMapPlot();
   renderListaPacotes();
 }
@@ -3335,12 +3332,26 @@ function homeMapPlot(preservarVista){
   if(typeof rotas!=='undefined' && rotas.length){
     rotas.forEach(function(r){
       var geoPk=(r.pkgs||[]).filter(function(p){return p.lat&&p.lng;});
-      if(!geoPk.length) return;
-      var poly = r.latlngs && r.latlngs.length>=3 ? r.latlngs : bufferHull(convexHull(geoPk), 0.0018);
-      if(poly.length>=3) L.polygon(poly,{color:r.cor,fillColor:r.cor,fillOpacity:.12,weight:2}).addTo(hmapLayer);
-      // rótulo no meio do polígono: nome da rota + quantos pacotes
-      var cx=0,cy=0; geoPk.forEach(function(p){ cx+=p.lat; cy+=p.lng; }); cx/=geoPk.length; cy/=geoPk.length;
-      L.marker([cx,cy],{interactive:false,icon:L.divIcon({className:'', html:'<div class="rota-count">'+esc(r.motorista||('Rota '+r.id))+' · '+r.pkgs.length+'</div>', iconSize:null})}).addTo(hmapLayer);
+      var poly = (r.latlngs && r.latlngs.length>=3) ? r.latlngs : (geoPk.length? bufferHull(convexHull(geoPk), 0.0018) : null);
+      if(!poly || poly.length<3){
+        if(!geoPk.length) return;
+      } else {
+        r.latlngs = poly; // fixa a referência pra edição persistir
+        var pl=L.polygon(poly,{color:r.cor,fillColor:r.cor,fillOpacity:_editRotas?.2:.12,weight:_editRotas?3:2}).addTo(hmapLayer);
+        if(_editRotas){
+          // vértices arrastáveis pra remodelar a área
+          poly.forEach(function(vtx, vi){
+            var hnd=L.marker([vtx[0],vtx[1]],{draggable:true,zIndexOffset:1000,icon:L.divIcon({className:'',html:'<div style="width:17px;height:17px;border-radius:50%;background:#fff;border:3px solid '+r.cor+';box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>',iconSize:[17,17],iconAnchor:[8,8]})}).addTo(hmapLayer);
+            hnd.on('drag', function(){ var ll=hnd.getLatLng(); r.latlngs[vi]=[ll.lat,ll.lng]; pl.setLatLngs(r.latlngs); });
+            hnd.on('dragend', function(){ reatribuirPorPoligonos(); persistirLocal(); renderHome(); homeMapPlot(true); renderListaPacotes(); });
+          });
+        }
+      }
+      // rótulo no meio da área: nome da rota + quantos pacotes
+      var cx,cy;
+      if(poly && poly.length>=3){ cx=0;cy=0; poly.forEach(function(v){cx+=v[0];cy+=v[1];}); cx/=poly.length; cy/=poly.length; }
+      else if(geoPk.length){ cx=0;cy=0; geoPk.forEach(function(p){cx+=p.lat;cy+=p.lng;}); cx/=geoPk.length; cy/=geoPk.length; }
+      if(cx!==undefined) L.marker([cx,cy],{interactive:false,icon:L.divIcon({className:'', html:'<div class="rota-count">'+esc(r.motorista||('Rota '+r.id))+' · '+r.pkgs.length+'</div>', iconSize:null})}).addTo(hmapLayer);
     });
   }
   var pts=[];
@@ -3350,7 +3361,6 @@ function homeMapPlot(preservarVista){
     var tkEsc=String(p.tracking||'').replace(/'/g,"\\'");
     var pop='<div style="font-size:12px;line-height:1.35"><b>'+esc(p.tracking||p.codigo||'')+'</b><br>'+esc(p.endereco||'')+(p.bairro?('<br>'+esc(p.bairro)):'')+(rotaNome?('<br><span style="color:'+cor+'">● '+esc(rotaNome)+(p.numNaRota?(' · parada '+p.numNaRota):'')+'</span>'):'')
       +'<br><span style="font-size:11px;color:var(--text3)">arraste o pino pra ajustar</span>'
-      +(_editRotas && rotas.length ? popBotoesRota(tkEsc, p.rota) : '')
       +'<div style="display:flex;gap:6px;margin-top:8px"><button onclick="homeEditar(\''+tkEsc+'\')" style="flex:1;padding:6px 8px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);cursor:pointer;font-size:12px;font-weight:600">✏ Editar</button>'
       +'<button onclick="homeExcluirPacote(\''+tkEsc+'\')" style="flex:1;padding:6px 8px;border-radius:7px;border:1px solid var(--red);background:#3a1a1a;color:var(--red);cursor:pointer;font-size:12px;font-weight:600">🗑 Excluir</button></div></div>';
     var icon=L.divIcon({className:'hpin', html:'<div style="width:15px;height:15px;border-radius:50%;background:'+cor+';border:2px solid #0b0f16;box-shadow:0 0 0 1px rgba(255,255,255,.35)"></div>', iconSize:[15,15], iconAnchor:[8,8], popupAnchor:[0,-8]});
@@ -3367,49 +3377,38 @@ var _editRotas=false;
 function toggleEditarRotas(){
   if(!(typeof rotas!=='undefined' && rotas.length)){ alert('Roteirize os pacotes primeiro (Roteirizar automático).'); return; }
   _editRotas=!_editRotas;
-  var b=document.getElementById('btn-edit-rotas'), t=document.getElementById('edit-rotas-txt');
-  if(b) b.classList.toggle('on', _editRotas);
-  if(t) t.textContent = _editRotas ? '✓ Concluir edição de rotas' : 'Editar rotas no mapa';
   if(_editRotas){
     // abre o mapa em tela cheia pra facilitar a edição
     var h=document.querySelector('.home-hero');
     if(h && !h.classList.contains('hero-full')) heroFull();
   }
   try{ if(hmap) hmap.closePopup(); }catch(e){}
+  renderHome();
   homeMapPlot(true);
 }
-function popBotoesRota(tkEsc, atual){
-  var h='<div style="margin-top:8px;font-size:11px;color:var(--text3)">mover para a rota:</div><div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">';
-  rotas.forEach(function(r){
-    var on=(atual===r.id);
-    h+='<button onclick="moverPacoteRota(\''+tkEsc+'\','+r.id+')" style="padding:5px 9px;border-radius:7px;border:1px solid '+r.cor+';background:'+(on?r.cor:'transparent')+';color:'+(on?'#0b0f16':r.cor)+';font-size:12px;font-weight:700;cursor:pointer">'+esc(r.motorista||('Rota '+r.id))+'</button>';
+// ponto dentro do polígono (ray casting) — poly = [[lat,lng],...]
+function pontoDentro(poly, lat, lng){
+  if(!poly || poly.length<3) return false;
+  var x=lng, y=lat, dentro=false;
+  for(var i=0,j=poly.length-1;i<poly.length;j=i++){
+    var xi=poly[i][1], yi=poly[i][0], xj=poly[j][1], yj=poly[j][0];
+    var inter=((yi>y)!==(yj>y)) && (x < (xj-xi)*(y-yi)/(yj-yi)+xi);
+    if(inter) dentro=!dentro;
+  }
+  return dentro;
+}
+// reatribui cada pacote à rota cujo polígono (desenhado/editado) o contém
+function reatribuirPorPoligonos(){
+  rotas.forEach(function(r){ r.pkgs=[]; });
+  pacotes.forEach(function(p){
+    if(!(p.lat&&p.lng)) return;
+    var achou=null;
+    for(var i=0;i<rotas.length;i++){ if(pontoDentro(rotas[i].latlngs, p.lat, p.lng)){ achou=rotas[i]; break; } }
+    if(achou){ p.rota=achou.id; achou.pkgs.push(p); }
+    else { p.rota=null; p.numNaRota=null; }
   });
-  h+='<button onclick="moverPacoteRota(\''+tkEsc+'\',0)" style="padding:5px 9px;border-radius:7px;border:1px solid var(--border2);background:transparent;color:var(--text2);font-size:12px;cursor:pointer">sem rota</button>';
-  h+='</div>';
-  return h;
-}
-function recomputarRota(id){
-  if(!id) return;
-  var r=rotas[id-1]; if(!r) return;
-  r.pkgs.forEach(function(p,i){ p.numNaRota=i+1; });
-  var geo=r.pkgs.filter(function(p){ return p.lat&&p.lng; });
-  r.latlngs = geo.length>=3 ? bufferHull(convexHull(geo),0.0018) : null;
-  if(r.layer){ try{ if(r.latlngs) r.layer.setLatLngs(r.latlngs); }catch(e){} }
-}
-function moverPacoteRota(tracking, novaRota){
-  var p=pacotes.find(function(x){ return String(x.tracking)===String(tracking); }); if(!p) return;
-  var antiga=p.rota||0;
-  novaRota=novaRota||0;
-  if(antiga===novaRota){ try{ if(hmap) hmap.closePopup(); }catch(e){} return; }
-  if(antiga && rotas[antiga-1]) rotas[antiga-1].pkgs=rotas[antiga-1].pkgs.filter(function(x){ return x!==p; });
-  p.rota = novaRota||null;
-  if(novaRota && rotas[novaRota-1]) rotas[novaRota-1].pkgs.push(p);
-  if(!novaRota) p.numNaRota=null;
-  recomputarRota(antiga); recomputarRota(novaRota);
-  persistirLocal();
-  try{ if(hmap) hmap.closePopup(); }catch(e){}
+  rotas.forEach(function(r){ r.pkgs.forEach(function(p,i){ p.numNaRota=i+1; }); });
   try{ if(typeof mapaInit!=='undefined' && mapaInit && map){ renderMotList(); renderRotasList(); renderMotDownload(); } }catch(e){}
-  renderHome(); homeMapPlot(true); renderListaPacotes();
 }
 function renderListaPacotes(){
   var el=document.getElementById('home-lista'); if(!el) return;
