@@ -109,7 +109,23 @@ tr:hover td{background:rgba(255,255,255,.02)}
 
 /* ===== HOME (nova tela inicial) ===== */
 #home{padding:14px 16px 30px;max-width:640px;margin:0 auto}
-.home-hero{position:relative;height:210px;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--border);cursor:pointer;margin-bottom:16px;background:#0e141c}
+.home-hero{position:relative;height:230px;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--border);margin-bottom:16px;background:#0e141c}
+.home-hero #hmap{position:absolute;inset:0;width:100%;height:100%;z-index:0;background:#0e141c}
+.home-hero #hmap .leaflet-control-attribution{display:none}
+.home-hero #hmap .leaflet-control-zoom{border:none;margin:10px}
+.home-hero #hmap .leaflet-control-zoom a{background:rgba(10,14,21,.82);color:#fff;border:1px solid var(--border2)}
+.home-hero .hmap-empty{position:absolute;inset:0;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:rgba(255,255,255,.4);font-size:13px;pointer-events:none}
+.home-hero .hmap-empty svg{width:38px;height:38px}
+.home-hero .hexp{position:absolute;top:14px;right:14px;z-index:3;width:40px;height:40px;border-radius:50%;background:rgba(10,14,21,.72);border:1px solid var(--border2);display:grid;place-items:center;color:var(--text);cursor:pointer}
+.home-hero .hexp svg{width:19px;height:19px}
+.home-hero .hfoot{pointer-events:none}
+.home-hero .hfoot .ring,.home-hero .hfoot .hinfo{pointer-events:auto}
+.home-hero.hero-full{position:fixed;inset:0;height:100%;width:100%;border-radius:0;border:0;margin:0;z-index:9998}
+.home-hero.hero-full .hfoot{padding-bottom:26px}
+#imp-map{display:flex;flex-direction:column;gap:8px;margin:10px 0}
+#imp-map .irow{display:flex;align-items:center;gap:10px}
+#imp-map .irow label{flex:0 0 118px;font-size:12px;color:var(--text2)}
+#imp-map .irow select{flex:1;background:#151b25;border:1px solid var(--border2);color:var(--text);border-radius:9px;padding:9px 10px;font-size:13px}
 .home-hero .hcam{position:absolute;top:14px;left:14px;z-index:3;width:44px;height:44px;border-radius:50%;background:rgba(10,14,21,.72);border:1px solid var(--border2);display:grid;place-items:center;color:var(--text);cursor:pointer}
 .home-hero .hcam svg{width:21px;height:21px}
 .home-hero .hfoot{position:absolute;left:0;right:0;bottom:0;z-index:2;padding:14px 16px;display:flex;align-items:center;gap:12px;
@@ -321,19 +337,17 @@ tr:hover td{background:rgba(255,255,255,.02)}
 
 <!-- ===== NOVA TELA INICIAL ===== -->
 <div id="home" style="display:none">
-  <div class="home-hero" onclick="goTab(1)">
-    <svg style="position:absolute;inset:0;width:100%;height:100%" viewBox="0 0 620 210" preserveAspectRatio="xMidYMid slice">
-      <rect width="620" height="210" fill="#0e141c"/>
-      <path d="M470 -10 L580 50 L560 160 L620 200 L620 -10 Z" fill="#12233d" opacity=".75"/>
-      <g stroke="#1b2634" stroke-width="7" opacity=".9" stroke-linecap="round"><line x1="30" y1="50" x2="540" y2="95"/><line x1="15" y1="120" x2="500" y2="155"/><line x1="190" y1="0" x2="150" y2="210"/><line x1="350" y1="0" x2="310" y2="210"/></g>
-      <g stroke="#151f2b" stroke-width="3" opacity=".8"><line x1="0" y1="30" x2="560" y2="70"/><line x1="0" y1="90" x2="540" y2="120"/><line x1="95" y1="0" x2="70" y2="210"/><line x1="260" y1="0" x2="230" y2="210"/></g>
-      <polyline points="300,44 380,52 360,96 340,140 250,160 275,190" fill="none" stroke="#4f8ef7" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" opacity=".95"/>
-    </svg>
+  <div class="home-hero">
+    <div id="hmap"></div>
+    <div id="hmap-empty" class="hmap-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.35)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5"/></svg>
+      <span>seu mapa aparece aqui</span>
+    </div>
     <button class="hcam" onclick="event.stopPropagation(); goTab(5)" aria-label="Bipar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.4"/></svg></button>
+    <button class="hexp" onclick="event.stopPropagation(); heroFull()" aria-label="Expandir mapa"><svg id="hexp-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H3v6M21 9V3h-6M15 21h6v-6M3 15v6h6"/></svg></button>
     <div class="hfoot">
       <div class="ring"><svg width="46" height="46" viewBox="0 0 46 46"><circle cx="23" cy="23" r="19" fill="none" stroke="rgba(255,255,255,.15)" stroke-width="5"/><circle id="home-ring" cx="23" cy="23" r="19" fill="none" stroke="var(--green)" stroke-width="5" stroke-linecap="round" stroke-dasharray="119" stroke-dashoffset="119" transform="rotate(-90 23 23)"/></svg><div class="pc" id="home-ringpc">0%</div></div>
       <div class="hinfo"><b id="home-hero-b">Mapa & rotas</b><span id="home-hero-s">nenhum pacote ainda</span></div>
-      <span class="open">abrir ›</span>
     </div>
   </div>
 
@@ -343,11 +357,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
   </div>
 
   <div class="home-grid">
-    <button class="hact" onclick="goTab(0)"><svg viewBox="0 0 24 24"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lb">Importar</span><span class="sub">planilha do dia</span></button>
-    <button class="hact" onclick="goTab(0)"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 3v5h5M12 11v6M9 14h6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lb">Adicionar</span><span class="sub">+ planilha nova</span></button>
+    <button class="hact" onclick="homeArquivoPick(false)"><svg viewBox="0 0 24 24"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lb">Importar</span><span class="sub">planilha do dia</span></button>
+    <button class="hact" onclick="homeArquivoPick(true)"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 3v5h5M12 11v6M9 14h6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lb">Adicionar</span><span class="sub">+ planilha nova</span></button>
     <button class="hact" id="home-geo" onclick="homeGeo()"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/></svg><span class="lb" id="home-geo-lb">Geocodificar</span><span class="sub" id="home-geo-sub">achar no mapa</span><span class="hgeobar"><span id="home-geo-fill"></span></span></button>
     <button class="hact" onclick="abrirRoteirizar()"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="5" r="2.4"/><path d="M8 18.5C13 17 6 8 16 6.2" stroke-linecap="round"/></svg><span class="lb">Roteirizar</span><span class="sub">automático</span></button>
-    <button class="hact wide ghost" onclick="goTab(3)"><svg viewBox="0 0 24 24"><path d="M12 3v12M12 15l-4-4M12 15l4-4M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="txt"><span class="lb">Baixar planilha do motorista</span><span class="sub">Excel por rota, na ordem</span></span></button>
+    <button class="hact wide ghost" onclick="homeBaixar()"><svg viewBox="0 0 24 24"><path d="M12 3v12M12 15l-4-4M12 15l4-4M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="txt"><span class="lb">Baixar planilha do motorista</span><span class="sub">Excel por rota, na ordem</span></span></button>
     <button class="hact wide scan" onclick="goTab(5)"><svg viewBox="0 0 24 24"><path d="M4 7V6a2 2 0 0 1 2-2h1M17 4h1a2 2 0 0 1 2 2v1M20 17v1a2 2 0 0 1-2 2h-1M7 20H6a2 2 0 0 1-2-2v-1" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8" stroke-linecap="round"/></svg><span class="txt"><span class="lb">Bipar pela câmera</span><span class="sub">separar pacotes por rota</span></span></button>
   </div>
 </div>
@@ -372,6 +386,17 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <div class="grab"></div>
   <h3 style="margin-bottom:12px">Mais opções</h3>
   <div id="menu-list"></div>
+</div>
+
+<!-- sheet importar -->
+<div class="bsheet-bg" id="imp-bg" onclick="fecharImport()"></div>
+<div class="bsheet" id="imp-sheet" onclick="event.stopPropagation()" style="position:fixed;left:50%;bottom:0;transform:translateX(-50%);z-index:9999;display:none">
+  <div class="grab"></div>
+  <h3 id="imp-title">Importar planilha</h3>
+  <div class="sd" id="imp-sub">Confira as colunas detectadas e confirme.</div>
+  <div id="imp-map"></div>
+  <div class="tot ok" id="imp-cont" style="margin-top:4px"></div>
+  <button class="sheet-go" id="imp-go" onclick="homeConfirmImport()"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><path d="M20 6L9 17l-5-5"/></svg><span class="gotxt">Confirmar importação</span></button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════════════════════════════
@@ -627,33 +652,33 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <div style="max-width:520px;margin:0 auto">
 
     <!-- resultado grande -->
-    <div id="sc-result" style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:28px 16px 20px;text-align:center;margin-bottom:1rem">
-      <div id="sc-rota" style="font-family:var(--mono);font-size:13px;color:var(--text3);letter-spacing:2px;margin-bottom:4px"> </div>
-      <div id="sc-num" style="font-size:52px;font-weight:800;font-family:var(--mono);line-height:1;color:var(--text3)">aguardando</div>
-      <div id="sc-sub" style="font-size:12px;color:var(--text2);margin-top:10px;line-height:1.5"> </div>
+    <div id="sc-result" style="background:linear-gradient(180deg,#151b28,#10141d);border:1px solid var(--border);border-radius:16px;padding:26px 16px 22px;text-align:center;margin-bottom:14px">
+      <div id="sc-rota" style="font-family:var(--mono);font-size:12px;color:var(--text3);letter-spacing:3px;text-transform:uppercase;margin-bottom:6px"> </div>
+      <div id="sc-num" style="font-size:44px;font-weight:800;font-family:var(--mono);line-height:1.05;color:var(--text3);word-break:break-word">aguardando</div>
+      <div id="sc-sub" style="font-size:12px;color:var(--text2);margin-top:12px;line-height:1.5"> </div>
     </div>
 
     <!-- viewfinder -->
-    <div id="sc-cam-wrap" style="display:none;border-radius:var(--radius-lg);overflow:hidden;margin-bottom:1rem;position:relative;background:#000">
+    <div id="sc-cam-wrap" style="display:none;border-radius:16px;overflow:hidden;margin-bottom:14px;position:relative;background:#000;border:1px solid var(--border)">
       <div id="sc-reader"></div>
       <div style="position:absolute;top:0;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
-        <div style="width:260px;height:110px;border:2px solid var(--accent);border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)"></div>
+        <div style="width:260px;height:110px;border:2px solid var(--accent);border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)"></div>
       </div>
     </div>
 
     <!-- botão câmera -->
-    <button id="sc-btn" class="btn btn-p" style="width:100%;padding:14px;font-size:15px;margin-bottom:1rem" onclick="scToggle()">📷 Ativar câmera</button>
+    <button id="sc-btn" class="btn btn-p" style="width:100%;padding:15px;font-size:15px;font-weight:650;border-radius:14px;margin-bottom:14px;display:inline-flex;align-items:center;justify-content:center;gap:9px" onclick="scToggle()"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.4"/></svg><span class="scbtn-txt">Ativar câmera</span></button>
 
     <!-- busca manual -->
     <div class="card">
-      <div class="card-title">🔍 Buscar manualmente (código ou rua)</div>
+      <div class="card-title">buscar manualmente (código ou rua)</div>
       <input type="text" id="sc-busca" placeholder="Digite o código de rastreio ou nome da rua..." oninput="scBuscar()" style="margin-bottom:.5rem">
       <div id="sc-busca-resultados" style="max-height:280px;overflow-y:auto"></div>
     </div>
 
     <!-- últimos 10 -->
     <div class="card" style="overflow:hidden">
-      <div class="card-title">Últimos bipados</div>
+      <div class="card-title">últimos bipados</div>
       <div id="sc-lista" style="font-size:13px;color:var(--text3);font-family:var(--mono)">Nenhum código lido ainda.</div>
     </div>
 
@@ -753,7 +778,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       </div>
     </div>
 
-    <button id="rt-btn" class="btn btn-p" style="width:100%;padding:14px;font-size:15px;margin-bottom:1rem" onclick="scToggle()">📷 Ativar câmera</button>
+    <button id="rt-btn" class="btn btn-p" style="width:100%;padding:15px;font-size:15px;font-weight:650;border-radius:14px;margin-bottom:1rem;display:inline-flex;align-items:center;justify-content:center;gap:9px" onclick="scToggle()"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.4"/></svg><span class="scbtn-txt">Ativar câmera</span></button>
 
     <div class="card" style="overflow:hidden">
       <div class="card-title">Últimos lidos</div>
@@ -1444,7 +1469,7 @@ function arToggle() {
 // IMPORTAR
 // ═══════════════════════════════════════════════════════════════════════════════
 var _pFile = null;
-function handleFile(inp) {
+function handleFile(inp, cb) {
   _pFile = inp.files[0]; if (!_pFile) return;
   var ext = _pFile.name.split('.').pop().toLowerCase();
   var reader = new FileReader();
@@ -1463,6 +1488,7 @@ function handleFile(inp) {
         if (auto[id].some(function(k){ return s.options[i].text.toLowerCase().includes(k); })) { s.selectedIndex=i; break; }
       }
     });
+    if (typeof cb === 'function') cb(hdrs);
   };
   if (ext==='csv') reader.readAsText(_pFile,'UTF-8'); else reader.readAsBinaryString(_pFile);
 }
@@ -1649,6 +1675,7 @@ async function iniciarGeo(forcar) {
   var _hs=document.getElementById('home-geo-sub'); if(_hs)_hs.textContent=com+' no mapa ✓';
   setTimeout(function(){ var f=document.getElementById('home-geo-fill'); if(f)f.style.width='0'; var l=document.getElementById('home-geo-lb'); if(l)l.textContent='Geocodificar'; var su=document.getElementById('home-geo-sub'); if(su)su.textContent='achar no mapa'; }, 1800);
   renderHome();
+  homeMapPlot(); // mostra os pinos no mapa da tela inicial
 }
 
 async function limparCacheServidor() {
@@ -2653,7 +2680,7 @@ function arGerar() {
   aviso.textContent = '';
 }
 
-function arAplicarNoMapa() {
+function arAplicarNoMapa(semIr) {
   if (!_arRotasGeradas.length) { alert('Gere as rotas primeiro.'); return; }
   if (!mapaInit) initMap();
   // limpa rotas existentes
@@ -2683,7 +2710,7 @@ function arAplicarNoMapa() {
 
   renderRotasList(); renderMotList(); renderEtSelect(); renderMotDownload();
   persistirLocal();
-  goTab(1); // vai para o mapa
+  if (!semIr) goTab(1); // vai para o mapa
 }
 
 // Convex Hull (Graham scan) para criar polígono ao redor dos pontos
@@ -2960,11 +2987,17 @@ function scUsar(modo) {
 }
 
 function scToggle() { _scAtivo ? scParar() : scIniciar(); }
+function scBtnLabel(txt, parar){
+  var b=document.getElementById(_scIds.btn); if(!b) return;
+  var t=b.querySelector('.scbtn-txt');
+  if(t) t.textContent=txt; else b.textContent=txt;
+  b.classList.toggle('btn-r', !!parar);
+  b.classList.toggle('btn-p', !parar);
+}
 
 async function scIniciar() {
   document.getElementById(_scIds.wrap).style.display = 'block';
-  document.getElementById(_scIds.btn).textContent = '⏹ Parar câmera';
-  document.getElementById(_scIds.btn).className = 'btn';
+  scBtnLabel('Parar câmera', true);
   _scAtivo = true;
 
   if ('BarcodeDetector' in window) {
@@ -3027,8 +3060,7 @@ function scParar() {
   if (_scH5q) { _scH5q.stop().catch(function(){}).finally(function(){ _scH5q.clear(); _scH5q = null; }); }
   document.getElementById(_scIds.reader).innerHTML = '';
   document.getElementById(_scIds.wrap).style.display = 'none';
-  document.getElementById(_scIds.btn).textContent = '📷 Ativar câmera';
-  document.getElementById(_scIds.btn).className = 'btn btn-p';
+  scBtnLabel('Ativar câmera', false);
 }
 
 // registra a bipagem de fato (compartilha estado com a aba Bipar)
@@ -3176,11 +3208,100 @@ function renderHome(){
   var ring=document.getElementById('home-ring'), rpc=document.getElementById('home-ringpc');
   if(ring){ var C=2*Math.PI*19; ring.setAttribute('stroke-dasharray',C); ring.setAttribute('stroke-dashoffset', C*(1-pct/100)); }
   if(rpc) rpc.textContent=pct+'%';
+  var empty=document.getElementById('hmap-empty'); if(empty) empty.style.display = geo? 'none':'flex';
+  homeMapPlot();
+}
+
+// ── MAPA DA TELA INICIAL (hero) — pinos + rotas, só leitura ──
+var hmap=null, hmapLayer=null;
+function homeMapInit(){
+  if(hmap || typeof L==='undefined') return;
+  var el=document.getElementById('hmap'); if(!el) return;
+  try{
+    hmap=L.map('hmap',{preferCanvas:true,zoomControl:true,attributionControl:false}).setView([-27.6136,-48.64],12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(hmap);
+    hmapLayer=L.layerGroup().addTo(hmap);
+    setTimeout(function(){ try{hmap.invalidateSize();}catch(e){} },250);
+  }catch(e){ hmap=null; }
+}
+function heroFull(){
+  var h=document.querySelector('.home-hero'); if(!h) return;
+  var full=h.classList.toggle('hero-full');
+  var ic=document.getElementById('hexp-ic');
+  if(ic) ic.innerHTML = full ? '<path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/>' : '<path d="M9 3H3v6M21 9V3h-6M15 21h6v-6M3 15v6h6"/>';
+  document.body.style.overflow = full ? 'hidden' : '';
+  setTimeout(function(){ try{ hmap.invalidateSize(); var g=pacotes.filter(function(p){return p.lat&&p.lng;}).map(function(p){return [p.lat,p.lng];}); if(g.length) hmap.fitBounds(g,{padding:[40,40],maxZoom:15}); }catch(e){} }, 260);
+}
+function homeMapPlot(){
+  homeMapInit(); if(!hmap||!hmapLayer) return;
+  try{ hmapLayer.clearLayers(); }catch(e){ return; }
+  var geo=pacotes.filter(function(p){return p.lat&&p.lng;});
+  var empty=document.getElementById('hmap-empty'); if(empty) empty.style.display = geo.length? 'none':'flex';
+  if(!geo.length){ try{hmap.invalidateSize();}catch(e){} return; }
+  if(typeof rotas!=='undefined' && rotas.length){
+    rotas.forEach(function(r){
+      if(!r.pkgs||!r.pkgs.length) return;
+      var hull=convexHull(r.pkgs).map(function(p){return [p.lat,p.lng];});
+      if(hull.length>=3) L.polygon(hull,{color:r.cor,fillColor:r.cor,fillOpacity:.12,weight:2}).addTo(hmapLayer);
+    });
+  }
+  var pts=[];
+  geo.forEach(function(p){
+    var cor=(p.rota && rotas[p.rota-1])?rotas[p.rota-1].cor:'#4f8ef7';
+    var rotaNome=(p.rota && rotas[p.rota-1])?rotas[p.rota-1].motorista:'';
+    var pop='<div style="font-size:12px;line-height:1.35"><b>'+esc(p.tracking||p.codigo||'')+'</b><br>'+esc(p.endereco||'')+(p.bairro?('<br>'+esc(p.bairro)):'')+(rotaNome?('<br><span style="color:'+cor+'">● '+esc(rotaNome)+(p.numNaRota?(' · parada '+p.numNaRota):'')+'</span>'):'')+'</div>';
+    L.circleMarker([p.lat,p.lng],{radius:6,color:'#0b0f16',weight:1.5,fillColor:cor,fillOpacity:.95}).addTo(hmapLayer).bindPopup(pop);
+    pts.push([p.lat,p.lng]);
+  });
+  try{ hmap.invalidateSize(); hmap.fitBounds(pts,{padding:[26,26],maxZoom:15}); }catch(e){}
 }
 
 function homeGeo(){
   if(!pacotes.length){ alert('Importe uma planilha primeiro.'); return; }
   iniciarGeo(false); // usa o mesmo motor; a barra aparece dentro do botão
+}
+
+// ── IMPORTAR / ADICIONAR direto da tela inicial ──
+var _homeAdd=false;
+function homeArquivoPick(adicionar){
+  if(adicionar && !pacotes.length){ alert('Não há importação atual ainda. Use "Importar" primeiro.'); return; }
+  _homeAdd=!!adicionar;
+  var fi=document.getElementById('fi');
+  fi.value='';
+  fi.onchange=function(){ handleFile(fi, function(){ homeImportSheet(); }); };
+  fi.click();
+}
+function homeImportSheet(){
+  var campos=[['c0','Tracking / pedido'],['c1','Endereço'],['c2','Bairro'],['c3','CEP'],['c4','Cidade']];
+  var html='';
+  campos.forEach(function(c){
+    var src=document.getElementById(c[0]);
+    var opts=''; for(var i=0;i<src.options.length;i++){ opts+='<option'+(i===src.selectedIndex?' selected':'')+'>'+esc(src.options[i].text)+'</option>'; }
+    html+='<div class="irow"><label>'+c[1]+'</label><select id="imp-'+c[0]+'">'+opts+'</select></div>';
+  });
+  document.getElementById('imp-map').innerHTML=html;
+  document.getElementById('imp-title').textContent=_homeAdd?'Adicionar planilha':'Importar planilha';
+  document.getElementById('imp-sub').textContent=_homeAdd?'Os pacotes novos entram sem mexer na numeração atual.':'Confira as colunas detectadas e confirme.';
+  document.getElementById('imp-cont').textContent = _pFile? ('arquivo: '+_pFile.name) : '';
+  document.getElementById('imp-go').querySelector('.gotxt').textContent=_homeAdd?'Adicionar à importação':'Confirmar importação';
+  document.getElementById('imp-bg').classList.add('show');
+  document.getElementById('imp-sheet').style.display='block';
+}
+function fecharImport(){ document.getElementById('imp-bg').classList.remove('show'); document.getElementById('imp-sheet').style.display='none'; }
+function homeConfirmImport(){
+  ['c0','c1','c2','c3','c4'].forEach(function(id){
+    var s=document.getElementById('imp-'+id); if(s) document.getElementById(id).selectedIndex=s.selectedIndex;
+  });
+  fecharImport();
+  _importarPlanilha(_homeAdd); // reaproveita a importação real (com a mesma validação)
+  renderHome();
+  homeMapPlot();
+}
+
+// ── BAIXAR planilha do motorista direto da tela inicial ──
+function homeBaixar(){
+  if(typeof rotas==='undefined' || !rotas.length){ alert('Roteirize os pacotes primeiro para gerar as planilhas.'); return; }
+  downloadTodos();
 }
 
 // ── ROTEIRIZAR (sheet) ──
@@ -3230,8 +3351,10 @@ function confirmarRoteirizar(){
   if(_nMot===1) _arConfig=[{nome:'Rota 1', qtd:t, cor:CORES[0]}];
   else _arConfig=_qs.map(function(q,i){ return {nome:'Rota '+(i+1), qtd:q, cor:CORES[i%CORES.length]}; });
   fecharRoteirizar();
-  arGerar();          // gera a divisão (reaproveita a lógica existente)
-  arAplicarNoMapa();  // aplica no mapa e abre a aba Mapa/Rotas
+  arGerar();             // gera a divisão (reaproveita a lógica existente)
+  arAplicarNoMapa(true); // aplica no mapa mas SEM sair da tela inicial
+  homeMapPlot();         // desenha as rotas no mapa da própria tela inicial
+  renderHome();
 }
 
 // ── MENU ⋯ ──
