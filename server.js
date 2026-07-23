@@ -1053,6 +1053,34 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ─── PWA: manifest, service worker e ícones (instalar na tela inicial) ─────
+  if (req.method === 'GET' && pathname === '/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify({
+      name: 'PackScan', short_name: 'PackScan',
+      description: 'Roteirização e bipagem de entregas',
+      start_url: '/', scope: '/', display: 'standalone',
+      background_color: '#0f1117', theme_color: '#0f1117', orientation: 'portrait',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      ]
+    }));
+  }
+  if (req.method === 'GET' && (pathname === '/icon-192.png' || pathname === '/icon-512.png' || pathname === '/icon-180.png')) {
+    return fs.readFile(path.join(__dirname, pathname.slice(1)), (err, data) => {
+      if (err) { res.writeHead(404); return res.end('Not found'); }
+      res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800' });
+      res.end(data);
+    });
+  }
+  if (req.method === 'GET' && pathname === '/sw.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache' });
+    // service worker mínimo: só habilita a instalação (network-first, sem cache
+    // agressivo pra nunca servir versão velha do app)
+    return res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
+  }
+
   // página scanner (câmera mobile)
   if (req.method === 'GET' && pathname === '/scanner') {
     fs.readFile(path.join(__dirname, 'scanner.html'), (err, data) => {
