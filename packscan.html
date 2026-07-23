@@ -362,7 +362,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <button class="hact" onclick="homeArquivoPick(false)"><svg viewBox="0 0 24 24"><path d="M12 16V4M12 4l-4 4M12 4l4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lb">Importar</span><span class="sub">planilha do dia</span></button>
     <button class="hact" onclick="homeArquivoPick(true)"><svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 3v5h5M12 11v6M9 14h6" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="lb">Adicionar</span><span class="sub">+ planilha nova</span></button>
     <button class="hact" id="home-geo" onclick="homeGeo()"><svg viewBox="0 0 24 24"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/></svg><span class="lb" id="home-geo-lb">Geocodificar</span><span class="sub" id="home-geo-sub">achar no mapa</span><span class="hgeobar"><span id="home-geo-fill"></span></span></button>
-    <button class="hact" onclick="abrirRoteirizar()"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="5" r="2.4"/><path d="M8 18.5C13 17 6 8 16 6.2" stroke-linecap="round"/></svg><span class="lb">Roteirizar</span><span class="sub">automático</span></button>
+    <button class="hact" onclick="abrirRoteirizar()"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="5" r="2.4"/><path d="M8 18.5C13 17 6 8 16 6.2" stroke-linecap="round"/></svg><span class="lb">Roteirizar</span><span class="sub" id="home-rot-sub">automático</span></button>
     <button class="hact wide ghost" onclick="homeBaixar()"><svg viewBox="0 0 24 24"><path d="M12 3v12M12 15l-4-4M12 15l4-4M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="txt"><span class="lb">Baixar planilha do motorista</span><span class="sub">Excel por rota, na ordem</span></span></button>
     <button class="hact wide scan" onclick="goTab(5)"><svg viewBox="0 0 24 24"><path d="M4 7V6a2 2 0 0 1 2-2h1M17 4h1a2 2 0 0 1 2 2v1M20 17v1a2 2 0 0 1-2 2h-1M7 20H6a2 2 0 0 1-2-2v-1" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8" stroke-linecap="round"/></svg><span class="txt"><span class="lb">Bipar pela câmera</span><span class="sub">separar pacotes por rota</span></span></button>
   </div>
@@ -1523,7 +1523,11 @@ function _importarPlanilha(adicionar) {
         cidade:cols[4]!=='—'?String(r[cols[4]]||'').trim():'', lat:null,lng:null,enderecoNorm:null,precisao:null,rota:null,numNaRota:null };
     });
     if (!adicionar) {
+      // importação nova = recomeço limpo: apaga rotas, bipagens e o mapa da
+      // planilha anterior (o "Adicionar" é que preserva tudo)
       pacotes = linhas.map(function(l,i){ l.id = i+1; return l; });
+      rotas = []; bipados = {}; motAtivo = null; _rotasPendentes = null;
+      try { if (typeof drawnItems!=='undefined' && drawnItems) drawnItems.clearLayers(); } catch(e){}
       finImport();
     } else {
       var existentes = {};
@@ -3232,6 +3236,11 @@ function renderHome(){
   if(ring){ var C=2*Math.PI*19; ring.setAttribute('stroke-dasharray',C); ring.setAttribute('stroke-dashoffset', C*(1-pct/100)); }
   if(rpc) rpc.textContent=pct+'%';
   var empty=document.getElementById('hmap-empty'); if(empty) empty.style.display = geo? 'none':'flex';
+  var rsub=document.getElementById('home-rot-sub');
+  if(rsub){
+    if(nrotas){ var roteir=rotas.reduce(function(a,r){return a+(r.pkgs?r.pkgs.length:0);},0); rsub.innerHTML='✓ '+roteir+' em '+nrotas+(nrotas>1?' rotas':' rota'); }
+    else rsub.textContent='automático';
+  }
   homeMapPlot();
 }
 
@@ -3287,11 +3296,32 @@ function homeMapPlot(){
   geo.forEach(function(p){
     var cor=(p.rota && rotas[p.rota-1])?rotas[p.rota-1].cor:'#4f8ef7';
     var rotaNome=(p.rota && rotas[p.rota-1])?rotas[p.rota-1].motorista:'';
-    var pop='<div style="font-size:12px;line-height:1.35"><b>'+esc(p.tracking||p.codigo||'')+'</b><br>'+esc(p.endereco||'')+(p.bairro?('<br>'+esc(p.bairro)):'')+(rotaNome?('<br><span style="color:'+cor+'">● '+esc(rotaNome)+(p.numNaRota?(' · parada '+p.numNaRota):'')+'</span>'):'')+'</div>';
+    var tkEsc=String(p.tracking||'').replace(/'/g,"\\'");
+    var pop='<div style="font-size:12px;line-height:1.35"><b>'+esc(p.tracking||p.codigo||'')+'</b><br>'+esc(p.endereco||'')+(p.bairro?('<br>'+esc(p.bairro)):'')+(rotaNome?('<br><span style="color:'+cor+'">● '+esc(rotaNome)+(p.numNaRota?(' · parada '+p.numNaRota):'')+'</span>'):'')
+      +'<br><button onclick="homeExcluirPacote(\''+tkEsc+'\')" style="margin-top:8px;padding:6px 10px;border-radius:7px;border:1px solid var(--red);background:#3a1a1a;color:var(--red);cursor:pointer;font-size:12px;font-weight:600">🗑 Excluir pacote</button></div>';
     L.circleMarker([p.lat,p.lng],{radius:6,color:'#0b0f16',weight:1.5,fillColor:cor,fillOpacity:.95}).addTo(hmapLayer).bindPopup(pop);
     pts.push([p.lat,p.lng]);
   });
   try{ hmap.invalidateSize(); hmap.fitBounds(pts,{padding:[26,26],maxZoom:15}); }catch(e){}
+}
+
+function homeExcluirPacote(tracking){
+  var idx=pacotes.findIndex(function(p){ return String(p.tracking)===String(tracking); });
+  if(idx===-1) return;
+  if(!confirm('Excluir o pacote '+tracking+'?\nEssa ação não pode ser desfeita.')) return;
+  try{ if(hmap) hmap.closePopup(); }catch(e){}
+  var p=pacotes[idx];
+  if(p.rota){
+    var rota=rotas.find(function(r){ return r.id===p.rota; });
+    if(rota){ rota.pkgs=rota.pkgs.filter(function(x){ return x.tracking!==tracking; }); rota.pkgs.forEach(function(x,i){ x.numNaRota=i+1; }); }
+  }
+  pacotes.splice(idx,1);
+  // mantém o mapa antigo em sincronia, se já tiver sido aberto
+  try{ if(typeof mapaInit!=='undefined' && mapaInit && map){ plotarPontos(); renderMotList(); renderRotasList(); } }catch(e){}
+  try{ atualizarGeoInfo(); var gt=document.getElementById('gm-total'); if(gt) gt.textContent=pacotes.length; }catch(e){}
+  persistirLocal();
+  renderHome();
+  homeMapPlot();
 }
 
 function homeGeo(){
