@@ -1,0 +1,364 @@
+<title>PackScan — Maquete dos recursos que faltam</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#0f1117; --bg2:#181c27; --bg3:#1e2333;
+    --border:#2a3047; --border2:#3a4460;
+    --text:#e8ecf5; --text2:#8a93b0; --text3:#555e7a;
+    --accent:#4f8ef7; --accent2:#2563c4; --green:#25d366; --routegreen:#34c97e;
+    --amber:#f5a623; --red:#f05252; --violet:#a78bfa;
+    --mono:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;
+    --sans:'IBM Plex Sans',ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:
+      radial-gradient(1200px 700px at 15% -10%, #12203a 0%, transparent 55%),
+      radial-gradient(1000px 600px at 100% 0%, #10261d 0%, transparent 50%),
+      var(--bg);
+    color:var(--text);font-family:var(--sans);line-height:1.5;
+    -webkit-font-smoothing:antialiased;}
+  .wrap{max-width:1180px;margin:0 auto;padding:44px 22px 80px}
+
+  /* ---- page header ---- */
+  .logo{font-weight:800;letter-spacing:.5px;font-size:15px}
+  .logo span{color:var(--text3)}
+  .logo b{color:var(--accent)}
+  .head{display:flex;flex-direction:column;gap:16px;margin-bottom:10px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:3px;text-transform:uppercase;color:var(--accent)}
+  h1{font-size:clamp(28px,5vw,44px);line-height:1.08;margin:0;font-weight:750;text-wrap:balance;max-width:16ch}
+  .lede{color:var(--text2);font-size:17px;max-width:60ch;margin:0}
+  .disclaimer{display:inline-flex;align-items:center;gap:9px;margin-top:6px;
+    background:rgba(245,166,35,.1);border:1px solid rgba(245,166,35,.35);color:#f0c070;
+    padding:9px 14px;border-radius:11px;font-size:13.5px;width:fit-content}
+  .disclaimer b{color:#ffd591}
+
+  /* ---- gallery ---- */
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:34px 26px;margin-top:46px}
+  @media(min-width:1000px){.grid{grid-template-columns:repeat(3,1fr)}}
+  .cell{display:flex;flex-direction:column;gap:14px}
+  .cap{padding:0 4px}
+  .cap .tag{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10.5px;letter-spacing:1.5px;text-transform:uppercase;color:var(--accent);background:rgba(79,142,247,.12);border:1px solid rgba(79,142,247,.3);padding:3px 8px;border-radius:20px;margin-bottom:9px}
+  .cap h3{margin:0 0 4px;font-size:17px;font-weight:650}
+  .cap p{margin:0;color:var(--text2);font-size:13.5px}
+
+  /* ---- phone ---- */
+  .phone{position:relative;border-radius:34px;background:#05070b;border:1px solid var(--border2);
+    padding:9px;box-shadow:0 30px 60px -24px rgba(0,0,0,.85),0 0 0 1px rgba(255,255,255,.02) inset}
+  .screen{position:relative;border-radius:26px;overflow:hidden;background:var(--panel);height:600px;display:flex;flex-direction:column}
+  .notch{position:absolute;top:9px;left:50%;transform:translateX(-50%);width:96px;height:20px;background:#05070b;border-radius:0 0 13px 13px;z-index:40}
+
+  /* app header inside phone */
+  .ah{display:flex;align-items:center;gap:11px;padding:26px 15px 11px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0}
+  .ah .ic{width:34px;height:34px;border-radius:10px;background:var(--bg3);border:1px solid var(--border2);display:grid;place-items:center;color:var(--text);flex-shrink:0}
+  .ah .ic svg{width:17px;height:17px}
+  .ah .ttl{font-size:15px;font-weight:650}
+  .ah .sp{flex:1}
+  .ah .live{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;color:var(--routegreen);background:rgba(52,201,126,.12);border:1px solid rgba(52,201,126,.3);padding:3px 9px;border-radius:20px}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:var(--routegreen);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+  @media(prefers-reduced-motion:reduce){.live .dot{animation:none}}
+
+  .body{flex:1;overflow:hidden;padding:14px}
+  .body.tight{padding:0}
+
+  /* progress bar */
+  .prog{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+  .prog .row{display:flex;justify-content:space-between;align-items:baseline}
+  .prog .row b{font-size:15px}
+  .prog .row .s{font-family:var(--mono);font-size:12px;color:var(--text2)}
+  .bar{height:7px;border-radius:20px;background:var(--bg3);overflow:hidden}
+  .bar > i{display:block;height:100%;border-radius:20px;background:linear-gradient(90deg,var(--routegreen),#4ade80)}
+
+  /* stop card */
+  .stops{display:flex;flex-direction:column;gap:9px}
+  .stop{display:flex;gap:11px;align-items:center;background:var(--bg2);border:1px solid var(--border);border-radius:13px;padding:11px}
+  .stop.next{border-color:var(--accent);background:linear-gradient(180deg,rgba(79,142,247,.13),rgba(79,142,247,.04))}
+  .stop.done{opacity:.55}
+  .num{width:30px;height:30px;border-radius:9px;background:var(--bg3);border:1px solid var(--border2);display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:13px;flex-shrink:0}
+  .stop.done .num{background:rgba(52,201,126,.16);border-color:rgba(52,201,126,.4);color:var(--routegreen)}
+  .stop.next .num{background:var(--accent);border-color:var(--accent);color:#fff}
+  .mid{flex:1;min-width:0}
+  .mid .a{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mid .b{font-size:11.5px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .eta{font-family:var(--mono);font-size:11px;color:var(--text2);background:var(--bg3);border-radius:7px;padding:3px 7px;flex-shrink:0}
+  .stop.next .eta{color:var(--accent)}
+  .mini{display:flex;gap:6px;margin-top:8px}
+  .mini button{flex:1;border:0;border-radius:8px;padding:7px;font-size:11.5px;font-weight:650;font-family:var(--sans);display:inline-flex;align-items:center;justify-content:center;gap:5px;cursor:default}
+  .mini .nav{background:var(--accent);color:#fff}
+  .mini .wa{background:var(--green);color:#08130c}
+  .mini svg{width:14px;height:14px}
+
+  /* map */
+  .map{position:relative;width:100%;height:100%;background:#0c1119}
+  .maplabel{position:absolute;z-index:6;background:rgba(8,12,20,.82);border:1px solid rgba(255,255,255,.14);border-radius:8px;color:#fff;font-size:11px;font-weight:700;padding:3px 8px;white-space:nowrap}
+  .badge-otim{position:absolute;top:12px;left:12px;z-index:6;display:inline-flex;align-items:center;gap:6px;background:rgba(37,211,102,.14);border:1px solid rgba(52,201,126,.45);color:#7ef0ab;font-size:11px;font-weight:650;padding:5px 10px;border-radius:20px}
+  .badge-otim svg{width:13px;height:13px}
+
+  /* stat strip */
+  .stats{display:flex;gap:8px;padding:12px 14px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
+  .stat{flex:1;text-align:center}
+  .stat .v{font-family:var(--mono);font-weight:700;font-size:17px}
+  .stat .k{font-size:10.5px;color:var(--text3);text-transform:uppercase;letter-spacing:.5px}
+  .savechip{margin:0 14px 12px;background:rgba(52,201,126,.1);border:1px solid rgba(52,201,126,.32);color:#7ef0ab;border-radius:10px;padding:8px 11px;font-size:12px;text-align:center;flex-shrink:0}
+
+  /* detail screen */
+  .dhead{text-align:center;padding:18px 14px 14px}
+  .dhead .p{font-family:var(--mono);font-size:12px;letter-spacing:2px;color:var(--text3);text-transform:uppercase}
+  .dhead .n{font-size:34px;font-weight:800;font-family:var(--mono);line-height:1.1;margin-top:2px}
+  .dhead .addr{font-size:14px;font-weight:600;margin-top:8px}
+  .dhead .who{font-size:12.5px;color:var(--text2);margin-top:3px}
+  .dbtns{display:flex;flex-direction:column;gap:9px;padding:4px 14px}
+  .big{border:0;border-radius:13px;padding:14px;font-size:14px;font-weight:650;font-family:var(--sans);display:flex;align-items:center;justify-content:center;gap:9px;cursor:default}
+  .big svg{width:19px;height:19px}
+  .big.nav{background:var(--accent);color:#fff}
+  .big.wa{background:var(--green);color:#08130c}
+  .big.ghost{background:var(--bg2);border:1px solid var(--border2);color:var(--text)}
+  .drow{display:flex;gap:9px}
+  .drow .big{flex:1}
+  .big.ok{background:rgba(52,201,126,.14);border:1px solid rgba(52,201,126,.45);color:var(--routegreen)}
+  .big.no{background:rgba(240,82,82,.12);border:1px solid rgba(240,82,82,.4);color:#ff8b8b}
+
+  /* proof */
+  .proof{padding:14px;display:flex;flex-direction:column;gap:12px}
+  .photo{height:180px;border-radius:14px;border:1px solid var(--border);overflow:hidden;position:relative;
+    background:linear-gradient(160deg,#20303f,#141c26)}
+  .photo .chk{position:absolute;right:10px;bottom:10px;background:rgba(8,12,20,.75);border:1px solid rgba(52,201,126,.5);color:var(--routegreen);font-size:11px;font-weight:650;padding:4px 9px;border-radius:20px}
+  .sign{height:86px;border-radius:12px;border:1px dashed var(--border2);background:var(--bg2);position:relative;overflow:hidden}
+  .sign .lbl{position:absolute;top:8px;left:11px;font-size:11px;color:var(--text3);font-family:var(--mono)}
+  .fld{background:var(--bg2);border:1px solid var(--border2);border-radius:11px;padding:11px 12px;font-size:13px;color:var(--text2)}
+
+  /* dispatcher list */
+  .dlist{display:flex;flex-direction:column;gap:9px;padding:12px 14px;background:var(--bg2);border-top:1px solid var(--border);flex-shrink:0}
+  .drv{display:flex;align-items:center;gap:10px}
+  .avatar{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:12px;color:#08130c;flex-shrink:0}
+  .drv .info{flex:1;min-width:0}
+  .drv .nm{font-size:12.5px;font-weight:600}
+  .drv .pb{height:5px;border-radius:20px;background:var(--bg3);margin-top:5px;overflow:hidden}
+  .drv .pb > i{display:block;height:100%;border-radius:20px}
+  .drv .cnt{font-family:var(--mono);font-size:11px;color:var(--text2);flex-shrink:0}
+
+  /* whatsapp mock */
+  .wachat{height:100%;display:flex;flex-direction:column;background:#0b141a}
+  .wabar{display:flex;align-items:center;gap:10px;padding:26px 14px 11px;background:#1f2c33;flex-shrink:0}
+  .wabar .ava{width:32px;height:32px;border-radius:50%;background:#3a4a52;display:grid;place-items:center;font-size:14px}
+  .wabar .nm{font-size:13.5px;font-weight:650;color:#e9edef}
+  .wabar .st{font-size:11px;color:#8696a0}
+  .wamsgs{flex:1;padding:16px 12px;display:flex;flex-direction:column;gap:8px;justify-content:flex-end;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(255,255,255,.015) 0 2px, transparent 2px),
+      #0b141a;
+    background-size:26px 26px}
+  .bubble{max-width:82%;align-self:flex-end;background:#144d37;color:#e9edef;border-radius:12px 12px 4px 12px;padding:9px 11px;font-size:13px;line-height:1.42;box-shadow:0 1px 1px rgba(0,0,0,.3)}
+  .bubble .tick{display:block;text-align:right;font-size:10px;color:#7fd4a8;margin-top:3px}
+  .wanote{display:flex;align-items:center;justify-content:center;gap:7px;padding:10px;background:#111b21;color:#8696a0;font-size:11.5px;flex-shrink:0;border-top:1px solid #1f2c33}
+  .wafree{color:var(--routegreen);font-weight:700}
+
+  /* footer notes */
+  .notes{margin-top:56px;border-top:1px solid var(--border);padding-top:30px;display:grid;grid-template-columns:1fr;gap:26px}
+  @media(min-width:760px){.notes{grid-template-columns:1fr 1fr}}
+  .notes h2{font-size:14px;font-family:var(--mono);letter-spacing:2px;text-transform:uppercase;color:var(--text2);margin:0 0 14px}
+  .flist{display:flex;flex-direction:column;gap:11px;margin:0;padding:0;list-style:none}
+  .flist li{display:flex;gap:11px;align-items:flex-start;font-size:14px;color:var(--text)}
+  .flist .k{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;flex-shrink:0;font-size:12px;font-weight:800;margin-top:1px}
+  .k.free{background:rgba(52,201,126,.16);color:var(--routegreen)}
+  .k.paid{background:rgba(245,166,35,.16);color:var(--amber)}
+  .flist small{color:var(--text2);display:block;font-size:12.5px;margin-top:1px}
+  .foot{margin-top:40px;color:var(--text3);font-size:12.5px;text-align:center;font-family:var(--mono)}
+</style>
+
+<div class="wrap">
+  <header class="head">
+    <div class="logo"><b>PACK</b><span>SCAN</span></div>
+    <div class="eyebrow">Maquete · só design</div>
+    <h1>Como o PackScan ficaria com o que falta pro Circuit</h1>
+    <p class="lede">Uma prévia visual dos recursos de execução na rua — modo motorista, navegação, aviso no WhatsApp, comprovante, rota otimizada de verdade e rastreamento ao vivo. Tudo no visual atual do app.</p>
+    <div class="disclaimer">🎨 <span><b>Nada disso está no app ainda</b> — é só uma maquete pra você ver como ficaria antes de decidir.</span></div>
+  </header>
+
+  <div class="grid">
+
+    <!-- 1. MODO MOTORISTA -->
+    <div class="cell">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="ah">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+          <div class="ttl">Minhas entregas</div><div class="sp"></div>
+          <div class="ic"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></div>
+        </div>
+        <div class="body">
+          <div class="prog">
+            <div class="row"><b>Rota 2 · João</b><span class="s">8 / 20</span></div>
+            <div class="bar"><i style="width:40%"></i></div>
+          </div>
+          <div class="stops">
+            <div class="stop done"><div class="num">✓</div><div class="mid"><div class="a">R. Lauro Linhares, 210</div><div class="b">Trindade · entregue 14:02</div></div></div>
+            <div class="stop next"><div class="num">10</div><div class="mid"><div class="a">Av. Madre Benvenuta, 500</div><div class="b">Santa Mônica · próxima</div><div class="mini"><button class="nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>Navegar</button><button class="wa"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.6-.6-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.8 0-1.3.7-2 .9-2.2.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5.2.5.7 1.8.8 1.9.1.1.1.3 0 .5-.3.6-.6.8-.8 1-.1.2-.3.4-.1.7.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.7-.1.2-.2.8-.9 1-1.2.2-.3.4-.2.7-.1.3.1 1.7.8 1.9.9.3.2.5.2.5.4.1.1.1.6-.1 1.1z"/></svg>Avisar</button></div></div><div class="eta">14:18</div></div>
+            <div class="stop"><div class="num">11</div><div class="mid"><div class="a">R. Delfino Conti, 45</div><div class="b">Pantanal</div></div><div class="eta">14:31</div></div>
+            <div class="stop"><div class="num">12</div><div class="mid"><div class="a">R. Deputado A. E. Vieira, 1330</div><div class="b">Carvoeira</div></div><div class="eta">14:44</div></div>
+          </div>
+        </div>
+      </div></div>
+      <div class="cap"><span class="tag">novo · grátis</span><h3>Modo motorista</h3><p>Lista na ordem certa, marca entregue, e mostra o horário estimado de cada parada.</p></div>
+    </div>
+
+    <!-- 2. PARADA / NAVEGAR / WHATSAPP -->
+    <div class="cell">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="ah">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+          <div class="ttl">Parada 10 de 20</div><div class="sp"></div>
+        </div>
+        <div class="body tight">
+          <div class="dhead"><div class="p">Santa Mônica</div><div class="n">10</div><div class="addr">Av. Madre Benvenuta, 500</div><div class="who">Maria Oliveira · (48) 99xxx-1234</div></div>
+          <div class="dbtns">
+            <button class="big nav"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>Navegar no Waze / Maps</button>
+            <button class="big wa"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.6-.6-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.8 0-1.3.7-2 .9-2.2.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5.2.5.7 1.8.8 1.9.1.1.1.3 0 .5-.3.6-.6.8-.8 1-.1.2-.3.4-.1.7.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.4 2.4 1.5.3.1.5.1.7-.1.2-.2.8-.9 1-1.2.2-.3.4-.2.7-.1.3.1 1.7.8 1.9.9.3.2.5.2.5.4.1.1.1.6-.1 1.1z"/></svg>Avisar cliente no WhatsApp</button>
+            <div class="drow"><button class="big ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Entregue</button><button class="big no"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>Não entregue</button></div>
+            <button class="big ghost"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.4"/></svg>Foto de comprovante</button>
+          </div>
+        </div>
+      </div></div>
+      <div class="cap"><span class="tag">novo · grátis</span><h3>Navegar + avisar cliente</h3><p>Um toque abre o GPS; outro abre o WhatsApp com a mensagem pronta — pelo número do próprio motorista.</p></div>
+    </div>
+
+    <!-- 3. COMPROVANTE -->
+    <div class="cell">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="ah">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+          <div class="ttl">Comprovante</div><div class="sp"></div>
+        </div>
+        <div class="body">
+          <div class="proof">
+            <div class="photo">
+              <svg width="100%" height="100%" viewBox="0 0 300 180" preserveAspectRatio="xMidYMid slice">
+                <rect width="300" height="180" fill="#1a2531"/>
+                <rect x="30" y="120" width="240" height="60" fill="#0f1720"/>
+                <rect x="120" y="86" width="70" height="52" rx="3" fill="#c8863f"/>
+                <path d="M120 86h70l-8 -10h-54z" fill="#e0a24f"/>
+                <line x1="155" y1="86" x2="155" y2="138" stroke="#9c6a2f" stroke-width="2"/>
+                <rect x="205" y="40" width="60" height="98" fill="#243444"/>
+                <rect x="214" y="52" width="42" height="60" rx="2" fill="#33506b"/>
+              </svg>
+              <div class="chk">✓ foto anexada</div>
+            </div>
+            <div class="sign"><span class="lbl">assinatura de quem recebeu</span>
+              <svg width="100%" height="100%" viewBox="0 0 260 86"><path d="M20 60 q15 -30 28 -6 t26 -4 q10 -18 22 2 t30 -10 q14 20 30 4" fill="none" stroke="#8a93b0" stroke-width="2.2" stroke-linecap="round"/></svg>
+            </div>
+            <div class="fld">Recebido por: <b style="color:var(--text)">Maria Oliveira</b></div>
+            <button class="big ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Confirmar entrega</button>
+          </div>
+        </div>
+      </div></div>
+      <div class="cap"><span class="tag">novo</span><h3>Comprovante de entrega</h3><p>Foto na porta + assinatura + nome de quem recebeu. Fica salvo pra qualquer contestação.</p></div>
+    </div>
+
+    <!-- 4. ROTA OTIMIZADA -->
+    <div class="cell">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="ah">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+          <div class="ttl">Rota otimizada</div><div class="sp"></div>
+        </div>
+        <div class="body tight" style="display:flex;flex-direction:column">
+          <div style="flex:1;position:relative">
+            <div class="map">
+              <div class="badge-otim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>Otimizado por ruas · OSRM</div>
+              <svg width="100%" height="100%" viewBox="0 0 300 360" preserveAspectRatio="xMidYMid slice">
+                <rect width="300" height="360" fill="#0c1119"/>
+                <g stroke="#182234" stroke-width="6"><line x1="-10" y1="70" x2="320" y2="110"/><line x1="-10" y1="200" x2="320" y2="250"/><line x1="70" y1="-10" x2="40" y2="370"/><line x1="210" y1="-10" x2="180" y2="370"/></g>
+                <g stroke="#131c2a" stroke-width="3"><line x1="-10" y1="140" x2="320" y2="170"/><line x1="140" y1="-10" x2="115" y2="370"/><line x1="270" y1="-10" x2="245" y2="370"/></g>
+                <polyline points="55,300 95,255 70,205 130,180 115,120 185,150 210,95 250,60" fill="none" stroke="#4f8ef7" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+                <g font-family="monospace" font-size="11" font-weight="700" text-anchor="middle">
+                  <circle cx="55" cy="300" r="12" fill="#4f8ef7"/><text x="55" y="304" fill="#fff">1</text>
+                  <circle cx="95" cy="255" r="12" fill="#1e2333" stroke="#4f8ef7" stroke-width="2"/><text x="95" y="259" fill="#e8ecf5">2</text>
+                  <circle cx="70" cy="205" r="12" fill="#1e2333" stroke="#4f8ef7" stroke-width="2"/><text x="70" y="209" fill="#e8ecf5">3</text>
+                  <circle cx="130" cy="180" r="12" fill="#1e2333" stroke="#4f8ef7" stroke-width="2"/><text x="130" y="184" fill="#e8ecf5">4</text>
+                  <circle cx="115" cy="120" r="12" fill="#1e2333" stroke="#4f8ef7" stroke-width="2"/><text x="115" y="124" fill="#e8ecf5">5</text>
+                  <circle cx="185" cy="150" r="12" fill="#1e2333" stroke="#4f8ef7" stroke-width="2"/><text x="185" y="154" fill="#e8ecf5">6</text>
+                  <circle cx="210" cy="95" r="12" fill="#1e2333" stroke="#4f8ef7" stroke-width="2"/><text x="210" y="99" fill="#e8ecf5">7</text>
+                  <circle cx="250" cy="60" r="12" fill="#34c97e"/><text x="250" y="64" fill="#08130c">8</text>
+                </g>
+              </svg>
+            </div>
+          </div>
+          <div class="savechip">↓ 22% menos quilômetros que a divisão antiga</div>
+          <div class="stats"><div class="stat"><div class="v">47<span style="font-size:11px">km</span></div><div class="k">distância</div></div><div class="stat"><div class="v">3h20</div><div class="k">tempo</div></div><div class="stat"><div class="v">20</div><div class="k">paradas</div></div></div>
+        </div>
+      </div></div>
+      <div class="cap"><span class="tag">novo · servidor próprio</span><h3>Otimização real por ruas</h3><p>A ordem das paradas calculada pelas ruas de verdade (OSRM), não em linha reta. Menos km, menos tempo.</p></div>
+    </div>
+
+    <!-- 5. RASTREAMENTO AO VIVO -->
+    <div class="cell">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="ah">
+          <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div>
+          <div class="ttl">Ao vivo</div><div class="sp"></div>
+          <div class="live"><span class="dot"></span>ao vivo</div>
+        </div>
+        <div class="body tight" style="display:flex;flex-direction:column">
+          <div style="flex:1;position:relative">
+            <div class="map">
+              <div class="maplabel" style="left:16%;top:26%;border-color:#4f8ef7;color:#9cc2ff">João</div>
+              <div class="maplabel" style="left:62%;top:52%;border-color:#34c97e;color:#7ef0ab">Ana</div>
+              <svg width="100%" height="100%" viewBox="0 0 300 360" preserveAspectRatio="xMidYMid slice">
+                <rect width="300" height="360" fill="#0c1119"/>
+                <g stroke="#182234" stroke-width="6"><line x1="-10" y1="90" x2="320" y2="130"/><line x1="-10" y1="230" x2="320" y2="270"/><line x1="90" y1="-10" x2="60" y2="370"/><line x1="220" y1="-10" x2="190" y2="370"/></g>
+                <g stroke="#131c2a" stroke-width="3"><line x1="-10" y1="170" x2="320" y2="200"/><line x1="160" y1="-10" x2="135" y2="370"/></g>
+                <!-- driver dots -->
+                <g><circle cx="80" cy="120" r="16" fill="#4f8ef7" opacity=".18"/><circle cx="80" cy="120" r="7" fill="#4f8ef7" stroke="#fff" stroke-width="2"/></g>
+                <g><circle cx="205" cy="200" r="16" fill="#34c97e" opacity=".18"/><circle cx="205" cy="200" r="7" fill="#34c97e" stroke="#fff" stroke-width="2"/></g>
+                <g><circle cx="140" cy="285" r="16" fill="#a78bfa" opacity=".18"/><circle cx="140" cy="285" r="7" fill="#a78bfa" stroke="#fff" stroke-width="2"/></g>
+              </svg>
+            </div>
+          </div>
+          <div class="dlist">
+            <div class="drv"><div class="avatar" style="background:#4f8ef7">J</div><div class="info"><div class="nm">João · Rota 1</div><div class="pb"><i style="width:40%;background:#4f8ef7"></i></div></div><div class="cnt">8/20</div></div>
+            <div class="drv"><div class="avatar" style="background:#34c97e">A</div><div class="info"><div class="nm">Ana · Rota 2</div><div class="pb"><i style="width:67%;background:#34c97e"></i></div></div><div class="cnt">12/18</div></div>
+            <div class="drv"><div class="avatar" style="background:#a78bfa">P</div><div class="info"><div class="nm">Pedro · Rota 3</div><div class="pb"><i style="width:24%;background:#a78bfa"></i></div></div><div class="cnt">5/21</div></div>
+          </div>
+        </div>
+      </div></div>
+      <div class="cap"><span class="tag">novo</span><h3>Rastreamento ao vivo</h3><p>Você vê onde cada motorista está e quanto já entregou, em tempo real.</p></div>
+    </div>
+
+    <!-- 6. WHATSAPP GRÁTIS -->
+    <div class="cell">
+      <div class="phone"><div class="notch"></div><div class="screen">
+        <div class="wachat">
+          <div class="wabar"><div class="ic" style="width:30px;height:30px;background:transparent;border:0"><svg viewBox="0 0 24 24" fill="none" stroke="#e9edef" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></div><div class="ava">👩</div><div><div class="nm">Maria Oliveira</div><div class="st">online</div></div></div>
+          <div class="wamsgs">
+            <div class="bubble">Olá Maria! 👋 Aqui é o entregador do seu pedido. Seu pacote chega em instantes 📦<span class="tick">14:16 ✓✓</span></div>
+            <div class="bubble">Já estou na Av. Madre Benvenuta, chego em ~2 min 🛵<span class="tick">14:17 ✓✓</span></div>
+          </div>
+          <div class="wanote">Enviado pelo WhatsApp do motorista · <span class="wafree">custo R$ 0</span></div>
+        </div>
+      </div></div>
+      <div class="cap"><span class="tag">novo · grátis</span><h3>Aviso no WhatsApp (de graça)</h3><p>Usa o WhatsApp do próprio motorista com mensagem pronta. Chega onde o cliente olha — sem API, sem custo.</p></div>
+    </div>
+
+  </div>
+
+  <!-- NOTES -->
+  <div class="notes">
+    <div>
+      <h2>Grátis, no que você já tem</h2>
+      <ul class="flist">
+        <li><span class="k free">✓</span><div>Modo motorista, marcar entregue/não entregue <small>lista na ordem + status por parada</small></div></li>
+        <li><span class="k free">✓</span><div>Navegar (Waze/Maps) por parada <small>só um link, custo zero</small></div></li>
+        <li><span class="k free">✓</span><div>Aviso no WhatsApp do motorista <small>mensagem pronta, sem API</small></div></li>
+        <li><span class="k free">✓</span><div>Comprovante com foto e assinatura <small>armazenamento baixo</small></div></li>
+      </ul>
+    </div>
+    <div>
+      <h2>Precisa de serviço externo</h2>
+      <ul class="flist">
+        <li><span class="k paid">$</span><div>Otimização real por ruas (OSRM) <small>servidor próprio ~R$30–80/mês, uso ilimitado</small></div></li>
+        <li><span class="k paid">$</span><div>Rastreamento ao vivo <small>dá pra fazer no seu stack, é o mais pesado</small></div></li>
+        <li><span class="k paid">$</span><div>Envio 100% automático no WhatsApp <small>API oficial, ~R$0,05–0,10 por mensagem</small></div></li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="foot">Maquete PackScan · apenas design — nenhum recurso acima está no app em produção</p>
+</div>
