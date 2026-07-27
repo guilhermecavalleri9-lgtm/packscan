@@ -1937,16 +1937,49 @@ function caminhoComExtremos(pkgs, ini, fim) {
   return caminho;
 }
 
+// Melhora a ordem com 2-opt: enquanto achar duas "arestas" que se cruzam,
+// inverte o trecho entre elas — desfaz ziguezagues e reduz o caminho total.
+// iniFix/fimFix (opcionais) mantêm o ponto de partida/chegada fixos.
+function melhorar2opt(rota, iniFix, fimFix) {
+  if (rota.length < 3) return rota;
+  var pts = rota.slice(), n = pts.length;
+  var melhorou = true, voltas = 0, MAX = 40;
+  while (melhorou && voltas < MAX) {
+    melhorou = false; voltas++;
+    for (var i = 0; i < n - 1; i++) {
+      var A = (i === 0) ? iniFix : pts[i-1];
+      for (var k = i + 1; k < n; k++) {
+        var D = (k === n - 1) ? fimFix : pts[k+1];
+        var B = pts[i], C = pts[k];
+        var antes = 0, depois = 0;
+        if (A) { antes += _distP(A, B); depois += _distP(A, C); }
+        if (D) { antes += _distP(C, D); depois += _distP(B, D); }
+        if (depois + 1e-12 < antes) {
+          // inverte o segmento i..k
+          var lo = i, hi = k;
+          while (lo < hi) { var t = pts[lo]; pts[lo] = pts[hi]; pts[hi] = t; lo++; hi--; }
+          melhorou = true;
+          A = (i === 0) ? iniFix : pts[i-1];
+        }
+      }
+    }
+  }
+  return pts;
+}
+
 // ordena uma rota respeitando os pontos configurados (partidaCustom permite
 // continuar do último pacote já numerado, no caso de adição no meio do dia)
 function ordenarRota(pkgs, partidaCustom) {
   if (pkgs.length <= 1) return pkgs;
   var ini = partidaCustom || _rotaCfg.ini;
   var fim = _rotaCfg.fim;
-  if (ini && fim) return caminhoComExtremos(pkgs, ini, fim);
-  if (ini) return nnAPartirDe(pkgs, ini);
-  if (fim) return nnAPartirDe(pkgs, fim).reverse();
-  return reordenarNN(pkgs);
+  var ordem;
+  if (ini && fim) ordem = caminhoComExtremos(pkgs, ini, fim);
+  else if (ini) ordem = nnAPartirDe(pkgs, ini);
+  else if (fim) ordem = nnAPartirDe(pkgs, fim).reverse();
+  else ordem = reordenarNN(pkgs);
+  // passo extra: 2-opt tira ziguezagues e melhora a proximidade real
+  return melhorar2opt(ordem, ini || null, fim || null);
 }
 
 function reordenarNN(pkgs) {
@@ -2187,11 +2220,24 @@ function formatarCep(cep) {
   return cep.length===8 ? cep.slice(0,5)+'-'+cep.slice(5) : cep;
 }
 
+// detecta se o endereço tem número da casa (ex.: "Rua X, 123").
+// sem número (só referência/servidão) → cada pacote vira uma parada separada.
+function temNumeroCasa(end) {
+  var partes = String(end||'').split(',');
+  return !!((partes[1]||'').trim().match(/^\d+/));
+}
+
 function linhasExcelRota(pkgs, atId) {
+  // garante que a planilha saia SEMPRE na ordem da rota (parada 1, 2, 3...)
+  pkgs = pkgs.slice().sort(function(a,b){ return (a.numNaRota||0) - (b.numNaRota||0); });
   var grupos=[], mapa={};
   pkgs.forEach(function(p){
     var endereco=p.enderecoNorm||p.endereco;
-    var key=chaveEnderecoBase(endereco)+'|'+p.cep+'|'+(p.cidade||'');
+    // só agrupa pacotes que estão no MESMO endereço com número; sem número
+    // (referência) cada um fica na sua parada, com chave única
+    var key = temNumeroCasa(endereco)
+      ? (chaveEnderecoBase(endereco)+'|'+p.cep+'|'+(p.cidade||''))
+      : ('__sn__|'+(p.tracking||p.id||p.numNaRota));
     if (!mapa[key]) { mapa[key]={ nums:[], endereco:endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'', lat:p.lat, lng:p.lng, precisao:p.precisao }; grupos.push(mapa[key]); }
     mapa[key].nums.push('P'+String(p.numNaRota).padStart(3,'0'));
   });
