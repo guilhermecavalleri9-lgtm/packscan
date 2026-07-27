@@ -762,6 +762,15 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div class="alert alert-blue">ℹ <div>Painel do administrador. Aqui você aprova cadastros novos e recarrega os créditos pré-pagos de cada usuário (1 crédito = 1 requisição ao Google). Quando o saldo zera, o usuário é bloqueado até comprar mais.</div></div>
 
     <div class="card" style="margin-bottom:1rem">
+      <div class="card-title">roteirização por ruas (OSRM)</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Testa se o servidor alcança o motor de rotas. Enquanto em teste, só o admin usa o OSRM ao roteirizar (os demais usam o modo padrão).</div>
+      <div class="btn-row" style="margin-bottom:.5rem">
+        <button class="btn btn-p btn-sm" onclick="testarOSRM()">🧭 Testar OSRM</button>
+      </div>
+      <div id="osrm-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);min-height:18px"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem">
       <div class="card-title">cadastros pendentes de aprovação</div>
       <div id="auth-pendentes-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Nenhum.</div>
     </div>
@@ -2732,7 +2741,40 @@ function separarPorEixo(pontos) {
   });
 }
 
-function arGerar() {
+// OSRM (roteirização por ruas reais). Fase de teste: só admin usa; quando
+// aprovado, é só trocar OSRM_SOMENTE_ADMIN pra false que vale pra todos.
+var OSRM_ATIVO = true, OSRM_SOMENTE_ADMIN = true;
+function osrmHabilitado(){ return OSRM_ATIVO && (!OSRM_SOMENTE_ADMIN || AUTH_ADMIN); }
+
+// pede a ordem otimizada ao servidor (que chama o OSRM). Devolve os pkgs na
+// nova ordem, ou null se falhar — aí o chamador usa o 2-opt local.
+async function ordenarRotaOSRM(pkgs){
+  if (!osrmHabilitado() || pkgs.length < 3) return null;
+  try {
+    var body = { pontos: pkgs.map(function(p){ return { lat:p.lat, lng:p.lng }; }) };
+    if (_rotaCfg.ini) body.ini = _rotaCfg.ini;
+    if (_rotaCfg.fim) body.fim = _rotaCfg.fim;
+    var r = await apiFetch(BACKEND+'/api/otimizar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) });
+    var d = await r.json();
+    if (d && d.ok && Array.isArray(d.ordem) && d.ordem.length === pkgs.length) {
+      return d.ordem.map(function(i){ return pkgs[i]; });
+    }
+  } catch(e){ /* cai no fallback */ }
+  return null;
+}
+
+async function testarOSRM(){
+  var el=document.getElementById('osrm-status');
+  el.textContent='⏳ testando...'; el.style.color='var(--amber)';
+  try {
+    var r=await apiFetch(BACKEND+'/api/otimizar/teste');
+    var d=await r.json();
+    if(d.ok){ el.innerHTML='✓ OSRM respondendo em '+d.ms+'ms · ordem '+JSON.stringify(d.ordem); el.style.color='var(--green)'; }
+    else { el.textContent='✗ OSRM não respondeu: '+(d.error||'erro')+' — a roteirização usa o modo padrão automaticamente.'; el.style.color='var(--red)'; }
+  } catch(e){ el.textContent='✗ erro: '+e.message; el.style.color='var(--red)'; }
+}
+
+async function arGerar() {
   var geo = pacotes.filter(function(p){ return p.lat && p.lng; });
   if (!geo.length) { alert('Geocodifique os pacotes primeiro.'); return; }
   if (!_arConfig.length) { alert('Adicione pelo menos uma rota.'); return; }
@@ -2756,11 +2798,13 @@ function arGerar() {
     pos += qtd;
   });
 
-  // Reordena cada rota internamente por vizinho mais próximo
-  _arRotasGeradas.forEach(function(r) {
-    r.pkgs = ordenarRota(r.pkgs);
-    r.pkgs.forEach(function(p, i){ p._previewNum = i+1; });
-  });
+  // Reordena cada rota: tenta o OSRM (ruas reais); se falhar, usa o 2-opt local
+  for (var ri2 = 0; ri2 < _arRotasGeradas.length; ri2++) {
+    var rr = _arRotasGeradas[ri2];
+    var viaOSRM = await ordenarRotaOSRM(rr.pkgs);
+    rr.pkgs = viaOSRM || ordenarRota(rr.pkgs);
+    rr.pkgs.forEach(function(p, i){ p._previewNum = i+1; });
+  }
 
   // Mostra resultado
   var html = '<table><thead><tr><th>Rota</th><th>Motorista</th><th>Pacotes</th><th>Cor</th></tr></thead><tbody>';
@@ -3632,14 +3676,17 @@ function atTotal(){
   gt.textContent='Roteirizar em '+_nMot+' rotas';
   go.style.opacity=ok?1:.5; go.style.pointerEvents=ok?'auto':'none';
 }
-function confirmarRoteirizar(){
+async function confirmarRoteirizar(){
   var t=geoTotal();
   if(!t){ alert('Geocodifique os pacotes primeiro.'); return; }
   if(_nMot>1 && somaQ()!==t) return;
   if(_nMot===1) _arConfig=[{nome:'Rota 1', qtd:t, cor:CORES[0]}];
   else _arConfig=_qs.map(function(q,i){ return {nome:'Rota '+(i+1), qtd:q, cor:CORES[i%CORES.length]}; });
+  var go=document.getElementById('rot-go'), gt=go?go.querySelector('.gotxt'):null, txtOrig=gt?gt.textContent:'';
+  if(gt && osrmHabilitado()){ gt.textContent='Otimizando pelas ruas…'; go.style.pointerEvents='none'; }
+  await arGerar();          // gera a divisão + ordena (OSRM com fallback no 2-opt)
+  if(gt){ gt.textContent=txtOrig; go.style.pointerEvents='auto'; }
   fecharRoteirizar();
-  arGerar();             // gera a divisão (reaproveita a lógica existente)
   arAplicarNoMapa(true); // aplica no mapa mas SEM sair da tela inicial
   homeMapPlot();         // desenha as rotas no mapa da própria tela inicial
   renderHome();

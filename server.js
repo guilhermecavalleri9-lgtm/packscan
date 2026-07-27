@@ -39,6 +39,84 @@ function json(res, code, data) {
   res.end(JSON.stringify(data));
 }
 
+// ─── OSRM: roteirização por ruas reais (opcional, com fallback no cliente) ──────
+const OSRM_URL = process.env.OSRM_URL || 'http://169.58.84.152:5000';
+
+// pega a matriz de tempos (duração) entre todos os pontos via serviço /table
+function osrmTable(coords) { // coords = [[lng,lat], ...]
+  return new Promise((resolve, reject) => {
+    const coordStr = coords.map(c => c[0].toFixed(6) + ',' + c[1].toFixed(6)).join(';');
+    const full = OSRM_URL + '/table/v1/driving/' + coordStr + '?annotations=duration';
+    const lib = full.indexOf('https') === 0 ? https : http;
+    const reqO = lib.get(full, r => {
+      let data = '';
+      r.on('data', c => data += c);
+      r.on('end', () => {
+        try {
+          const j = JSON.parse(data);
+          if (j.code === 'Ok' && j.durations) resolve(j.durations);
+          else reject(new Error('OSRM: ' + (j.code || 'sem matriz')));
+        } catch (e) { reject(e); }
+      });
+    });
+    reqO.on('error', reject);
+    reqO.setTimeout(15000, () => reqO.destroy(new Error('OSRM timeout')));
+  });
+}
+
+// 2-opt usando a matriz de tempos; iniIdx/fimIdx (índices no vetor coords) fixam
+// as pontas quando o usuário configurou ponto de partida/chegada
+function osrmDoisOpt(ordem, D, base, iniIdx, fimIdx) {
+  const di = (a, b) => { const v = D[a] && D[a][b]; return (v == null ? 1e12 : v); };
+  const node = pos => base + ordem[pos];
+  let n = ordem.length, melhorou = true, voltas = 0;
+  while (melhorou && voltas < 40) {
+    melhorou = false; voltas++;
+    for (let i = 0; i < n - 1; i++) {
+      let A = (i === 0) ? iniIdx : node(i - 1);
+      for (let k = i + 1; k < n; k++) {
+        const E = (k === n - 1) ? fimIdx : node(k + 1);
+        const B = node(i), C = node(k);
+        let antes = 0, depois = 0;
+        if (A >= 0) { antes += di(A, B); depois += di(A, C); }
+        if (E >= 0) { antes += di(C, E); depois += di(B, E); }
+        if (depois + 1e-9 < antes) {
+          let lo = i, hi = k;
+          while (lo < hi) { const t = ordem[lo]; ordem[lo] = ordem[hi]; ordem[hi] = t; lo++; hi--; }
+          melhorou = true; A = (i === 0) ? iniIdx : node(i - 1);
+        }
+      }
+    }
+  }
+  return ordem;
+}
+
+// devolve a ordem ótima (índices dos pontos de entrada) usando tempos reais
+async function otimizarOSRM(pontos, ini, fim) {
+  const coords = [];
+  let iniIdx = -1, fimIdx = -1;
+  if (ini && ini.lat && ini.lng) { iniIdx = coords.length; coords.push([ini.lng, ini.lat]); }
+  const base = coords.length;
+  pontos.forEach(p => coords.push([p.lng, p.lat]));
+  if (fim && fim.lat && fim.lng) { fimIdx = coords.length; coords.push([fim.lng, fim.lat]); }
+  const D = await osrmTable(coords);
+  const n = pontos.length;
+  const di = (a, b) => { const v = D[a] && D[a][b]; return (v == null ? 1e12 : v); };
+  const idx = i => base + i;
+  // vizinho mais próximo (por tempo), começando do ponto de partida se houver
+  const visit = new Array(n).fill(false), ordem = [];
+  let cur;
+  if (iniIdx >= 0) cur = iniIdx;
+  else { ordem.push(0); visit[0] = true; cur = idx(0); }
+  while (ordem.length < n) {
+    let best = -1, bd = Infinity;
+    for (let j = 0; j < n; j++) if (!visit[j]) { const d = di(cur, idx(j)); if (d < bd) { bd = d; best = j; } }
+    if (best < 0) break;
+    visit[best] = true; ordem.push(best); cur = idx(best);
+  }
+  return osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
+}
+
 function httpsGet(hostname, reqPath) {
   return new Promise((resolve, reject) => {
     https.get({ hostname, path: reqPath, headers: { 'User-Agent': 'PackScan/3.0' } }, r => {
@@ -733,6 +811,35 @@ const server = http.createServer(async (req, res) => {
       temGoogleKey: !!(u && u.googleKey),
       temAnthropicKey: !!(u && u.anthropicKey)
     });
+  }
+
+  // ─── ROTEIRIZAÇÃO por ruas reais (OSRM) — ordena os pontos de uma rota ──────
+  // Responde { ok:true, ordem:[...] } ou { ok:false }. O cliente cai no 2-opt
+  // local quando ok:false, então nunca quebra a roteirização.
+  if (req.method === 'POST' && pathname === '/api/otimizar') {
+    const body = await readBody(req);
+    const pts = Array.isArray(body.pontos) ? body.pontos.filter(p => p && p.lat && p.lng) : [];
+    if (pts.length < 3) return json(res, 200, { ok: false, error: 'poucos pontos' });
+    try {
+      const t0 = Date.now();
+      const ordem = await otimizarOSRM(pts, body.ini || null, body.fim || null);
+      return json(res, 200, { ok: true, ordem, ms: Date.now() - t0, n: pts.length });
+    } catch (e) {
+      return json(res, 200, { ok: false, error: String((e && e.message) || e) });
+    }
+  }
+
+  // teste rápido do OSRM (admin) — confirma que o servidor alcança o motor de rotas
+  if (req.method === 'GET' && pathname === '/api/otimizar/teste') {
+    try {
+      const t0 = Date.now();
+      const ordem = await otimizarOSRM(
+        [{ lat: -27.60, lng: -48.66 }, { lat: -27.59, lng: -48.55 }, { lat: -27.61, lng: -48.62 }],
+        null, null);
+      return json(res, 200, { ok: true, ordem, ms: Date.now() - t0, osrm: OSRM_URL });
+    } catch (e) {
+      return json(res, 200, { ok: false, error: String((e && e.message) || e), osrm: OSRM_URL });
+    }
   }
 
   // ─── CHAVES: o usuário salva as próprias chaves de API (plano próprio) ──────
