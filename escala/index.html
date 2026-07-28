@@ -157,6 +157,22 @@ input::placeholder{color:var(--txt3)}
 .stepper input{border:none;background:none;text-align:center;padding:0;font-size:17px;font-weight:800}
 .stepper input:focus{background:none}
 
+/* demanda por região */
+.dem-reg{border:1.5px solid var(--linha);border-radius:14px;padding:12px;margin-top:10px;background:#fbfafc}
+.dem-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:11px}
+.dem-nome{font-weight:800;font-size:15px}
+.dem-locks{display:flex;gap:5px;flex-wrap:wrap}
+.lockchip{font-size:10.5px;font-weight:700;background:var(--roxo-fraco);color:var(--roxo);padding:2px 9px;border-radius:999px;display:inline-flex;gap:3px;align-items:center}
+.lockchip.off{background:#efedf2;color:var(--txt3)}
+.dem-row{display:flex;gap:10px}
+.dem-ctrl{flex:1;display:flex;align-items:center;border:1.5px solid var(--linha);border-radius:12px;background:#fff;overflow:hidden}
+.dem-ctrl .dem-ic{font-size:17px;padding:0 2px 0 9px}
+.dem-ctrl button{width:36px;height:42px;font-size:21px;font-weight:600;color:var(--roxo);flex:0 0 auto}
+.dem-ctrl button:disabled{color:var(--txt3);opacity:.4}
+.dem-val{flex:1;text-align:center;font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
+.st.parcial{background:var(--amarelo-fraco);color:var(--amarelo)}
+.st.vazio{background:#efedf2;color:var(--txt3)}
+
 .toast{position:fixed;left:50%;bottom:104px;transform:translateX(-50%) translateY(20px);background:#1f1b24;color:#fff;padding:12px 20px;border-radius:999px;font-size:13.5px;font-weight:600;z-index:200;opacity:0;transition:.25s;box-shadow:0 8px 24px rgba(0,0,0,.3);pointer-events:none;white-space:nowrap}
 .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
 .del{color:var(--vermelho);font-weight:700}
@@ -193,19 +209,10 @@ hr.sep{border:none;border-top:1px solid var(--linha);margin:14px 0}
       <div class="sec-tit">Gerar escala</div>
       <div class="card" id="card-gerar">
         <label>Data</label>
-        <input type="date" id="g-data">
-        <label>Demanda do dia <span style="font-weight:500;color:var(--txt3)">(opcional)</span></label>
-        <div class="linha2">
-          <div>
-            <div class="mini" style="margin-bottom:6px">🚗 Carros</div>
-            <div class="stepper"><button onclick="passo('g-carros',-1)">−</button><input type="number" id="g-carros" value="0" min="0" inputmode="numeric"><button onclick="passo('g-carros',1)">+</button></div>
-          </div>
-          <div>
-            <div class="mini" style="margin-bottom:6px">🛵 Motos</div>
-            <div class="stepper"><button onclick="passo('g-motos',-1)">−</button><input type="number" id="g-motos" value="0" min="0" inputmode="numeric"><button onclick="passo('g-motos',1)">+</button></div>
-          </div>
-        </div>
-        <div class="mini" style="margin:9px 2px 0;color:var(--txt3)">Deixe 0 para escalar só os fixos + cobrir folgas.</div>
+        <input type="date" id="g-data" onchange="renderDemandaRegioes()">
+        <label style="margin-top:16px">Quantos por região <span style="font-weight:500;color:var(--txt3)">(carros e motos)</span></label>
+        <div id="demanda-regioes"></div>
+        <div class="mini" style="margin:10px 2px 0;color:var(--txt3)">🔒 O fixo do dia já entra travado no mínimo. Aumente só se precisar de reforço.</div>
         <button class="btn" style="margin-top:16px" onclick="gerarEscala()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
           Gerar escala do dia
@@ -353,6 +360,7 @@ function irPara(t){
   document.getElementById('atalhos').style.display = t==='inicio'?'flex':'none';
   document.getElementById('fab').style.display = t==='motoristas'?'flex':'none';
   window.scrollTo(0,0);
+  if(t==='inicio') renderDemandaRegioes();
   if(t==='motoristas') renderMotoristas();
   if(t==='regioes') renderRegioes();
   if(t==='folgas') renderFolgas();
@@ -543,59 +551,110 @@ function dataExtenso(str){
   var meses=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
   return dias[d.getDay()]+', '+p[2]+' de '+meses[d.getMonth()];
 }
-function passo(id,dir){ var i=document.getElementById(id); var v=(parseInt(i.value)||0)+dir; if(v<0)v=0; i.value=v; }
+/* ════════════════ DEMANDA POR REGIÃO ════════════════ */
+var demandaReg = {};    // {regiaoId:{carros,motos}} escolha do usuário
+var lockMinReg = {};    // {regiaoId:{carros,motos}} mínimo travado pelos fixos do dia
+
+function fixosDoDia(regiaoId, data){
+  if(!data) return [];
+  var dow=diaDaSemana(data);
+  return state.motoristas.filter(function(m){
+    return m.vinculo==='fixo' && m.regiaoId===regiaoId
+      && (m.dias||[]).indexOf(dow)>=0
+      && !state.folgas.some(function(f){return f.motoristaId===m.id&&f.data===data;});
+  });
+}
+function renderDemandaRegioes(){
+  var cont=document.getElementById('demanda-regioes'); if(!cont) return;
+  if(!state.regioes.length){ cont.innerHTML='<div class="mini" style="color:var(--txt3);margin-top:8px">Cadastre regiões e motoristas primeiro.</div>'; return; }
+  var data=document.getElementById('g-data').value;
+  var html='';
+  state.regioes.slice().sort(function(a,b){return a.nome.localeCompare(b.nome);}).forEach(function(r){
+    var fx=fixosDoDia(r.id,data);
+    var minC=fx.filter(function(m){return m.tipo==='carro';}).length;
+    var minM=fx.filter(function(m){return m.tipo==='moto';}).length;
+    lockMinReg[r.id]={carros:minC,motos:minM};
+    var prev=demandaReg[r.id]||{};
+    var vc=Math.max(minC, prev.carros!=null?prev.carros:minC);
+    var vm=Math.max(minM, prev.motos!=null?prev.motos:minM);
+    demandaReg[r.id]={carros:vc,motos:vm};
+    var chips = fx.length
+      ? fx.map(function(m){return '<span class="lockchip">🔒 '+(m.tipo==='moto'?'🛵':'🚗')+' '+esc(m.nome)+'</span>';}).join('')
+      : '<span class="lockchip off">sem fixo hoje</span>';
+    html+='<div class="dem-reg">'+
+      '<div class="dem-head"><span class="dem-nome">'+esc(r.nome)+'</span><div class="dem-locks">'+chips+'</div></div>'+
+      '<div class="dem-row">'+
+        demCtrl(r.id,'carros','🚗',vc,minC)+
+        demCtrl(r.id,'motos','🛵',vm,minM)+
+      '</div></div>';
+  });
+  cont.innerHTML=html;
+}
+function demCtrl(id,tipo,ic,val,min){
+  return '<div class="dem-ctrl"><span class="dem-ic">'+ic+'</span>'+
+    '<button onclick="passoReg(\''+id+'\',\''+tipo+'\',-1)"'+(val<=min?' disabled':'')+'>−</button>'+
+    '<span class="dem-val" id="dem-'+tipo+'-'+id+'">'+val+'</span>'+
+    '<button onclick="passoReg(\''+id+'\',\''+tipo+'\',1)">+</button></div>';
+}
+function passoReg(id,tipo,dir){
+  var min=(lockMinReg[id]&&lockMinReg[id][tipo])||0;
+  if(!demandaReg[id]) demandaReg[id]={carros:0,motos:0};
+  var v=(demandaReg[id][tipo]||0)+dir;
+  if(v<min)v=min; if(v<0)v=0;
+  demandaReg[id][tipo]=v;
+  renderDemandaRegioes();
+}
 
 /* ════════════════ GERAR ESCALA ════════════════ */
 function gerarEscala(){
   var data=document.getElementById('g-data').value;
   if(!data){ toast('Escolha a data'); return; }
+  renderDemandaRegioes();              // garante demandaReg/lockMinReg da data escolhida
   var dow=diaDaSemana(data);
-  var alvoCarros=parseInt(document.getElementById('g-carros').value)||0;
-  var alvoMotos=parseInt(document.getElementById('g-motos').value)||0;
-
   function emFolga(id){ return state.folgas.some(function(f){return f.motoristaId===id&&f.data===data;}); }
 
-  var fixos=state.motoristas.filter(function(m){return m.vinculo==='fixo';});
   var suplentes=state.motoristas.filter(function(m){return m.vinculo==='suplente';});
-  var usados={};              // ids já escalados
+  var usados={};              // ids já escalados no dia (cada um usado 1x)
   var alertas=[];
-  var escalados=[];           // {mot, regiaoId|null, papel}
+  var escalados=[];           // {mot}
 
-  // 1) montar por região
-  var rotas=state.regioes.map(function(r){
-    var fixosReg=fixos.filter(function(m){return m.regiaoId===r.id;});
+  var rotas=state.regioes.slice().sort(function(a,b){return a.nome.localeCompare(b.nome);}).map(function(r){
+    // fixos travados (trabalham no dia e não estão de folga)
+    var fixosReg=state.motoristas.filter(function(m){return m.vinculo==='fixo'&&m.regiaoId===r.id;});
     var trab=fixosReg.filter(function(m){return (m.dias||[]).indexOf(dow)>=0 && !emFolga(m.id);});
-    trab.forEach(function(m){ usados[m.id]=true; escalados.push({mot:m,regiaoId:r.id,papel:'fixo'}); });
+    trab.forEach(function(m){ usados[m.id]=true; escalados.push({mot:m}); });
     var fora=fixosReg.filter(function(m){return trab.indexOf(m)<0;}).map(function(m){
       return { nome:m.nome, motivo: emFolga(m.id)?'folga':'não trabalha '+DIAS_LB[dow] };
     });
-    var status = trab.length?'ok':(fixosReg.length?'desc':'semfixo');
-    return { regiao:r, fixos:trab, fora:fora, suplentes:[], status:status };
+    var lc=trab.filter(function(m){return m.tipo==='carro';}).length;
+    var lm=trab.filter(function(m){return m.tipo==='moto';}).length;
+    // alvo por região (nunca abaixo do mínimo travado)
+    var alvo=demandaReg[r.id]||{carros:lc,motos:lm};
+    var tc=Math.max(alvo.carros||0, lc), tm=Math.max(alvo.motos||0, lm);
+    // completar com suplentes que cobrem a região, por tipo
+    var sup=[], faltaC=0, faltaM=0;
+    [['carro',tc-lc],['moto',tm-lm]].forEach(function(par){
+      var tipo=par[0], need=par[1];
+      while(need>0){
+        var cand=suplentes.find(function(m){ return !usados[m.id] && !emFolga(m.id) && m.tipo===tipo && (m.regioes||[]).indexOf(r.id)>=0; });
+        if(!cand){ if(tipo==='carro')faltaC=need; else faltaM=need; break; }
+        usados[cand.id]=true; sup.push(cand); escalados.push({mot:cand}); need--;
+      }
+    });
+    if(faltaC>0) alertas.push({tipo:'warn', txt:r.nome+': faltou '+faltaC+' '+(faltaC>1?'carros':'carro')+' — nenhum suplente disponível que cubra a região.'});
+    if(faltaM>0) alertas.push({tipo:'warn', txt:r.nome+': faltou '+faltaM+' '+(faltaM>1?'motos':'moto')+' — nenhum suplente disponível que cubra a região.'});
+    var assign=trab.length+sup.length;
+    var status;
+    if(tc+tm===0 && assign===0) status='vazio';
+    else if(assign===0) status='desc';
+    else if(faltaC>0||faltaM>0) status='parcial';
+    else if(trab.length===0) status='sup';
+    else status='ok';
+    return { regiao:r, fixos:trab, sup:sup, fora:fora, status:status, tc:tc, tm:tm };
   });
 
-  // 2) cobrir regiões descobertas com suplentes disponíveis
-  rotas.forEach(function(rt){
-    if(rt.status!=='desc') return;
-    var cand=suplentes.find(function(m){ return !usados[m.id] && !emFolga(m.id) && (m.regioes||[]).indexOf(rt.regiao.id)>=0; });
-    if(cand){ usados[cand.id]=true; rt.suplentes.push(cand); rt.status='sup'; escalados.push({mot:cand,regiaoId:rt.regiao.id,papel:'cobertura'}); }
-    else { alertas.push({tipo:'err', txt:'Região "'+rt.regiao.nome+'" sem cobertura — nenhum suplente disponível.'}); }
-  });
-
-  // 3) demanda: reforço por tipo de veículo
-  function contaTipo(tipo){ return escalados.filter(function(e){return e.mot.tipo===tipo;}).length; }
-  var reforco=[];
-  [['carro',alvoCarros],['moto',alvoMotos]].forEach(function(par){
-    var tipo=par[0], alvo=par[1];
-    var falta=alvo-contaTipo(tipo);
-    while(falta>0){
-      var cand=suplentes.find(function(m){ return !usados[m.id] && !emFolga(m.id) && m.tipo===tipo; });
-      if(!cand){ alertas.push({tipo:'warn', txt:'Faltou '+falta+' '+(tipo==='carro'?(falta>1?'carros':'carro'):(falta>1?'motos':'moto'))+' — sem suplente disponível.'}); break; }
-      usados[cand.id]=true; reforco.push(cand); escalados.push({mot:cand,regiaoId:null,papel:'reforco'}); falta--;
-    }
-  });
-
-  // resumo de contagem
-  var totCarros=contaTipo('carro'), totMotos=contaTipo('moto');
+  var totCarros=escalados.filter(function(e){return e.mot.tipo==='carro';}).length;
+  var totMotos=escalados.filter(function(e){return e.mot.tipo==='moto';}).length;
 
   // ── render ──
   var h='';
@@ -617,31 +676,21 @@ function gerarEscala(){
   }
 
   rotas.forEach(function(rt){
-    var stLabel={ok:'Coberta',sup:'Suplente',desc:'Descoberta',semfixo:'Sem fixo'}[rt.status];
-    var stClass={ok:'ok',sup:'sup',desc:'desc',semfixo:'semfixo'}[rt.status];
-    h+='<div class="rota"><div class="rota-h"><div class="nm">'+esc(rt.regiao.nome)+'</div><span class="st '+stClass+'">'+stLabel+'</span></div>';
+    var stLabel={ok:'Completa',sup:'Suplente',desc:'Descoberta',parcial:'Faltando',vazio:'Sem demanda'}[rt.status];
+    var alvoTxt=(rt.tc||rt.tm)?'<span class="pp" style="margin:0 8px 0 auto;white-space:nowrap">🚗'+rt.tc+' · 🛵'+rt.tm+'</span>':'';
+    h+='<div class="rota"><div class="rota-h"><div class="nm">'+esc(rt.regiao.nome)+'</div>'+alvoTxt+'<span class="st '+rt.status+'">'+stLabel+'</span></div>';
     var linhas='';
-    rt.fixos.forEach(function(m){ linhas+=linhaMot(m,'Fixo'); });
-    rt.suplentes.forEach(function(m){ linhas+=linhaMot(m,'Suplente (cobrindo folga)'); });
+    rt.fixos.forEach(function(m){ linhas+=linhaMot(m,'Fixo 🔒'); });
+    rt.sup.forEach(function(m){ linhas+=linhaMot(m, rt.fixos.length?'Suplente (reforço)':'Suplente (cobrindo)'); });
     if(!linhas){
-      if(rt.fora.length){ linhas='<div class="mot-linha" style="border:none"><span class="pp">Fixo(s) fora hoje: '+rt.fora.map(function(f){return esc(f.nome)+' ('+f.motivo+')';}).join(', ')+'</span></div>'; }
-      else linhas='<div class="mot-linha" style="border:none"><span class="pp">Nenhum fixo cadastrado nessa região.</span></div>';
+      if(rt.status==='vazio') linhas='<div class="mot-linha" style="border:none"><span class="pp">Sem demanda para hoje.</span></div>';
+      else if(rt.fora.length) linhas='<div class="mot-linha" style="border:none"><span class="pp">Fixo(s) fora: '+rt.fora.map(function(f){return esc(f.nome)+' ('+f.motivo+')';}).join(', ')+'</span></div>';
+      else linhas='<div class="mot-linha" style="border:none"><span class="pp">Nenhum motorista disponível.</span></div>';
     } else if(rt.fora.length){
       linhas+='<div class="mot-linha"><span class="pp">Fora hoje: '+rt.fora.map(function(f){return esc(f.nome)+' ('+f.motivo+')';}).join(', ')+'</span></div>';
     }
     h+='<div class="rota-b">'+linhas+'</div></div>';
   });
-
-  if(reforco.length){
-    h+='<div class="sec-tit">Reforço (demanda extra)</div><div class="card pad0">';
-    reforco.forEach(function(m){
-      var regs=(m.regioes||[]).map(function(id){return nomeRegiao(id);});
-      h+='<div class="item"><div class="av">'+(m.tipo==='moto'?'🛵':'🚗')+'</div>'+
-         '<div class="mid"><div class="nome">'+esc(m.nome)+'</div><div class="desc"><span class="tag suplente">Reforço</span>'+
-         (regs.length?'pode cobrir: '+esc(regs.join(', ')):'sem região definida')+'</div></div></div>';
-    });
-    h+='</div><div class="mini" style="margin:2px 4px;color:var(--txt3)">Encaixe o reforço na rota mais cheia do dia.</div>';
-  }
 
   // suplentes de sobra (disponíveis não usados)
   var sobra=suplentes.filter(function(m){return !usados[m.id]&&!emFolga(m.id);});
