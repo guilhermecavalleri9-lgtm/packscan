@@ -3817,7 +3817,11 @@ function homePosImport(adicionar, novos){
 // ── BAIXAR planilha do motorista direto da tela inicial ──
 function homeBaixar(){
   if(typeof rotas==='undefined' || !rotas.length){ alert('Roteirize os pacotes primeiro para gerar as planilhas.'); return; }
-  downloadTodos();
+  var comPk = rotas.filter(function(r){ return r.pkgs && r.pkgs.length; });
+  if(comPk.length<=1){ downloadTodos(); return; }
+  // 2+ rotas: baixa uma planilha SEPARADA por motorista (com um pequeno intervalo
+  // pra o navegador não bloquear os downloads em sequência)
+  comPk.forEach(function(r,i){ setTimeout(function(){ gerarExcel(r); }, i*500); });
 }
 
 // Re-otimiza SÓ a ordem de cada rota (pelas ruas, via OSRM com fallback),
