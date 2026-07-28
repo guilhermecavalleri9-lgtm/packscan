@@ -1234,6 +1234,16 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ─── ESCALA (app separado, sem login, só por link direto) ─────────────────
+  if (req.method === 'GET' && (pathname === '/escala' || pathname === '/escala/' || pathname === '/escala/index.html')) {
+    fs.readFile(path.join(__dirname, 'escala', 'index.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+
   // ─── SALVAR CORREÇÃO MANUAL ───────────────────────────────────────────────
   if (req.method === 'POST' && pathname === '/api/geocode/correcao') {
     const body = await readBody(req);
