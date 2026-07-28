@@ -3899,7 +3899,12 @@ async function drvCarregarLinha(){
   try{
     var r=await apiFetch(BACKEND+'/api/rota-linha',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pontos:_drvStops.map(function(s){return {lat:s.lat,lng:s.lng};})})});
     var d=await r.json();
-    if(d && d.ok && d.linha && d.linha.length>1){ _drvLinha=d.linha; if(document.getElementById('drv').classList.contains('on')) drvPlot(); }
+    // valida que vieram coordenadas plausíveis (lat/lng do Sul do Brasil), pra um
+    // traçado torto/invertido não bagunçar a linha
+    if(d && d.ok && Array.isArray(d.linha) && d.linha.length>1){
+      var ok=d.linha.every(function(c){ return c&&c.length===2 && c[0]<-20 && c[0]>-34 && c[1]<-40 && c[1]>-58; });
+      if(ok){ _drvLinha=d.linha; if(document.getElementById('drv').classList.contains('on')) drvPlot(); }
+    }
   }catch(e){}
 }
 function _hav(a,b){ var R=6371e3, dl=(b.lat-a.lat)*Math.PI/180, dg=(b.lng-a.lng)*Math.PI/180, la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180; var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(la1)*Math.cos(la2)*Math.sin(dg/2)*Math.sin(dg/2); return 2*R*Math.asin(Math.sqrt(x)); }
@@ -3980,11 +3985,16 @@ function drvPlot(){
       mk.on('click',(function(idx){ return function(){ _drvIdx=idx; document.getElementById('drv-sheet').classList.remove('peek'); drvRender(); }; })(i));
     });
   }catch(e){}
-  // 2) LINHA da rota (à parte, protegida). Traçado pelas ruas quando disponível;
-  // enquanto carrega (ou se falhar), linha reta sólida ligando as paradas.
+  // 2) LINHA — SEMPRE desenha a reta ligando as paradas (base garantida) e, por
+  // cima, o traçado real pelas ruas (OSRM) quando estiver carregado.
   try{
-    if(_drvLinha && _drvLinha.length>1) L.polyline(_drvLinha,{color:'#4f8ef7',weight:5,opacity:.9}).addTo(_drvLayer);
-    else L.polyline(_drvStops.map(function(s){return [s.lat,s.lng];}),{color:'#4f8ef7',weight:3,opacity:.6}).addTo(_drvLayer);
+    var reta=_drvStops.map(function(s){return [s.lat,s.lng];});
+    if(reta.length>1) L.polyline(reta,{color:'#4f8ef7',weight:3,opacity:.5}).addTo(_drvLayer).bringToFront();
+  }catch(e){}
+  try{
+    if(_drvLinha && _drvLinha.length>1){
+      var pl=L.polyline(_drvLinha,{color:'#4f8ef7',weight:5,opacity:.95}); pl.addTo(_drvLayer); pl.bringToFront();
+    }
   }catch(e){}
   // NÃO mexe no zoom/posição aqui — o motorista controla o mapa.
   try{ _drvMap.invalidateSize(); }catch(e){}
