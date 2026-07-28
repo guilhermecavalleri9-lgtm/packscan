@@ -297,8 +297,6 @@ hr.sep{border:none;border-top:1px solid var(--linha);margin:14px 0}
     <div id="bloco-fixo" style="display:none">
       <label>Região fixa</label>
       <select id="m-regiao"></select>
-      <label>Dias que trabalha</label>
-      <div class="dias" id="m-dias"></div>
     </div>
 
     <!-- suplente -->
@@ -306,6 +304,13 @@ hr.sep{border:none;border-top:1px solid var(--linha);margin:14px 0}
       <label>Regiões que pode fazer</label>
       <div class="chips" id="m-regioes-sup"></div>
       <div class="mini" id="sup-vazio" style="margin-top:8px;color:var(--txt3);display:none">Cadastre regiões primeiro na aba Regiões.</div>
+    </div>
+
+    <!-- dias (fixo e suplente) -->
+    <div id="bloco-dias">
+      <label>Dias que trabalha</label>
+      <div class="dias" id="m-dias"></div>
+      <div class="mini" id="dias-hint" style="margin-top:6px;color:var(--txt3);display:none">Suplente só entra na escala nesses dias. Sem nenhum marcado = qualquer dia.</div>
     </div>
 
     <button class="btn" style="margin-top:20px" onclick="salvarMotorista()">Salvar</button>
@@ -396,6 +401,7 @@ function selVinculo(v){
   document.getElementById('m-suplente').classList.toggle('on',v==='suplente');
   document.getElementById('bloco-fixo').style.display = v==='fixo'?'block':'none';
   document.getElementById('bloco-suplente').style.display = v==='suplente'?'block':'none';
+  document.getElementById('dias-hint').style.display = v==='suplente'?'block':'none';
 }
 function renderDias(){
   var el=document.getElementById('m-dias'); el.innerHTML='';
@@ -431,6 +437,7 @@ function salvarMotorista(){
     if(!obj.dias.length){ toast('Marque os dias de trabalho'); return; }
   } else {
     obj.regioes=formRegioesSup.slice();
+    obj.dias=formDias.slice().sort(function(a,b){return a-b;});   // vazio = qualquer dia
   }
   if(editandoId){ var i=state.motoristas.findIndex(function(x){return x.id===editandoId;}); state.motoristas[i]=obj; }
   else state.motoristas.push(obj);
@@ -457,7 +464,8 @@ function renderMotoristas(){
       det = '<span class="tag fixo">Fixo</span><span>'+esc(nomeRegiao(m.regiaoId))+'</span>· '+(m.dias||[]).map(function(d){return DIAS_LB[d];}).join(' ');
     } else {
       var regs=(m.regioes||[]).map(function(id){return nomeRegiao(id);});
-      det = '<span class="tag suplente">Suplente</span>'+(regs.length?('<span>'+esc(regs.join(', '))+'</span>'):'<span style="color:var(--txt3)">sem região</span>');
+      var diasTxt = (m.dias&&m.dias.length)?('· '+m.dias.map(function(d){return DIAS_LB[d];}).join(' ')):'<span style="color:var(--txt3)">· qualquer dia</span>';
+      det = '<span class="tag suplente">Suplente</span>'+(regs.length?('<span>'+esc(regs.join(', '))+'</span>'):'<span style="color:var(--txt3)">sem região</span>')+diasTxt;
     }
     var cap = m.capacidade?('<span class="pp">· '+m.capacidade+' pct/dia</span>'):'';
     return '<div class="item" onclick="abrirMotorista(\''+m.id+'\')">'+
@@ -545,6 +553,10 @@ function renderFolgas(){
 /* ════════════════ DATAS ════════════════ */
 function hojeStr(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function diaDaSemana(str){ var p=str.split('-'); return new Date(+p[0],+p[1]-1,+p[2]).getDay(); }
+function trabalhaNoDia(m,dow){
+  if(m.vinculo==='suplente' && (!m.dias || !m.dias.length)) return true;   // suplente sem dias = qualquer dia
+  return (m.dias||[]).indexOf(dow)>=0;
+}
 function dataExtenso(str){
   var p=str.split('-'); var d=new Date(+p[0],+p[1]-1,+p[2]);
   var dias=['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
@@ -631,16 +643,25 @@ function gerarEscala(){
     // alvo por região (nunca abaixo do mínimo travado)
     var alvo=demandaReg[r.id]||{carros:lc,motos:lm};
     var tc=Math.max(alvo.carros||0, lc), tm=Math.max(alvo.motos||0, lm);
-    // completar com suplentes que cobrem a região, por tipo
+    // completar com suplentes que cobrem a região
+    // regra: carro pode ocupar vaga de moto; moto NÃO pode ocupar vaga de carro
     var sup=[], faltaC=0, faltaM=0;
-    [['carro',tc-lc],['moto',tm-lm]].forEach(function(par){
-      var tipo=par[0], need=par[1];
-      while(need>0){
-        var cand=suplentes.find(function(m){ return !usados[m.id] && !emFolga(m.id) && m.tipo===tipo && (m.regioes||[]).indexOf(r.id)>=0; });
-        if(!cand){ if(tipo==='carro')faltaC=need; else faltaM=need; break; }
-        usados[cand.id]=true; sup.push(cand); escalados.push({mot:cand}); need--;
-      }
-    });
+    function achaSup(tipos){
+      return suplentes.find(function(m){
+        return !usados[m.id] && !emFolga(m.id) && trabalhaNoDia(m,dow)
+          && (m.regioes||[]).indexOf(r.id)>=0 && tipos.indexOf(m.tipo)>=0;
+      });
+    }
+    var needC=tc-lc;
+    while(needC>0){                                    // vaga de carro: só carro
+      var c=achaSup(['carro']); if(!c){ faltaC=needC; break; }
+      usados[c.id]=true; sup.push({mot:c,cobre:'carro'}); escalados.push({mot:c}); needC--;
+    }
+    var needM=tm-lm;
+    while(needM>0){                                    // vaga de moto: moto de preferência, senão carro cobre
+      var mo=achaSup(['moto']) || achaSup(['carro']); if(!mo){ faltaM=needM; break; }
+      usados[mo.id]=true; sup.push({mot:mo,cobre:'moto'}); escalados.push({mot:mo}); needM--;
+    }
     if(faltaC>0) alertas.push({tipo:'warn', txt:r.nome+': faltou '+faltaC+' '+(faltaC>1?'carros':'carro')+' — nenhum suplente disponível que cubra a região.'});
     if(faltaM>0) alertas.push({tipo:'warn', txt:r.nome+': faltou '+faltaM+' '+(faltaM>1?'motos':'moto')+' — nenhum suplente disponível que cubra a região.'});
     var assign=trab.length+sup.length;
@@ -681,7 +702,12 @@ function gerarEscala(){
     h+='<div class="rota"><div class="rota-h"><div class="nm">'+esc(rt.regiao.nome)+'</div>'+alvoTxt+'<span class="st '+rt.status+'">'+stLabel+'</span></div>';
     var linhas='';
     rt.fixos.forEach(function(m){ linhas+=linhaMot(m,'Fixo 🔒'); });
-    rt.sup.forEach(function(m){ linhas+=linhaMot(m, rt.fixos.length?'Suplente (reforço)':'Suplente (cobrindo)'); });
+    rt.sup.forEach(function(s){
+      var lab;
+      if(s.mot.tipo==='carro' && s.cobre==='moto') lab='Suplente 🚗→🛵 cobrindo moto';
+      else lab = rt.fixos.length?'Suplente (reforço)':'Suplente (cobrindo)';
+      linhas+=linhaMot(s.mot, lab);
+    });
     if(!linhas){
       if(rt.status==='vazio') linhas='<div class="mot-linha" style="border:none"><span class="pp">Sem demanda para hoje.</span></div>';
       else if(rt.fora.length) linhas='<div class="mot-linha" style="border:none"><span class="pp">Fixo(s) fora: '+rt.fora.map(function(f){return esc(f.nome)+' ('+f.motivo+')';}).join(', ')+'</span></div>';
@@ -692,8 +718,8 @@ function gerarEscala(){
     h+='<div class="rota-b">'+linhas+'</div></div>';
   });
 
-  // suplentes de sobra (disponíveis não usados)
-  var sobra=suplentes.filter(function(m){return !usados[m.id]&&!emFolga(m.id);});
+  // suplentes de sobra (trabalham no dia, sem folga, não usados)
+  var sobra=suplentes.filter(function(m){return !usados[m.id]&&!emFolga(m.id)&&trabalhaNoDia(m,dow);});
   if(sobra.length){
     h+='<div class="sec-tit">Suplentes disponíveis</div><div class="card"><div class="mini">Podem ser chamados se precisar: '+sobra.map(function(m){return '<b style="color:var(--txt)">'+esc(m.nome)+'</b> ('+(m.tipo==='moto'?'moto':'carro')+')';}).join(' · ')+'</div></div>';
   }
