@@ -3980,10 +3980,11 @@ function drvPlot(){
       mk.on('click',(function(idx){ return function(){ _drvIdx=idx; document.getElementById('drv-sheet').classList.remove('peek'); drvRender(); }; })(i));
     });
   }catch(e){}
-  // 2) LINHA da rota (à parte, protegida)
+  // 2) LINHA da rota (à parte, protegida). Traçado pelas ruas quando disponível;
+  // enquanto carrega (ou se falhar), linha reta sólida ligando as paradas.
   try{
-    if(_drvLinha && _drvLinha.length>1) L.polyline(_drvLinha,{color:'#4f8ef7',weight:4,opacity:.65}).addTo(_drvLayer);
-    else L.polyline(_drvStops.map(function(s){return [s.lat,s.lng];}),{color:'#4f8ef7',weight:2.5,opacity:.4,dashArray:'6 7'}).addTo(_drvLayer);
+    if(_drvLinha && _drvLinha.length>1) L.polyline(_drvLinha,{color:'#4f8ef7',weight:5,opacity:.9}).addTo(_drvLayer);
+    else L.polyline(_drvStops.map(function(s){return [s.lat,s.lng];}),{color:'#4f8ef7',weight:3,opacity:.6}).addTo(_drvLayer);
   }catch(e){}
   // NÃO mexe no zoom/posição aqui — o motorista controla o mapa.
   try{ _drvMap.invalidateSize(); }catch(e){}
