@@ -3892,7 +3892,7 @@ function renderRotaPicker(){
 }
 
 // ── estado do modo motorista ──
-var _drvMap=null, _drvLayer=null, _drvMe=null, _drvWatch=null, _drvRota=null, _drvStops=[], _drvIdx=0, _drvLinha=null;
+var _drvMap=null, _drvLayer=null, _drvMe=null, _drvWatch=null, _drvRota=null, _drvStops=[], _drvIdx=0, _drvLinha=null, _drvPrimeiroGps=true;
 // busca o traçado da rota pelas ruas (OSRM) e redesenha; cai na linha reta se falhar
 async function drvCarregarLinha(){
   _drvLinha=null;
@@ -3936,8 +3936,10 @@ function drvIniciar(rota){
   _drvIdx = i0<0? 0 : i0;
   document.getElementById('drv-done').classList.remove('on');
   document.getElementById('drv').classList.add('on');
+  _drvPrimeiroGps=true;
   drvMapInit();
   drvRender();
+  setTimeout(drvFit,150); // enquadra a rota uma vez, na abertura
   drvCarregarLinha();
   drvStartGPS();
   try{ window.scrollTo(0,0); }catch(e){}
@@ -3984,8 +3986,14 @@ function drvPlot(){
     mk.on('click',(function(idx){ return function(){ _drvIdx=idx; document.getElementById('drv-sheet').classList.remove('peek'); drvRender(); }; })(i));
     pts.push([s.lat,s.lng]);
   });
-  var cur=_drvStops[_drvIdx];
-  try{ _drvMap.invalidateSize(); if(_drvMe){ _drvMap.fitBounds([[cur.lat,cur.lng], _drvMe],{padding:[80,80],maxZoom:16}); } else { _drvMap.setView([cur.lat,cur.lng],15); } }catch(e){}
+  // NÃO mexe no zoom/posição aqui — o motorista controla o mapa. O enquadramento
+  // só acontece na abertura (drvFit) e ao tocar em "centralizar".
+  try{ _drvMap.invalidateSize(); }catch(e){}
+}
+// enquadra a vista (só na abertura / no primeiro GPS)
+function drvFit(){
+  if(!_drvMap) return; var cur=_drvStops[_drvIdx]; if(!cur) return;
+  try{ if(_drvMe){ _drvMap.fitBounds([[cur.lat,cur.lng], _drvMe],{padding:[80,80],maxZoom:16}); } else { _drvMap.setView([cur.lat,cur.lng],15); } }catch(e){}
 }
 function drvBanner(){
   var cur=_drvStops[_drvIdx]; if(!cur) return;
@@ -4062,11 +4070,12 @@ function drvStartGPS(){
   if(_drvWatch!=null) return;
   _drvWatch=navigator.geolocation.watchPosition(function(pos){
     _drvMe=[pos.coords.latitude, pos.coords.longitude];
-    if(_drvLayer){
-      // marcador da posição (recria simples)
+    if(_drvMap){
+      // marcador da posição (fora do layer da rota, pra não sumir no redraw)
       if(!_drvMeMarker){ _drvMeMarker=L.circleMarker(_drvMe,{radius:8,color:'#fff',weight:3,fillColor:'#4f8ef7',fillOpacity:1}); _drvMeMarker.addTo(_drvMap); }
       else _drvMeMarker.setLatLng(_drvMe);
     }
+    if(_drvPrimeiroGps){ _drvPrimeiroGps=false; drvFit(); } // enquadra uma vez quando pega o GPS
     drvBanner();
   }, function(){}, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
 }
