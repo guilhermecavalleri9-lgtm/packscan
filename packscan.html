@@ -2743,7 +2743,7 @@ function separarPorEixo(pontos) {
 
 // OSRM (roteirização por ruas reais). Fase de teste: só admin usa; quando
 // aprovado, é só trocar OSRM_SOMENTE_ADMIN pra false que vale pra todos.
-var OSRM_ATIVO = true, OSRM_SOMENTE_ADMIN = true;
+var OSRM_ATIVO = true, OSRM_SOMENTE_ADMIN = false;
 function osrmHabilitado(){ return OSRM_ATIVO && (!OSRM_SOMENTE_ADMIN || AUTH_ADMIN); }
 
 // pede a ordem otimizada ao servidor (que chama o OSRM). Devolve os pkgs na
