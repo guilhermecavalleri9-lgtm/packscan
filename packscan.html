@@ -3966,34 +3966,37 @@ function drvRender(){
 }
 function drvPlot(){
   if(!_drvLayer) return;
-  try{ _drvLayer.clearLayers(); }catch(e){ return; }
-  var pts=[];
-  if(_drvLinha && _drvLinha.length>1){
-    // traçado real pelas ruas (OSRM)
-    L.polyline(_drvLinha,{color:'#4f8ef7',weight:4,opacity:.7}).addTo(_drvLayer);
-  } else {
-    // enquanto carrega (ou se o OSRM cair): linha reta tracejada
-    L.polyline(_drvStops.map(function(s){return [s.lat,s.lng];}),{color:'#4f8ef7',weight:2.5,opacity:.4,dashArray:'6 7'}).addTo(_drvLayer);
-  }
-  _drvStops.forEach(function(s,i){
-    var st=stopStatus(s);
-    var atual=(i===_drvIdx);
-    var cor = atual? '#4f8ef7' : (st==='entregue'? '#34c97e' : (st==='falhou'? '#f05252' : '#1e2333'));
-    var tcor = (st||atual)? '#fff' : '#c7d2e8';
-    var sz = atual? 30:24;
-    var icon=L.divIcon({className:'drv-pin', html:'<div style="width:'+sz+'px;height:'+sz+'px;border-radius:50%;background:'+cor+';border:2px solid '+(atual?'#fff':'#0b0f16')+';box-shadow:0 1px 5px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;color:'+tcor+';font-size:'+(atual?12:11)+'px;font-weight:700;font-family:var(--mono)">'+s.numParada+'</div>', iconSize:[sz,sz], iconAnchor:[sz/2,sz/2]});
-    var mk=L.marker([s.lat,s.lng],{icon:icon,zIndexOffset:atual?1000:0}).addTo(_drvLayer);
-    mk.on('click',(function(idx){ return function(){ _drvIdx=idx; document.getElementById('drv-sheet').classList.remove('peek'); drvRender(); }; })(i));
-    pts.push([s.lat,s.lng]);
-  });
-  // NÃO mexe no zoom/posição aqui — o motorista controla o mapa. O enquadramento
-  // só acontece na abertura (drvFit) e ao tocar em "centralizar".
+  try{ _drvLayer.clearLayers(); }catch(e){}
+  // 1) PINOS primeiro (protegidos) — nunca somem se a linha der problema
+  try{
+    _drvStops.forEach(function(s,i){
+      var st=stopStatus(s);
+      var atual=(i===_drvIdx);
+      var cor = atual? '#4f8ef7' : (st==='entregue'? '#34c97e' : (st==='falhou'? '#f05252' : '#1e2333'));
+      var tcor = (st||atual)? '#fff' : '#c7d2e8';
+      var sz = atual? 30:24;
+      var icon=L.divIcon({className:'drv-pin', html:'<div style="width:'+sz+'px;height:'+sz+'px;border-radius:50%;background:'+cor+';border:2px solid '+(atual?'#fff':'#0b0f16')+';box-shadow:0 1px 5px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;color:'+tcor+';font-size:'+(atual?12:11)+'px;font-weight:700;font-family:var(--mono)">'+s.numParada+'</div>', iconSize:[sz,sz], iconAnchor:[sz/2,sz/2]});
+      var mk=L.marker([s.lat,s.lng],{icon:icon,zIndexOffset:atual?1000:0}).addTo(_drvLayer);
+      mk.on('click',(function(idx){ return function(){ _drvIdx=idx; document.getElementById('drv-sheet').classList.remove('peek'); drvRender(); }; })(i));
+    });
+  }catch(e){}
+  // 2) LINHA da rota (à parte, protegida)
+  try{
+    if(_drvLinha && _drvLinha.length>1) L.polyline(_drvLinha,{color:'#4f8ef7',weight:4,opacity:.65}).addTo(_drvLayer);
+    else L.polyline(_drvStops.map(function(s){return [s.lat,s.lng];}),{color:'#4f8ef7',weight:2.5,opacity:.4,dashArray:'6 7'}).addTo(_drvLayer);
+  }catch(e){}
+  // NÃO mexe no zoom/posição aqui — o motorista controla o mapa.
   try{ _drvMap.invalidateSize(); }catch(e){}
 }
-// enquadra a vista (só na abertura / no primeiro GPS)
+// enquadra a vista só na ABERTURA: mostra as PARADAS (não a posição distante do
+// motorista, que jogaria o zoom lá pra fora). A localização fica no botão centralizar.
 function drvFit(){
-  if(!_drvMap) return; var cur=_drvStops[_drvIdx]; if(!cur) return;
-  try{ if(_drvMe){ _drvMap.fitBounds([[cur.lat,cur.lng], _drvMe],{padding:[80,80],maxZoom:16}); } else { _drvMap.setView([cur.lat,cur.lng],15); } }catch(e){}
+  if(!_drvMap) return;
+  var pts=_drvStops.map(function(s){return [s.lat,s.lng];});
+  try{
+    if(pts.length>1) _drvMap.fitBounds(pts,{padding:[50,50],maxZoom:16});
+    else if(pts.length===1) _drvMap.setView(pts[0],15);
+  }catch(e){}
 }
 function drvBanner(){
   var cur=_drvStops[_drvIdx]; if(!cur) return;
@@ -4075,7 +4078,7 @@ function drvStartGPS(){
       if(!_drvMeMarker){ _drvMeMarker=L.circleMarker(_drvMe,{radius:8,color:'#fff',weight:3,fillColor:'#4f8ef7',fillOpacity:1}); _drvMeMarker.addTo(_drvMap); }
       else _drvMeMarker.setLatLng(_drvMe);
     }
-    if(_drvPrimeiroGps){ _drvPrimeiroGps=false; drvFit(); } // enquadra uma vez quando pega o GPS
+    _drvPrimeiroGps=false; // já temos posição; não reenquadra (mantém a vista das paradas)
     drvBanner();
   }, function(){}, { enableHighAccuracy:true, maximumAge:5000, timeout:10000 });
 }
