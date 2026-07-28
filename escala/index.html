@@ -32,6 +32,8 @@ button{cursor:pointer;border:none;background:none}
 .hero-ola{font-size:14px;opacity:.85;font-weight:500}
 .hero-tit{font-size:22px;font-weight:700;letter-spacing:-.4px;margin-top:2px}
 .hero-sub{font-size:13px;opacity:.8;margin-top:3px;text-transform:capitalize}
+.hero-sync{font-size:11px;margin-top:7px;font-weight:600;display:inline-block;background:rgba(255,255,255,.16);padding:3px 10px;border-radius:999px}
+.hero-sync.off{background:rgba(255,180,60,.28)}
 .hero-btn{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;color:#fff}
 .hero-btn svg{width:22px;height:22px}
 
@@ -188,6 +190,7 @@ hr.sep{border:none;border-top:1px solid var(--linha);margin:14px 0}
         <div class="hero-ola">Base de Entregas</div>
         <div class="hero-tit" id="hero-tit">Escala</div>
         <div class="hero-sub" id="hero-sub"></div>
+        <div class="hero-sync" id="hero-sync">☁ conectando…</div>
       </div>
       <button class="hero-btn" onclick="abrirConfig()" aria-label="Configurações">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -342,11 +345,40 @@ var CHAVE = 'escala_base_v1';
 var DIAS_LB = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 var state = carregar();
 
-function carregar(){
+function carregar(){   // cache local imediato (pra abrir rápido, mesmo offline)
   try{ var r = localStorage.getItem(CHAVE); if(r) return JSON.parse(r); }catch(e){}
   return { motoristas:[], regioes:[], folgas:[] };
 }
-function salvar(){ try{ localStorage.setItem(CHAVE, JSON.stringify(state)); }catch(e){ toast('Erro ao salvar'); } }
+function salvarLocal(){ try{ localStorage.setItem(CHAVE, JSON.stringify(state)); }catch(e){} }
+function salvar(){ salvarLocal(); agendarSync(); }   // grava local + envia pro servidor (compartilhado)
+
+/* ════════════════ SINCRONIZAÇÃO (compartilhado entre todos) ════════════════ */
+var API_ESCALA='/api/escala/dados';
+var syncTimer=null, temDados=false;
+function temAlgo(){ return state.motoristas.length||state.regioes.length||state.folgas.length; }
+function setSync(s){
+  var el=document.getElementById('hero-sync'); if(!el) return;
+  el.classList.toggle('off', s==='off');
+  el.textContent = s==='ok' ? '☁ Compartilhado' : s==='sync' ? '☁ Salvando…' : s==='off' ? '⚠ Offline (só neste aparelho)' : '☁ conectando…';
+}
+function agendarSync(){ setSync('sync'); clearTimeout(syncTimer); syncTimer=setTimeout(enviarServidor, 700); }
+function enviarServidor(){
+  fetch(API_ESCALA,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(state)})
+    .then(function(r){ if(!r.ok) throw 0; setSync('ok'); })
+    .catch(function(){ setSync('off'); });
+}
+function carregarDoServidor(cb){
+  fetch(API_ESCALA,{cache:'no-store'}).then(function(r){return r.json();}).then(function(j){
+    if(j && j.dados && (j.dados.motoristas||j.dados.regioes||j.dados.folgas)){
+      state={ motoristas:j.dados.motoristas||[], regioes:j.dados.regioes||[], folgas:j.dados.folgas||[] };
+      salvarLocal(); setSync('ok');
+    } else if(temAlgo()){
+      enviarServidor();               // servidor vazio + tenho dados locais -> subo pra compartilhar
+    } else { setSync('ok'); }
+    if(cb) cb();
+  }).catch(function(){ setSync('off'); if(cb) cb(); });
+}
+function sheetAberto(){ return document.getElementById('sheet-bg').classList.contains('on'); }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 function esc(s){ return (s==null?'':(''+s)).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
@@ -756,7 +788,7 @@ function importar(ev){
   rd.readAsText(f); ev.target.value='';
 }
 function limparTudo(){
-  if(!confirm('Apagar TODOS os motoristas, regiões e folgas? Não dá pra desfazer.')) return;
+  if(!confirm('Apagar TODOS os motoristas, regiões e folgas de TODOS os aparelhos? Não dá pra desfazer.')) return;
   state={motoristas:[],regioes:[],folgas:[]}; salvar(); fecharSheet(); irPara('inicio'); toast('Tudo apagado');
 }
 
@@ -765,7 +797,14 @@ function limparTudo(){
   document.getElementById('hero-sub').textContent = dataExtenso(hojeStr());
   document.getElementById('g-data').value = hojeStr();
   document.getElementById('f-data').value = hojeStr();
-  irPara('inicio');
+  irPara('inicio');                                   // render imediato com o cache local
+  carregarDoServidor(function(){ irPara(telaAtual); });   // depois puxa a versão compartilhada
+  // ao voltar pra aba, atualiza com o que os outros mudaram (se não tiver formulário aberto)
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState==='visible' && !sheetAberto()){
+      carregarDoServidor(function(){ irPara(telaAtual); });
+    }
+  });
 })();
 </script>
 </body>
