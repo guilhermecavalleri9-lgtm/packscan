@@ -150,6 +150,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .iniciar-btn .go{color:var(--routegreen)}.iniciar-btn .go svg{width:20px;height:20px}
 .avisar-btn{width:100%;margin:0 0 14px;display:flex;align-items:center;justify-content:center;gap:9px;padding:12px;border-radius:13px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13.5px;font-weight:600;cursor:pointer}
 .avisar-btn svg{color:var(--green)}
+.reot-btn{width:100%;margin:0 0 10px;display:flex;align-items:center;justify-content:center;gap:9px;padding:12px;border-radius:13px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13.5px;font-weight:600;cursor:pointer}
+.reot-btn svg{width:18px;height:18px;color:var(--accent)}
 /* ── Modo motorista (tela cheia) ── */
 .drv-view{position:fixed;inset:0;z-index:10000;background:#0c1119;display:none;flex-direction:column}
 .drv-view.on{display:flex}
@@ -450,6 +452,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
   </div>
 
   <div id="edit-rotas-hint" style="display:none"></div>
+
+  <button id="btn-reotimizar" class="reot-btn" style="display:none" onclick="reotimizarOrdem()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5"/></svg>
+    <span class="rt">Re-otimizar ordem pelas ruas</span>
+  </button>
 
   <!-- Iniciar rota / Avisar clientes (só admin nesta fase) -->
   <button id="btn-iniciar-rota" class="iniciar-btn" style="display:none" onclick="iniciarRotaTocar()">
@@ -3564,6 +3571,7 @@ function renderHome(){
   if(pen){ pen.style.display = nrotas ? 'grid' : 'none'; pen.classList.toggle('on', _editRotas); }
   var hint=document.getElementById('edit-rotas-hint');
   if(hint){ hint.style.display=_editRotas?'block':'none'; if(_editRotas) hint.innerHTML='✏️ <b>Editando rotas</b> — arraste os pontos brancos pra remodelar a área de cada rota. Os pacotes que ficarem dentro passam pra aquela rota. Toque no lápis de novo pra concluir.'; }
+  var reo=document.getElementById('btn-reotimizar'); if(reo) reo.style.display = nrotas ? 'flex':'none';
   homeMapPlot();
   renderListaPacotes();
   if(typeof motAtualizarHome==='function') motAtualizarHome();
@@ -3810,6 +3818,38 @@ function homePosImport(adicionar, novos){
 function homeBaixar(){
   if(typeof rotas==='undefined' || !rotas.length){ alert('Roteirize os pacotes primeiro para gerar as planilhas.'); return; }
   downloadTodos();
+}
+
+// Re-otimiza SÓ a ordem de cada rota (pelas ruas, via OSRM com fallback),
+// mantendo a divisão manual — não re-divide os motoristas.
+var _reotRodando=false;
+async function reotimizarOrdem(){
+  if(!(typeof rotas!=='undefined' && rotas.length)){ alert('Não há rotas pra otimizar.'); return; }
+  if(_reotRodando) return; _reotRodando=true;
+  var btn=document.getElementById('btn-reotimizar'), txt=btn?btn.querySelector('.rt'):null, orig=txt?txt.textContent:'';
+  if(txt) txt.textContent='Otimizando pelas ruas…'; if(btn) btn.style.pointerEvents='none';
+  try{
+    for(var i=0;i<rotas.length;i++){
+      var r=rotas[i];
+      var geo=(r.pkgs||[]).filter(function(p){return p.lat&&p.lng;});
+      var semGeo=(r.pkgs||[]).filter(function(p){return !(p.lat&&p.lng);});
+      if(geo.length>=3){
+        var ord=null;
+        try{ ord=await ordenarRotaOSRM(geo); }catch(e){}
+        geo = ord || ordenarRota(geo);
+      }
+      r.pkgs=geo.concat(semGeo);
+      r.pkgs.forEach(function(p,j){ p.numNaRota=j+1; });
+    }
+    try{ persistirLocal(); }catch(e){}
+    try{ if(typeof mapaInit!=='undefined' && mapaInit && map){ renderMotList(); renderRotasList(); renderMotDownload(); } }catch(e){}
+    renderHome(); homeMapPlot(true);
+    if(txt) txt.textContent=orig; if(btn) btn.style.pointerEvents='auto';
+    alert('✓ Ordem re-otimizada pelas ruas — sua divisão manual foi mantida.');
+  } finally {
+    if(txt) txt.textContent=orig; if(btn) btn.style.pointerEvents='auto';
+    _reotRodando=false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
