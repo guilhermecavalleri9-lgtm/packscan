@@ -1,9 +1,13 @@
 # Escala — Base de Entregas
 
 App **separado do PackScan** para montar a escala automática dos motoristas.
-É um único arquivo (`index.html`), sem servidor e sem instalação: abre no
-navegador do celular ou computador. Os dados ficam salvos **no próprio
-aparelho** (localStorage) — por isso tem backup em Configurações.
+É um único arquivo (`index.html`) servido pelo mesmo servidor do PackScan em
+`/escala`, sem login. Os dados ficam **compartilhados** entre todos que abrirem
+o link: o app grava a escala inteira numa chave central no banco
+(`escala:dados`, via `/api/escala/dados`) e mantém uma cópia local
+(`localStorage`) como cache/offline. Quando um edita, os outros veem ao
+reabrir/voltar pra aba. Sem servidor/banco (abrindo o arquivo solto), ele cai
+no modo local do aparelho.
 
 Visual estilo Nubank (roxo, cards). Primeira versão para irmos ajustando.
 
