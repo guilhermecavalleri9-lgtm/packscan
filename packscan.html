@@ -3892,7 +3892,16 @@ function renderRotaPicker(){
 }
 
 // ── estado do modo motorista ──
-var _drvMap=null, _drvLayer=null, _drvMe=null, _drvWatch=null, _drvRota=null, _drvStops=[], _drvIdx=0;
+var _drvMap=null, _drvLayer=null, _drvMe=null, _drvWatch=null, _drvRota=null, _drvStops=[], _drvIdx=0, _drvLinha=null;
+// busca o traçado da rota pelas ruas (OSRM) e redesenha; cai na linha reta se falhar
+async function drvCarregarLinha(){
+  _drvLinha=null;
+  try{
+    var r=await apiFetch(BACKEND+'/api/rota-linha',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pontos:_drvStops.map(function(s){return {lat:s.lat,lng:s.lng};})})});
+    var d=await r.json();
+    if(d && d.ok && d.linha && d.linha.length>1){ _drvLinha=d.linha; if(document.getElementById('drv').classList.contains('on')) drvPlot(); }
+  }catch(e){}
+}
 function _hav(a,b){ var R=6371e3, dl=(b.lat-a.lat)*Math.PI/180, dg=(b.lng-a.lng)*Math.PI/180, la1=a.lat*Math.PI/180, la2=b.lat*Math.PI/180; var x=Math.sin(dl/2)*Math.sin(dl/2)+Math.cos(la1)*Math.cos(la2)*Math.sin(dg/2)*Math.sin(dg/2); return 2*R*Math.asin(Math.sqrt(x)); }
 function _fmtDist(m){ return m<1000? (Math.round(m)+' m') : ((m/1000).toFixed(1).replace('.',',')+' km'); }
 
@@ -3929,6 +3938,7 @@ function drvIniciar(rota){
   document.getElementById('drv').classList.add('on');
   drvMapInit();
   drvRender();
+  drvCarregarLinha();
   drvStartGPS();
   try{ window.scrollTo(0,0); }catch(e){}
 }
@@ -3956,7 +3966,13 @@ function drvPlot(){
   if(!_drvLayer) return;
   try{ _drvLayer.clearLayers(); }catch(e){ return; }
   var pts=[];
-  L.polyline(_drvStops.map(function(s){return [s.lat,s.lng];}),{color:'#4f8ef7',weight:3,opacity:.45}).addTo(_drvLayer);
+  if(_drvLinha && _drvLinha.length>1){
+    // traçado real pelas ruas (OSRM)
+    L.polyline(_drvLinha,{color:'#4f8ef7',weight:4,opacity:.7}).addTo(_drvLayer);
+  } else {
+    // enquanto carrega (ou se o OSRM cair): linha reta tracejada
+    L.polyline(_drvStops.map(function(s){return [s.lat,s.lng];}),{color:'#4f8ef7',weight:2.5,opacity:.4,dashArray:'6 7'}).addTo(_drvLayer);
+  }
   _drvStops.forEach(function(s,i){
     var st=stopStatus(s);
     var atual=(i===_drvIdx);
@@ -4117,6 +4133,7 @@ async function drvAddConfirmar(){
     var i=_drvStops.findIndex(function(s){ return s.pacotes.indexOf(novo)>=0; });
     _drvIdx=i<0?_drvIdx:i;
     drvRender();
+    drvCarregarLinha();
     drvToast('Parada adicionada na posição '+(i+1));
   }catch(e){ st.textContent='Erro: '+e.message; st.style.color='var(--red)'; }
 }

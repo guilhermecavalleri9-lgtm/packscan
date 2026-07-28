@@ -64,6 +64,28 @@ function osrmTable(coords) { // coords = [[lng,lat], ...]
   });
 }
 
+// pega o TRAÇADO da rota pelas ruas (geometria) via serviço /route
+function osrmRoute(coords) { // coords = [[lng,lat], ...]
+  return new Promise((resolve, reject) => {
+    const coordStr = coords.map(c => c[0].toFixed(6) + ',' + c[1].toFixed(6)).join(';');
+    const full = OSRM_URL + '/route/v1/driving/' + coordStr + '?overview=full&geometries=geojson';
+    const lib = full.indexOf('https') === 0 ? https : http;
+    const reqO = lib.get(full, r => {
+      let data = '';
+      r.on('data', c => data += c);
+      r.on('end', () => {
+        try {
+          const j = JSON.parse(data);
+          if (j.code === 'Ok' && j.routes && j.routes[0] && j.routes[0].geometry) resolve(j.routes[0].geometry.coordinates);
+          else reject(new Error('OSRM route: ' + (j.code || 'sem rota')));
+        } catch (e) { reject(e); }
+      });
+    });
+    reqO.on('error', reject);
+    reqO.setTimeout(20000, () => reqO.destroy(new Error('OSRM timeout')));
+  });
+}
+
 // 2-opt usando a matriz de tempos; iniIdx/fimIdx (índices no vetor coords) fixam
 // as pontas quando o usuário configurou ponto de partida/chegada
 function osrmDoisOpt(ordem, D, base, iniIdx, fimIdx) {
@@ -824,6 +846,20 @@ const server = http.createServer(async (req, res) => {
       const t0 = Date.now();
       const ordem = await otimizarOSRM(pts, body.ini || null, body.fim || null);
       return json(res, 200, { ok: true, ordem, ms: Date.now() - t0, n: pts.length });
+    } catch (e) {
+      return json(res, 200, { ok: false, error: String((e && e.message) || e) });
+    }
+  }
+
+  // traçado da rota PELAS RUAS (geometria do OSRM) — pra desenhar a linha certa
+  if (req.method === 'POST' && pathname === '/api/rota-linha') {
+    const body = await readBody(req);
+    const pts = Array.isArray(body.pontos) ? body.pontos.filter(p => p && p.lat && p.lng) : [];
+    if (pts.length < 2) return json(res, 200, { ok: false });
+    try {
+      const geo = await osrmRoute(pts.map(p => [p.lng, p.lat]));
+      // OSRM devolve [lng,lat]; o mapa (Leaflet) quer [lat,lng]
+      return json(res, 200, { ok: true, linha: geo.map(c => [c[1], c[0]]) });
     } catch (e) {
       return json(res, 200, { ok: false, error: String((e && e.message) || e) });
     }
