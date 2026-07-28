@@ -3944,7 +3944,9 @@ function drvIniciar(rota){
   _drvPrimeiroGps=true;
   drvMapInit();
   drvRender();
-  setTimeout(drvFit,150); // enquadra a rota uma vez, na abertura
+  // no iOS o mapa pode iniciar antes do layout assentar — re-dimensiona e redesenha
+  setTimeout(function(){ try{ _drvMap.invalidateSize(); }catch(e){} drvFit(); drvPlot(); }, 200);
+  setTimeout(function(){ try{ _drvMap.invalidateSize(); }catch(e){} drvPlot(); }, 600);
   drvCarregarLinha();
   drvStartGPS();
   try{ window.scrollTo(0,0); }catch(e){}
@@ -3952,7 +3954,9 @@ function drvIniciar(rota){
 function drvMapInit(){
   if(_drvMap){ setTimeout(function(){ try{_drvMap.invalidateSize();}catch(e){} },200); return; }
   if(typeof L==='undefined') return;
-  _drvMap=L.map('drv-map',{preferCanvas:false,zoomControl:false,attributionControl:false});
+  // Canvas renderer: no iOS, o SVG das linhas às vezes não aparece quando o mapa
+  // inicia num container recém-exibido; o canvas é mais robusto pra isso.
+  _drvMap=L.map('drv-map',{preferCanvas:true,zoomControl:false,attributionControl:false});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_drvMap);
   _drvLayer=L.layerGroup().addTo(_drvMap);
 }
