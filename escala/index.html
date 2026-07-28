@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#820ad1">
+<title>Escala — Base de Entregas</title>
+<style>
+:root{
+  --roxo:#820ad1; --roxo2:#9c1ee0; --roxo-esc:#6a04ad; --roxo-fraco:#f3e8fc;
+  --bg:#f0eef4; --card:#ffffff; --linha:#eceaf0;
+  --txt:#1f1b24; --txt2:#6b6673; --txt3:#a099ac;
+  --verde:#00a868; --verde-fraco:#e2f6ee;
+  --vermelho:#e5484d; --vermelho-fraco:#fdeaea;
+  --amarelo:#e8a400; --amarelo-fraco:#fbf1dd;
+  --azul:#2e6bff; --azul-fraco:#e7eeff;
+  --r:16px; --r-lg:22px;
+  --sombra:0 6px 20px rgba(30,10,50,.06);
+  --sombra2:0 10px 34px rgba(80,10,120,.16);
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:var(--sans);background:var(--bg);color:var(--txt);font-size:15px;line-height:1.45;overscroll-behavior-y:none;-webkit-font-smoothing:antialiased}
+button,input,select{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+#app{max-width:520px;margin:0 auto;min-height:100vh;background:var(--bg);position:relative;padding-bottom:88px}
+
+/* ── Header roxo ── */
+.hero{background:linear-gradient(135deg,var(--roxo) 0%,var(--roxo-esc) 100%);color:#fff;padding:calc(env(safe-area-inset-top) + 20px) 20px 22px;border-radius:0 0 26px 26px}
+.hero-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+.hero-ola{font-size:14px;opacity:.85;font-weight:500}
+.hero-tit{font-size:22px;font-weight:700;letter-spacing:-.4px;margin-top:2px}
+.hero-sub{font-size:13px;opacity:.8;margin-top:3px;text-transform:capitalize}
+.hero-btn{width:42px;height:42px;border-radius:50%;background:rgba(255,255,255,.16);display:flex;align-items:center;justify-content:center;color:#fff}
+.hero-btn svg{width:22px;height:22px}
+
+/* atalhos (linha estilo nubank) */
+.atalhos{display:flex;gap:10px;overflow-x:auto;padding:16px 16px 6px;scrollbar-width:none}
+.atalhos::-webkit-scrollbar{display:none}
+.atalho{flex:0 0 auto;width:78px;background:var(--card);border-radius:var(--r);padding:12px 6px;text-align:center;box-shadow:var(--sombra)}
+.atalho .ic{width:38px;height:38px;border-radius:50%;background:var(--roxo-fraco);color:var(--roxo);display:flex;align-items:center;justify-content:center;margin:0 auto 7px}
+.atalho .ic svg{width:20px;height:20px}
+.atalho span{font-size:11px;font-weight:600;color:var(--txt);display:block;line-height:1.2}
+
+/* ── conteúdo / telas ── */
+main{padding:14px 16px 20px}
+.tela{display:none}
+.tela.on{display:block;animation:fade .22s ease}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.sec-tit{font-size:13px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.4px;margin:18px 4px 10px;display:flex;align-items:center;justify-content:space-between}
+.card{background:var(--card);border-radius:var(--r);padding:16px;box-shadow:var(--sombra);margin-bottom:12px}
+.card.pad0{padding:0;overflow:hidden}
+
+/* form */
+label{display:block;font-size:12px;font-weight:600;color:var(--txt2);margin:12px 2px 6px}
+label:first-child{margin-top:0}
+input[type=text],input[type=number],input[type=date],select{width:100%;padding:13px 14px;border:1.5px solid var(--linha);border-radius:12px;background:#fbfafc;transition:border .15s;font-weight:500}
+input:focus,select:focus{outline:none;border-color:var(--roxo);background:#fff}
+input::placeholder{color:var(--txt3)}
+.linha2{display:flex;gap:10px}
+.linha2>div{flex:1}
+
+/* pílulas de escolha (tipo, vínculo) */
+.pills{display:flex;gap:8px}
+.pill{flex:1;padding:12px 8px;border:1.5px solid var(--linha);border-radius:12px;text-align:center;font-weight:600;font-size:14px;color:var(--txt2);background:#fbfafc;transition:.15s;display:flex;align-items:center;justify-content:center;gap:6px}
+.pill.on{border-color:var(--roxo);background:var(--roxo-fraco);color:var(--roxo)}
+.pill svg{width:18px;height:18px}
+
+/* dias da semana */
+.dias{display:flex;gap:6px;justify-content:space-between}
+.dia{width:100%;aspect-ratio:1;border:1.5px solid var(--linha);border-radius:11px;font-weight:700;font-size:12px;color:var(--txt2);background:#fbfafc;display:flex;align-items:center;justify-content:center;transition:.12s}
+.dia.on{border-color:var(--roxo);background:var(--roxo);color:#fff}
+
+/* regiões multiselect (chips) */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:8px 14px;border:1.5px solid var(--linha);border-radius:999px;font-weight:600;font-size:13px;color:var(--txt2);background:#fbfafc;transition:.12s}
+.chip.on{border-color:var(--roxo);background:var(--roxo-fraco);color:var(--roxo)}
+
+/* botões */
+.btn{width:100%;padding:15px;border-radius:14px;background:var(--roxo);color:#fff;font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center;gap:8px;transition:.15s}
+.btn:active{transform:scale(.98)}
+.btn.sec{background:var(--roxo-fraco);color:var(--roxo)}
+.btn.ghost{background:#fbfafc;color:var(--txt2);border:1.5px solid var(--linha)}
+.btn.sm{padding:11px;font-size:14px;border-radius:12px}
+.btn:disabled{opacity:.5}
+
+/* lista de motoristas */
+.item{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--linha)}
+.item:last-child{border-bottom:none}
+.item .av{width:44px;height:44px;border-radius:14px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;font-size:22px;background:var(--roxo-fraco)}
+.item .mid{flex:1;min-width:0}
+.item .nome{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.item .desc{font-size:12px;color:var(--txt2);margin-top:2px;display:flex;flex-wrap:wrap;gap:5px;align-items:center}
+.tag{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.3px}
+.tag.fixo{background:var(--verde-fraco);color:var(--verde)}
+.tag.suplente{background:var(--amarelo-fraco);color:var(--amarelo)}
+.tag.carro{background:var(--azul-fraco);color:var(--azul)}
+.tag.moto{background:var(--roxo-fraco);color:var(--roxo)}
+.item .go{color:var(--txt3);flex:0 0 auto}
+.item .go svg{width:20px;height:20px}
+
+.vazio{text-align:center;padding:34px 20px;color:var(--txt2)}
+.vazio .emo{font-size:40px;margin-bottom:10px}
+.vazio p{font-size:14px}
+.vazio small{color:var(--txt3);font-size:12.5px;display:block;margin-top:4px}
+
+/* FAB */
+.fab{position:fixed;left:50%;transform:translateX(calc(-50% + 218px));bottom:100px;width:56px;height:56px;border-radius:50%;background:var(--roxo);color:#fff;box-shadow:var(--sombra2);display:flex;align-items:center;justify-content:center;z-index:40}
+.fab svg{width:26px;height:26px}
+@media(max-width:520px){.fab{left:auto;right:18px;transform:none}}
+
+/* bottom nav */
+.nav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:520px;background:#fff;display:flex;border-top:1px solid var(--linha);padding-bottom:env(safe-area-inset-bottom);z-index:50}
+.nav a{flex:1;padding:10px 0 8px;text-align:center;color:var(--txt3);font-size:10.5px;font-weight:600}
+.nav a svg{width:24px;height:24px;display:block;margin:0 auto 3px}
+.nav a.on{color:var(--roxo)}
+
+/* modal (bottom sheet) */
+.sheet-bg{position:fixed;inset:0;background:rgba(20,8,34,.5);z-index:100;opacity:0;pointer-events:none;transition:.2s}
+.sheet-bg.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:50%;transform:translateX(-50%) translateY(100%);bottom:0;width:100%;max-width:520px;background:var(--bg);border-radius:24px 24px 0 0;z-index:101;transition:transform .28s cubic-bezier(.3,.8,.4,1);max-height:92vh;overflow-y:auto;padding-bottom:calc(env(safe-area-inset-bottom) + 16px)}
+.sheet.on{transform:translateX(-50%) translateY(0)}
+.sheet-h{position:sticky;top:0;background:var(--bg);padding:16px 18px 8px;z-index:2}
+.sheet-grip{width:38px;height:4px;border-radius:99px;background:#d8d3df;margin:0 auto 14px}
+.sheet-h h2{font-size:19px;font-weight:800;letter-spacing:-.3px}
+.sheet-body{padding:6px 18px 18px}
+
+/* resultado escala */
+.rota{border-radius:var(--r);background:var(--card);box-shadow:var(--sombra);margin-bottom:11px;overflow:hidden}
+.rota-h{display:flex;align-items:center;gap:10px;padding:13px 15px}
+.rota-h .nm{font-weight:800;font-size:15px;flex:1}
+.st{font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px;text-transform:uppercase;letter-spacing:.3px}
+.st.ok{background:var(--verde-fraco);color:var(--verde)}
+.st.sup{background:var(--azul-fraco);color:var(--azul)}
+.st.desc{background:var(--vermelho-fraco);color:var(--vermelho)}
+.st.semfixo{background:var(--amarelo-fraco);color:var(--amarelo)}
+.rota-b{padding:0 15px 13px}
+.mot-linha{display:flex;align-items:center;gap:9px;padding:8px 0;border-top:1px solid var(--linha)}
+.mot-linha .em{font-size:20px}
+.mot-linha .nm2{font-weight:600;font-size:14px;flex:1}
+.mot-linha .pp{font-size:11px;color:var(--txt2)}
+.alerta{display:flex;gap:9px;padding:12px 14px;border-radius:12px;font-size:13px;font-weight:600;margin-bottom:10px;align-items:flex-start}
+.alerta.warn{background:var(--amarelo-fraco);color:#8a6200}
+.alerta.err{background:var(--vermelho-fraco);color:#a3272b}
+.alerta.info{background:var(--azul-fraco);color:#1a49b8}
+.alerta svg{width:18px;height:18px;flex:0 0 auto;margin-top:1px}
+
+.mini{font-size:12px;color:var(--txt2)}
+.contador{display:flex;gap:10px;margin-top:4px}
+.cbox{flex:1;background:#fbfafc;border:1.5px solid var(--linha);border-radius:12px;padding:10px;text-align:center}
+.cbox .n{font-size:24px;font-weight:800;color:var(--roxo);line-height:1}
+.cbox .l{font-size:11px;color:var(--txt2);font-weight:600;margin-top:3px}
+.stepper{display:flex;align-items:center;gap:0;border:1.5px solid var(--linha);border-radius:12px;overflow:hidden;background:#fbfafc}
+.stepper button{width:44px;height:46px;font-size:22px;font-weight:600;color:var(--roxo);flex:0 0 auto}
+.stepper input{border:none;background:none;text-align:center;padding:0;font-size:17px;font-weight:800}
+.stepper input:focus{background:none}
+
+/* demanda por região */
+.dem-reg{border:1.5px solid var(--linha);border-radius:14px;padding:12px;margin-top:10px;background:#fbfafc}
+.dem-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:11px}
+.dem-nome{font-weight:800;font-size:15px}
+.dem-locks{display:flex;gap:5px;flex-wrap:wrap}
+.lockchip{font-size:10.5px;font-weight:700;background:var(--roxo-fraco);color:var(--roxo);padding:2px 9px;border-radius:999px;display:inline-flex;gap:3px;align-items:center}
+.lockchip.off{background:#efedf2;color:var(--txt3)}
+.dem-row{display:flex;gap:10px}
+.dem-ctrl{flex:1;display:flex;align-items:center;border:1.5px solid var(--linha);border-radius:12px;background:#fff;overflow:hidden}
+.dem-ctrl .dem-ic{font-size:17px;padding:0 2px 0 9px}
+.dem-ctrl button{width:36px;height:42px;font-size:21px;font-weight:600;color:var(--roxo);flex:0 0 auto}
+.dem-ctrl button:disabled{color:var(--txt3);opacity:.4}
+.dem-val{flex:1;text-align:center;font-size:18px;font-weight:800;font-variant-numeric:tabular-nums}
+.st.parcial{background:var(--amarelo-fraco);color:var(--amarelo)}
+.st.vazio{background:#efedf2;color:var(--txt3)}
+
+.toast{position:fixed;left:50%;bottom:104px;transform:translateX(-50%) translateY(20px);background:#1f1b24;color:#fff;padding:12px 20px;border-radius:999px;font-size:13.5px;font-weight:600;z-index:200;opacity:0;transition:.25s;box-shadow:0 8px 24px rgba(0,0,0,.3);pointer-events:none;white-space:nowrap}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.del{color:var(--vermelho);font-weight:700}
+hr.sep{border:none;border-top:1px solid var(--linha);margin:14px 0}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-top">
+      <div>
+        <div class="hero-ola">Base de Entregas</div>
+        <div class="hero-tit" id="hero-tit">Escala</div>
+        <div class="hero-sub" id="hero-sub"></div>
+      </div>
+      <button class="hero-btn" onclick="abrirConfig()" aria-label="Configurações">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- atalhos (só na home) -->
+  <div class="atalhos" id="atalhos">
+    <button class="atalho" onclick="irPara('motoristas')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg></span><span>Motoristas</span></button>
+    <button class="atalho" onclick="irPara('regioes')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span><span>Regiões</span></button>
+    <button class="atalho" onclick="irPara('folgas')"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg></span><span>Folgas</span></button>
+    <button class="atalho" onclick="scrollGerar()"><span class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg></span><span>Gerar</span></button>
+  </div>
+
+  <main>
+    <!-- ══════════ INÍCIO / ESCALA ══════════ -->
+    <div class="tela on" id="tela-inicio">
+      <div class="sec-tit">Gerar escala</div>
+      <div class="card" id="card-gerar">
+        <label>Data</label>
+        <input type="date" id="g-data" onchange="renderDemandaRegioes()">
+        <label style="margin-top:16px">Quantos por região <span style="font-weight:500;color:var(--txt3)">(carros e motos)</span></label>
+        <div id="demanda-regioes"></div>
+        <div class="mini" style="margin:10px 2px 0;color:var(--txt3)">🔒 O fixo do dia já entra travado no mínimo. Aumente só se precisar de reforço.</div>
+        <button class="btn" style="margin-top:16px" onclick="gerarEscala()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:20px;height:20px"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+          Gerar escala do dia
+        </button>
+      </div>
+      <div id="resultado"></div>
+    </div>
+
+    <!-- ══════════ MOTORISTAS ══════════ -->
+    <div class="tela" id="tela-motoristas">
+      <div class="sec-tit">Motoristas <span class="mini" id="mot-count"></span></div>
+      <div class="card pad0" id="lista-motoristas"></div>
+    </div>
+
+    <!-- ══════════ REGIÕES ══════════ -->
+    <div class="tela" id="tela-regioes">
+      <div class="sec-tit">Nova região</div>
+      <div class="card">
+        <div class="linha2">
+          <div style="flex:2"><input type="text" id="r-nome" placeholder="Ex: Centro, Kobrasol, Trindade..." onkeydown="if(event.key==='Enter')addRegiao()"></div>
+          <button class="btn sm" style="flex:0 0 auto;width:auto;padding:0 20px" onclick="addRegiao()">Adicionar</button>
+        </div>
+      </div>
+      <div class="sec-tit">Regiões cadastradas <span class="mini" id="reg-count"></span></div>
+      <div class="card pad0" id="lista-regioes"></div>
+    </div>
+
+    <!-- ══════════ FOLGAS ══════════ -->
+    <div class="tela" id="tela-folgas">
+      <div class="sec-tit">Nova folga de emergência</div>
+      <div class="card">
+        <label>Motorista</label>
+        <select id="f-mot"></select>
+        <label>Data da folga</label>
+        <input type="date" id="f-data">
+        <button class="btn sm" style="margin-top:16px" onclick="addFolga()">Marcar folga</button>
+        <div class="mini" style="margin:10px 2px 0;color:var(--txt3)">O motorista fica fora da escala nesse dia.</div>
+      </div>
+      <div class="sec-tit">Folgas marcadas <span class="mini" id="folga-count"></span></div>
+      <div class="card pad0" id="lista-folgas"></div>
+    </div>
+  </main>
+
+  <!-- FAB add motorista -->
+  <button class="fab" id="fab" onclick="abrirMotorista()" aria-label="Adicionar motorista">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+
+  <!-- BOTTOM NAV -->
+  <nav class="nav">
+    <a id="nav-inicio" class="on" onclick="irPara('inicio')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg>Início</a>
+    <a id="nav-motoristas" onclick="irPara('motoristas')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/></svg>Motoristas</a>
+    <a id="nav-regioes" onclick="irPara('regioes')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>Regiões</a>
+    <a id="nav-folgas" onclick="irPara('folgas')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Folgas</a>
+  </nav>
+</div>
+
+<!-- ══════ SHEET: motorista ══════ -->
+<div class="sheet-bg" id="sheet-bg" onclick="fecharSheet()"></div>
+<div class="sheet" id="sheet-mot">
+  <div class="sheet-h"><div class="sheet-grip"></div><h2 id="sheet-mot-tit">Novo motorista</h2></div>
+  <div class="sheet-body">
+    <label>Nome</label>
+    <input type="text" id="m-nome" placeholder="Nome do motorista" autocomplete="off">
+
+    <label>Veículo</label>
+    <div class="pills">
+      <button class="pill" id="m-carro" onclick="selTipo('carro')"><span>🚗</span> Carro</button>
+      <button class="pill" id="m-moto" onclick="selTipo('moto')"><span>🛵</span> Moto</button>
+    </div>
+
+    <label>Capacidade — pacotes por dia <span style="font-weight:500;color:var(--txt3)">(informativo)</span></label>
+    <input type="number" id="m-cap" placeholder="Ex: 120" min="0" inputmode="numeric">
+
+    <label>Tipo de vínculo</label>
+    <div class="pills">
+      <button class="pill" id="m-fixo" onclick="selVinculo('fixo')">Fixo da rota</button>
+      <button class="pill" id="m-suplente" onclick="selVinculo('suplente')">Suplente</button>
+    </div>
+
+    <!-- fixo -->
+    <div id="bloco-fixo" style="display:none">
+      <label>Região fixa</label>
+      <select id="m-regiao"></select>
+    </div>
+
+    <!-- suplente -->
+    <div id="bloco-suplente" style="display:none">
+      <label>Regiões que pode fazer</label>
+      <div class="chips" id="m-regioes-sup"></div>
+      <div class="mini" id="sup-vazio" style="margin-top:8px;color:var(--txt3);display:none">Cadastre regiões primeiro na aba Regiões.</div>
+    </div>
+
+    <!-- dias (fixo e suplente) -->
+    <div id="bloco-dias">
+      <label>Dias que trabalha</label>
+      <div class="dias" id="m-dias"></div>
+      <div class="mini" id="dias-hint" style="margin-top:6px;color:var(--txt3);display:none">Suplente só entra na escala nesses dias. Sem nenhum marcado = qualquer dia.</div>
+    </div>
+
+    <button class="btn" style="margin-top:20px" onclick="salvarMotorista()">Salvar</button>
+    <button class="btn ghost" id="btn-excluir-mot" style="margin-top:10px;display:none" onclick="excluirMotorista()">Excluir motorista</button>
+  </div>
+</div>
+
+<!-- ══════ SHEET: config ══════ -->
+<div class="sheet" id="sheet-config">
+  <div class="sheet-h"><div class="sheet-grip"></div><h2>Configurações</h2></div>
+  <div class="sheet-body">
+    <div class="card" style="box-shadow:none;border:1.5px solid var(--linha)">
+      <div class="mini" style="margin-bottom:10px">Seus dados ficam salvos só neste aparelho. Faça backup de vez em quando.</div>
+      <button class="btn sec sm" onclick="exportar()">⬇ Exportar backup (.json)</button>
+      <button class="btn sec sm" style="margin-top:10px" onclick="document.getElementById('imp-file').click()">⬆ Importar backup</button>
+      <input type="file" id="imp-file" accept="application/json,.json" style="display:none" onchange="importar(event)">
+    </div>
+    <button class="btn ghost" style="margin-top:6px;color:var(--vermelho)" onclick="limparTudo()">Apagar todos os dados</button>
+    <div class="mini" style="text-align:center;margin-top:16px;color:var(--txt3)">Escala · Base de Entregas</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ════════════════ ESTADO ════════════════ */
+var CHAVE = 'escala_base_v1';
+var DIAS_LB = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+var state = carregar();
+
+function carregar(){
+  try{ var r = localStorage.getItem(CHAVE); if(r) return JSON.parse(r); }catch(e){}
+  return { motoristas:[], regioes:[], folgas:[] };
+}
+function salvar(){ try{ localStorage.setItem(CHAVE, JSON.stringify(state)); }catch(e){ toast('Erro ao salvar'); } }
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function esc(s){ return (s==null?'':(''+s)).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(function(){t.classList.remove('on');},2000); }
+
+/* ════════════════ NAVEGAÇÃO ════════════════ */
+var telaAtual='inicio';
+var titulos={inicio:'Escala',motoristas:'Motoristas',regioes:'Regiões',folgas:'Folgas'};
+function irPara(t){
+  telaAtual=t;
+  ['inicio','motoristas','regioes','folgas'].forEach(function(x){
+    document.getElementById('tela-'+x).classList.toggle('on', x===t);
+    document.getElementById('nav-'+x).classList.toggle('on', x===t);
+  });
+  document.getElementById('hero-tit').textContent=titulos[t];
+  document.getElementById('atalhos').style.display = t==='inicio'?'flex':'none';
+  document.getElementById('fab').style.display = t==='motoristas'?'flex':'none';
+  window.scrollTo(0,0);
+  if(t==='inicio') renderDemandaRegioes();
+  if(t==='motoristas') renderMotoristas();
+  if(t==='regioes') renderRegioes();
+  if(t==='folgas') renderFolgas();
+}
+function scrollGerar(){ irPara('inicio'); setTimeout(function(){ document.getElementById('card-gerar').scrollIntoView({behavior:'smooth',block:'center'}); },50); }
+
+/* ════════════════ SHEETS ════════════════ */
+function abrirSheet(id){ document.getElementById('sheet-bg').classList.add('on'); document.getElementById(id).classList.add('on'); }
+function fecharSheet(){ document.getElementById('sheet-bg').classList.remove('on'); document.querySelectorAll('.sheet').forEach(function(s){s.classList.remove('on');}); }
+
+/* ════════════════ MOTORISTAS ════════════════ */
+var editandoId=null, formTipo='carro', formVinculo='fixo', formDias=[], formRegioesSup=[];
+
+function abrirMotorista(id){
+  editandoId = id||null;
+  var m = id ? state.motoristas.find(function(x){return x.id===id;}) : null;
+  document.getElementById('sheet-mot-tit').textContent = m?'Editar motorista':'Novo motorista';
+  document.getElementById('m-nome').value = m?m.nome:'';
+  document.getElementById('m-cap').value = m&&m.capacidade?m.capacidade:'';
+  formTipo = m?m.tipo:'carro';
+  formVinculo = m?m.vinculo:'fixo';
+  formDias = m&&m.dias?m.dias.slice():[1,2,3,4,5];
+  formRegioesSup = m&&m.regioes?m.regioes.slice():[];
+  selTipo(formTipo); selVinculo(formVinculo);
+  renderDias(); renderRegioesSelect(m); renderRegioesSup();
+  document.getElementById('btn-excluir-mot').style.display = m?'flex':'none';
+  abrirSheet('sheet-mot');
+}
+function selTipo(t){ formTipo=t; document.getElementById('m-carro').classList.toggle('on',t==='carro'); document.getElementById('m-moto').classList.toggle('on',t==='moto'); }
+function selVinculo(v){
+  formVinculo=v;
+  document.getElementById('m-fixo').classList.toggle('on',v==='fixo');
+  document.getElementById('m-suplente').classList.toggle('on',v==='suplente');
+  document.getElementById('bloco-fixo').style.display = v==='fixo'?'block':'none';
+  document.getElementById('bloco-suplente').style.display = v==='suplente'?'block':'none';
+  document.getElementById('dias-hint').style.display = v==='suplente'?'block':'none';
+}
+function renderDias(){
+  var el=document.getElementById('m-dias'); el.innerHTML='';
+  DIAS_LB.forEach(function(lb,i){
+    var b=document.createElement('button'); b.className='dia'+(formDias.indexOf(i)>=0?' on':''); b.textContent=lb;
+    b.onclick=function(){ var k=formDias.indexOf(i); if(k>=0)formDias.splice(k,1); else formDias.push(i); b.classList.toggle('on'); };
+    el.appendChild(b);
+  });
+}
+function renderRegioesSelect(m){
+  var s=document.getElementById('m-regiao'); s.innerHTML='';
+  if(!state.regioes.length){ s.innerHTML='<option value="">— cadastre regiões —</option>'; return; }
+  state.regioes.forEach(function(r){ var o=document.createElement('option'); o.value=r.id; o.textContent=r.nome; if(m&&m.regiaoId===r.id)o.selected=true; s.appendChild(o); });
+}
+function renderRegioesSup(){
+  var el=document.getElementById('m-regioes-sup'); el.innerHTML='';
+  document.getElementById('sup-vazio').style.display = state.regioes.length?'none':'block';
+  state.regioes.forEach(function(r){
+    var c=document.createElement('button'); c.className='chip'+(formRegioesSup.indexOf(r.id)>=0?' on':''); c.textContent=r.nome;
+    c.onclick=function(){ var k=formRegioesSup.indexOf(r.id); if(k>=0)formRegioesSup.splice(k,1); else formRegioesSup.push(r.id); c.classList.toggle('on'); };
+    el.appendChild(c);
+  });
+}
+function salvarMotorista(){
+  var nome=document.getElementById('m-nome').value.trim();
+  if(!nome){ toast('Digite o nome'); return; }
+  var cap=parseInt(document.getElementById('m-cap').value)||0;
+  var obj={ id:editandoId||uid(), nome:nome, tipo:formTipo, capacidade:cap, vinculo:formVinculo };
+  if(formVinculo==='fixo'){
+    obj.regiaoId=document.getElementById('m-regiao').value||null;
+    obj.dias=formDias.slice().sort(function(a,b){return a-b;});
+    if(!obj.regiaoId){ toast('Escolha a região fixa'); return; }
+    if(!obj.dias.length){ toast('Marque os dias de trabalho'); return; }
+  } else {
+    obj.regioes=formRegioesSup.slice();
+    obj.dias=formDias.slice().sort(function(a,b){return a-b;});   // vazio = qualquer dia
+  }
+  if(editandoId){ var i=state.motoristas.findIndex(function(x){return x.id===editandoId;}); state.motoristas[i]=obj; }
+  else state.motoristas.push(obj);
+  salvar(); fecharSheet(); renderMotoristas(); toast(editandoId?'Motorista atualizado':'Motorista adicionado');
+}
+function excluirMotorista(){
+  if(!editandoId) return;
+  if(!confirm('Excluir este motorista?')) return;
+  state.motoristas=state.motoristas.filter(function(x){return x.id!==editandoId;});
+  state.folgas=state.folgas.filter(function(f){return f.motoristaId!==editandoId;});
+  salvar(); fecharSheet(); renderMotoristas(); toast('Motorista excluído');
+}
+function nomeRegiao(id){ var r=state.regioes.find(function(x){return x.id===id;}); return r?r.nome:'—'; }
+function renderMotoristas(){
+  var el=document.getElementById('lista-motoristas');
+  document.getElementById('mot-count').textContent = state.motoristas.length?('· '+state.motoristas.length):'';
+  if(!state.motoristas.length){ el.innerHTML='<div class="vazio"><div class="emo">🧑‍✈️</div><p>Nenhum motorista ainda</p><small>Toque no + para adicionar</small></div>'; return; }
+  var ordem={fixo:0,suplente:1};
+  var lista=state.motoristas.slice().sort(function(a,b){ return (ordem[a.vinculo]-ordem[b.vinculo]) || a.nome.localeCompare(b.nome); });
+  el.innerHTML = lista.map(function(m){
+    var emo = m.tipo==='moto'?'🛵':'🚗';
+    var det;
+    if(m.vinculo==='fixo'){
+      det = '<span class="tag fixo">Fixo</span><span>'+esc(nomeRegiao(m.regiaoId))+'</span>· '+(m.dias||[]).map(function(d){return DIAS_LB[d];}).join(' ');
+    } else {
+      var regs=(m.regioes||[]).map(function(id){return nomeRegiao(id);});
+      var diasTxt = (m.dias&&m.dias.length)?('· '+m.dias.map(function(d){return DIAS_LB[d];}).join(' ')):'<span style="color:var(--txt3)">· qualquer dia</span>';
+      det = '<span class="tag suplente">Suplente</span>'+(regs.length?('<span>'+esc(regs.join(', '))+'</span>'):'<span style="color:var(--txt3)">sem região</span>')+diasTxt;
+    }
+    var cap = m.capacidade?('<span class="pp">· '+m.capacidade+' pct/dia</span>'):'';
+    return '<div class="item" onclick="abrirMotorista(\''+m.id+'\')">'+
+      '<div class="av">'+emo+'</div>'+
+      '<div class="mid"><div class="nome">'+esc(m.nome)+' '+cap+'</div><div class="desc">'+det+'</div></div>'+
+      '<span class="go"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg></span>'+
+    '</div>';
+  }).join('');
+}
+
+/* ════════════════ REGIÕES ════════════════ */
+function addRegiao(){
+  var nome=document.getElementById('r-nome').value.trim();
+  if(!nome){ toast('Digite o nome da região'); return; }
+  if(state.regioes.some(function(r){return r.nome.toLowerCase()===nome.toLowerCase();})){ toast('Essa região já existe'); return; }
+  state.regioes.push({id:uid(),nome:nome});
+  salvar(); document.getElementById('r-nome').value=''; renderRegioes(); toast('Região adicionada');
+}
+function removerRegiao(id){
+  var usados=state.motoristas.filter(function(m){ return m.regiaoId===id || (m.regioes&&m.regioes.indexOf(id)>=0); });
+  var aviso = usados.length? ('\n\n'+usados.length+' motorista(s) usam essa região e serão desvinculados.') : '';
+  if(!confirm('Remover a região "'+nomeRegiao(id)+'"?'+aviso)) return;
+  state.regioes=state.regioes.filter(function(r){return r.id!==id;});
+  state.motoristas.forEach(function(m){
+    if(m.regiaoId===id) m.regiaoId=null;
+    if(m.regioes) m.regioes=m.regioes.filter(function(x){return x!==id;});
+  });
+  salvar(); renderRegioes(); toast('Região removida');
+}
+function renderRegioes(){
+  var el=document.getElementById('lista-regioes');
+  document.getElementById('reg-count').textContent = state.regioes.length?('· '+state.regioes.length):'';
+  if(!state.regioes.length){ el.innerHTML='<div class="vazio"><div class="emo">📍</div><p>Nenhuma região ainda</p><small>Adicione acima</small></div>'; return; }
+  el.innerHTML = state.regioes.slice().sort(function(a,b){return a.nome.localeCompare(b.nome);}).map(function(r){
+    var qt=state.motoristas.filter(function(m){return m.regiaoId===r.id||(m.regioes&&m.regioes.indexOf(r.id)>=0);}).length;
+    return '<div class="item">'+
+      '<div class="av">📍</div>'+
+      '<div class="mid"><div class="nome">'+esc(r.nome)+'</div><div class="desc">'+(qt?qt+' motorista(s)':'nenhum motorista')+'</div></div>'+
+      '<button class="del" style="padding:8px 12px;font-size:20px" onclick="removerRegiao(\''+r.id+'\')">✕</button>'+
+    '</div>';
+  }).join('');
+}
+
+/* ════════════════ FOLGAS ════════════════ */
+function renderFolgaSelect(){
+  var s=document.getElementById('f-mot'); s.innerHTML='';
+  if(!state.motoristas.length){ s.innerHTML='<option value="">— cadastre motoristas —</option>'; return; }
+  state.motoristas.slice().sort(function(a,b){return a.nome.localeCompare(b.nome);}).forEach(function(m){
+    var o=document.createElement('option'); o.value=m.id; o.textContent=m.nome+' ('+(m.tipo==='moto'?'moto':'carro')+')'; s.appendChild(o);
+  });
+}
+function addFolga(){
+  var mot=document.getElementById('f-mot').value, data=document.getElementById('f-data').value;
+  if(!mot){ toast('Escolha o motorista'); return; }
+  if(!data){ toast('Escolha a data'); return; }
+  if(state.folgas.some(function(f){return f.motoristaId===mot&&f.data===data;})){ toast('Folga já marcada'); return; }
+  state.folgas.push({id:uid(),motoristaId:mot,data:data});
+  salvar(); renderFolgas(); toast('Folga marcada');
+}
+function removerFolga(id){
+  state.folgas=state.folgas.filter(function(f){return f.id!==id;});
+  salvar(); renderFolgas();
+}
+function fmtData(d){ var p=d.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; }
+function nomeMot(id){ var m=state.motoristas.find(function(x){return x.id===id;}); return m?m.nome:'—'; }
+function renderFolgas(){
+  renderFolgaSelect();
+  var el=document.getElementById('lista-folgas');
+  var hoje=hojeStr();
+  var futuras=state.folgas.filter(function(f){return f.data>=hoje;}).sort(function(a,b){return a.data.localeCompare(b.data);});
+  document.getElementById('folga-count').textContent = futuras.length?('· '+futuras.length):'';
+  if(!futuras.length){ el.innerHTML='<div class="vazio"><div class="emo">🌴</div><p>Nenhuma folga marcada</p><small>Folgas passadas não aparecem</small></div>'; return; }
+  el.innerHTML = futuras.map(function(f){
+    var m=state.motoristas.find(function(x){return x.id===f.motoristaId;});
+    var emo=m?(m.tipo==='moto'?'🛵':'🚗'):'👤';
+    var dow=DIAS_LB[diaDaSemana(f.data)];
+    return '<div class="item">'+
+      '<div class="av">'+emo+'</div>'+
+      '<div class="mid"><div class="nome">'+esc(nomeMot(f.motoristaId))+'</div><div class="desc">'+dow+', '+fmtData(f.data)+'</div></div>'+
+      '<button class="del" style="padding:8px 12px;font-size:20px" onclick="removerFolga(\''+f.id+'\')">✕</button>'+
+    '</div>';
+  }).join('');
+}
+
+/* ════════════════ DATAS ════════════════ */
+function hojeStr(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function diaDaSemana(str){ var p=str.split('-'); return new Date(+p[0],+p[1]-1,+p[2]).getDay(); }
+function trabalhaNoDia(m,dow){
+  if(m.vinculo==='suplente' && (!m.dias || !m.dias.length)) return true;   // suplente sem dias = qualquer dia
+  return (m.dias||[]).indexOf(dow)>=0;
+}
+function dataExtenso(str){
+  var p=str.split('-'); var d=new Date(+p[0],+p[1]-1,+p[2]);
+  var dias=['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+  var meses=['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  return dias[d.getDay()]+', '+p[2]+' de '+meses[d.getMonth()];
+}
+/* ════════════════ DEMANDA POR REGIÃO ════════════════ */
+var demandaReg = {};    // {regiaoId:{carros,motos}} escolha do usuário
+var lockMinReg = {};    // {regiaoId:{carros,motos}} mínimo travado pelos fixos do dia
+
+function fixosDoDia(regiaoId, data){
+  if(!data) return [];
+  var dow=diaDaSemana(data);
+  return state.motoristas.filter(function(m){
+    return m.vinculo==='fixo' && m.regiaoId===regiaoId
+      && (m.dias||[]).indexOf(dow)>=0
+      && !state.folgas.some(function(f){return f.motoristaId===m.id&&f.data===data;});
+  });
+}
+function renderDemandaRegioes(){
+  var cont=document.getElementById('demanda-regioes'); if(!cont) return;
+  if(!state.regioes.length){ cont.innerHTML='<div class="mini" style="color:var(--txt3);margin-top:8px">Cadastre regiões e motoristas primeiro.</div>'; return; }
+  var data=document.getElementById('g-data').value;
+  var html='';
+  state.regioes.slice().sort(function(a,b){return a.nome.localeCompare(b.nome);}).forEach(function(r){
+    var fx=fixosDoDia(r.id,data);
+    var minC=fx.filter(function(m){return m.tipo==='carro';}).length;
+    var minM=fx.filter(function(m){return m.tipo==='moto';}).length;
+    lockMinReg[r.id]={carros:minC,motos:minM};
+    var prev=demandaReg[r.id]||{};
+    var vc=Math.max(minC, prev.carros!=null?prev.carros:minC);
+    var vm=Math.max(minM, prev.motos!=null?prev.motos:minM);
+    demandaReg[r.id]={carros:vc,motos:vm};
+    var chips = fx.length
+      ? fx.map(function(m){return '<span class="lockchip">🔒 '+(m.tipo==='moto'?'🛵':'🚗')+' '+esc(m.nome)+'</span>';}).join('')
+      : '<span class="lockchip off">sem fixo hoje</span>';
+    html+='<div class="dem-reg">'+
+      '<div class="dem-head"><span class="dem-nome">'+esc(r.nome)+'</span><div class="dem-locks">'+chips+'</div></div>'+
+      '<div class="dem-row">'+
+        demCtrl(r.id,'carros','🚗',vc,minC)+
+        demCtrl(r.id,'motos','🛵',vm,minM)+
+      '</div></div>';
+  });
+  cont.innerHTML=html;
+}
+function demCtrl(id,tipo,ic,val,min){
+  return '<div class="dem-ctrl"><span class="dem-ic">'+ic+'</span>'+
+    '<button onclick="passoReg(\''+id+'\',\''+tipo+'\',-1)"'+(val<=min?' disabled':'')+'>−</button>'+
+    '<span class="dem-val" id="dem-'+tipo+'-'+id+'">'+val+'</span>'+
+    '<button onclick="passoReg(\''+id+'\',\''+tipo+'\',1)">+</button></div>';
+}
+function passoReg(id,tipo,dir){
+  var min=(lockMinReg[id]&&lockMinReg[id][tipo])||0;
+  if(!demandaReg[id]) demandaReg[id]={carros:0,motos:0};
+  var v=(demandaReg[id][tipo]||0)+dir;
+  if(v<min)v=min; if(v<0)v=0;
+  demandaReg[id][tipo]=v;
+  renderDemandaRegioes();
+}
+
+/* ════════════════ GERAR ESCALA ════════════════ */
+function gerarEscala(){
+  var data=document.getElementById('g-data').value;
+  if(!data){ toast('Escolha a data'); return; }
+  renderDemandaRegioes();              // garante demandaReg/lockMinReg da data escolhida
+  var dow=diaDaSemana(data);
+  function emFolga(id){ return state.folgas.some(function(f){return f.motoristaId===id&&f.data===data;}); }
+
+  var suplentes=state.motoristas.filter(function(m){return m.vinculo==='suplente';});
+  var usados={};              // ids já escalados no dia (cada um usado 1x)
+  var alertas=[];
+  var escalados=[];           // {mot}
+
+  var rotas=state.regioes.slice().sort(function(a,b){return a.nome.localeCompare(b.nome);}).map(function(r){
+    // fixos travados (trabalham no dia e não estão de folga)
+    var fixosReg=state.motoristas.filter(function(m){return m.vinculo==='fixo'&&m.regiaoId===r.id;});
+    var trab=fixosReg.filter(function(m){return (m.dias||[]).indexOf(dow)>=0 && !emFolga(m.id);});
+    trab.forEach(function(m){ usados[m.id]=true; escalados.push({mot:m}); });
+    var fora=fixosReg.filter(function(m){return trab.indexOf(m)<0;}).map(function(m){
+      return { nome:m.nome, motivo: emFolga(m.id)?'folga':'não trabalha '+DIAS_LB[dow] };
+    });
+    var lc=trab.filter(function(m){return m.tipo==='carro';}).length;
+    var lm=trab.filter(function(m){return m.tipo==='moto';}).length;
+    // alvo por região (nunca abaixo do mínimo travado)
+    var alvo=demandaReg[r.id]||{carros:lc,motos:lm};
+    var tc=Math.max(alvo.carros||0, lc), tm=Math.max(alvo.motos||0, lm);
+    // completar com suplentes que cobrem a região
+    // regra: carro pode ocupar vaga de moto; moto NÃO pode ocupar vaga de carro
+    var sup=[], faltaC=0, faltaM=0;
+    function achaSup(tipos){
+      return suplentes.find(function(m){
+        return !usados[m.id] && !emFolga(m.id) && trabalhaNoDia(m,dow)
+          && (m.regioes||[]).indexOf(r.id)>=0 && tipos.indexOf(m.tipo)>=0;
+      });
+    }
+    var needC=tc-lc;
+    while(needC>0){                                    // vaga de carro: só carro
+      var c=achaSup(['carro']); if(!c){ faltaC=needC; break; }
+      usados[c.id]=true; sup.push({mot:c,cobre:'carro'}); escalados.push({mot:c}); needC--;
+    }
+    var needM=tm-lm;
+    while(needM>0){                                    // vaga de moto: moto de preferência, senão carro cobre
+      var mo=achaSup(['moto']) || achaSup(['carro']); if(!mo){ faltaM=needM; break; }
+      usados[mo.id]=true; sup.push({mot:mo,cobre:'moto'}); escalados.push({mot:mo}); needM--;
+    }
+    if(faltaC>0) alertas.push({tipo:'warn', txt:r.nome+': faltou '+faltaC+' '+(faltaC>1?'carros':'carro')+' — nenhum suplente disponível que cubra a região.'});
+    if(faltaM>0) alertas.push({tipo:'warn', txt:r.nome+': faltou '+faltaM+' '+(faltaM>1?'motos':'moto')+' — nenhum suplente disponível que cubra a região.'});
+    var assign=trab.length+sup.length;
+    var status;
+    if(tc+tm===0 && assign===0) status='vazio';
+    else if(assign===0) status='desc';
+    else if(faltaC>0||faltaM>0) status='parcial';
+    else if(trab.length===0) status='sup';
+    else status='ok';
+    return { regiao:r, fixos:trab, sup:sup, fora:fora, status:status, tc:tc, tm:tm };
+  });
+
+  var totCarros=escalados.filter(function(e){return e.mot.tipo==='carro';}).length;
+  var totMotos=escalados.filter(function(e){return e.mot.tipo==='moto';}).length;
+
+  // ── render ──
+  var h='';
+  h+='<div class="sec-tit" style="margin-top:22px">Escala de <span style="color:var(--roxo);text-transform:none;letter-spacing:0">'+dataExtenso(data)+'</span></div>';
+
+  h+='<div class="card"><div class="contador">'+
+      '<div class="cbox"><div class="n">'+escalados.length+'</div><div class="l">na rua</div></div>'+
+      '<div class="cbox"><div class="n">'+totCarros+'</div><div class="l">🚗 carros</div></div>'+
+      '<div class="cbox"><div class="n">'+totMotos+'</div><div class="l">🛵 motos</div></div>'+
+    '</div></div>';
+
+  alertas.forEach(function(a){
+    var ic = a.tipo==='err'?'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>':'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
+    h+='<div class="alerta '+a.tipo+'">'+ic+'<span>'+esc(a.txt)+'</span></div>';
+  });
+
+  if(!state.regioes.length){
+    h+='<div class="alerta info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg><span>Cadastre regiões e motoristas para montar a escala.</span></div>';
+  }
+
+  rotas.forEach(function(rt){
+    var stLabel={ok:'Completa',sup:'Suplente',desc:'Descoberta',parcial:'Faltando',vazio:'Sem demanda'}[rt.status];
+    var alvoTxt=(rt.tc||rt.tm)?'<span class="pp" style="margin:0 8px 0 auto;white-space:nowrap">🚗'+rt.tc+' · 🛵'+rt.tm+'</span>':'';
+    h+='<div class="rota"><div class="rota-h"><div class="nm">'+esc(rt.regiao.nome)+'</div>'+alvoTxt+'<span class="st '+rt.status+'">'+stLabel+'</span></div>';
+    var linhas='';
+    rt.fixos.forEach(function(m){ linhas+=linhaMot(m,'Fixo 🔒'); });
+    rt.sup.forEach(function(s){
+      var lab;
+      if(s.mot.tipo==='carro' && s.cobre==='moto') lab='Suplente 🚗→🛵 cobrindo moto';
+      else lab = rt.fixos.length?'Suplente (reforço)':'Suplente (cobrindo)';
+      linhas+=linhaMot(s.mot, lab);
+    });
+    if(!linhas){
+      if(rt.status==='vazio') linhas='<div class="mot-linha" style="border:none"><span class="pp">Sem demanda para hoje.</span></div>';
+      else if(rt.fora.length) linhas='<div class="mot-linha" style="border:none"><span class="pp">Fixo(s) fora: '+rt.fora.map(function(f){return esc(f.nome)+' ('+f.motivo+')';}).join(', ')+'</span></div>';
+      else linhas='<div class="mot-linha" style="border:none"><span class="pp">Nenhum motorista disponível.</span></div>';
+    } else if(rt.fora.length){
+      linhas+='<div class="mot-linha"><span class="pp">Fora hoje: '+rt.fora.map(function(f){return esc(f.nome)+' ('+f.motivo+')';}).join(', ')+'</span></div>';
+    }
+    h+='<div class="rota-b">'+linhas+'</div></div>';
+  });
+
+  // suplentes de sobra (trabalham no dia, sem folga, não usados)
+  var sobra=suplentes.filter(function(m){return !usados[m.id]&&!emFolga(m.id)&&trabalhaNoDia(m,dow);});
+  if(sobra.length){
+    h+='<div class="sec-tit">Suplentes disponíveis</div><div class="card"><div class="mini">Podem ser chamados se precisar: '+sobra.map(function(m){return '<b style="color:var(--txt)">'+esc(m.nome)+'</b> ('+(m.tipo==='moto'?'moto':'carro')+')';}).join(' · ')+'</div></div>';
+  }
+
+  document.getElementById('resultado').innerHTML=h;
+  document.getElementById('resultado').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function linhaMot(m,papel){
+  var emo=m.tipo==='moto'?'🛵':'🚗';
+  var cap=m.capacidade?(' · '+m.capacidade+' pct'):'';
+  return '<div class="mot-linha"><span class="em">'+emo+'</span><span class="nm2">'+esc(m.nome)+'</span><span class="pp">'+papel+cap+'</span></div>';
+}
+
+/* ════════════════ CONFIG / BACKUP ════════════════ */
+function abrirConfig(){ abrirSheet('sheet-config'); }
+function exportar(){
+  var blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+  var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='escala-backup-'+hojeStr()+'.json'; a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);},1000);
+}
+function importar(ev){
+  var f=ev.target.files[0]; if(!f) return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    try{
+      var d=JSON.parse(rd.result);
+      if(!d.motoristas||!d.regioes){ toast('Arquivo inválido'); return; }
+      if(!confirm('Substituir os dados atuais pelo backup?')) return;
+      state={motoristas:d.motoristas||[],regioes:d.regioes||[],folgas:d.folgas||[]};
+      salvar(); fecharSheet(); irPara('inicio'); toast('Backup importado');
+    }catch(e){ toast('Erro ao ler o arquivo'); }
+  };
+  rd.readAsText(f); ev.target.value='';
+}
+function limparTudo(){
+  if(!confirm('Apagar TODOS os motoristas, regiões e folgas? Não dá pra desfazer.')) return;
+  state={motoristas:[],regioes:[],folgas:[]}; salvar(); fecharSheet(); irPara('inicio'); toast('Tudo apagado');
+}
+
+/* ════════════════ INIT ════════════════ */
+(function init(){
+  document.getElementById('hero-sub').textContent = dataExtenso(hojeStr());
+  document.getElementById('g-data').value = hojeStr();
+  document.getElementById('f-data').value = hojeStr();
+  irPara('inicio');
+})();
+</script>
+</body>
+</html>
