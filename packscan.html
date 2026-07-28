@@ -3892,7 +3892,7 @@ function renderRotaPicker(){
 }
 
 // ── estado do modo motorista ──
-var _drvMap=null, _drvLayer=null, _drvMe=null, _drvWatch=null, _drvRota=null, _drvStops=[], _drvIdx=0, _drvLinha=null, _drvPrimeiroGps=true;
+var _drvMap=null, _drvLayer=null, _drvMe=null, _drvWatch=null, _drvRota=null, _drvStops=[], _drvIdx=0, _drvLinha=null, _drvPrimeiroGps=true, _drvNaoEnquadrou=true;
 // busca o traçado da rota pelas ruas (OSRM) e redesenha; cai na linha reta se falhar
 async function drvCarregarLinha(){
   _drvLinha=null;
@@ -3941,12 +3941,12 @@ function drvIniciar(rota){
   _drvIdx = i0<0? 0 : i0;
   document.getElementById('drv-done').classList.remove('on');
   document.getElementById('drv').classList.add('on');
-  _drvPrimeiroGps=true;
+  _drvPrimeiroGps=true; _drvNaoEnquadrou=true;
   drvMapInit();
   drvRender();
-  // no iOS o mapa pode iniciar antes do layout assentar — re-dimensiona e redesenha
-  setTimeout(function(){ try{ _drvMap.invalidateSize(); }catch(e){} drvFit(); drvPlot(); }, 200);
-  setTimeout(function(){ try{ _drvMap.invalidateSize(); }catch(e){} drvPlot(); }, 600);
+  // no iOS o mapa pode iniciar antes do layout assentar — redesenha depois
+  setTimeout(function(){ drvPlot(); }, 250);
+  setTimeout(function(){ drvPlot(); }, 700);
   drvCarregarLinha();
   drvStartGPS();
   try{ window.scrollTo(0,0); }catch(e){}
@@ -3954,9 +3954,7 @@ function drvIniciar(rota){
 function drvMapInit(){
   if(_drvMap){ setTimeout(function(){ try{_drvMap.invalidateSize();}catch(e){} },200); return; }
   if(typeof L==='undefined') return;
-  // Canvas renderer: no iOS, o SVG das linhas às vezes não aparece quando o mapa
-  // inicia num container recém-exibido; o canvas é mais robusto pra isso.
-  _drvMap=L.map('drv-map',{preferCanvas:true,zoomControl:false,attributionControl:false});
+  _drvMap=L.map('drv-map',{preferCanvas:false,zoomControl:false,attributionControl:false});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(_drvMap);
   _drvLayer=L.layerGroup().addTo(_drvMap);
 }
@@ -4000,8 +3998,15 @@ function drvPlot(){
       var pl=L.polyline(_drvLinha,{color:'#4f8ef7',weight:5,opacity:.95}); pl.addTo(_drvLayer); pl.bringToFront();
     }
   }catch(e){}
-  // NÃO mexe no zoom/posição aqui — o motorista controla o mapa.
-  try{ _drvMap.invalidateSize(); }catch(e){}
+  // repaint: na 1ª vez enquadra a rota; nas próximas, re-afirma a MESMA vista
+  // (sem mudar o zoom) só pra forçar o mapa a repintar a linha — era isso que
+  // sumia sem o setView de antes.
+  try{
+    _drvMap.invalidateSize();
+    var temTamanho = _drvMap.getSize && _drvMap.getSize().x>0;
+    if(_drvNaoEnquadrou && temTamanho){ _drvNaoEnquadrou=false; drvFit(); }
+    else { _drvMap.setView(_drvMap.getCenter(), _drvMap.getZoom(), {animate:false}); } // força repaint sem mudar o zoom
+  }catch(e){}
 }
 // enquadra a vista só na ABERTURA: mostra as PARADAS (não a posição distante do
 // motorista, que jogaria o zoom lá pra fora). A localização fica no botão centralizar.
