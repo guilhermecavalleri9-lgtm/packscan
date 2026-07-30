@@ -820,7 +820,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/pagamento/webhook']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -1294,6 +1294,35 @@ const server = http.createServer(async (req, res) => {
       res.end(data);
     });
     return;
+  }
+
+  // ─── ESCALA (app separado, sem login, só por link direto) ─────────────────
+  if (req.method === 'GET' && (pathname === '/escala' || pathname === '/escala/' || pathname === '/escala/index.html')) {
+    fs.readFile(path.join(__dirname, 'escala', 'index.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+
+  // ─── ESCALA: dados compartilhados (sem login) ─────────────────────────────
+  // Guarda a escala inteira numa chave central do banco -> todo mundo vê o mesmo.
+  if (req.method === 'GET' && pathname === '/api/escala/dados') {
+    const dados = await supabaseGet('escala:dados');
+    return json(res, 200, { dados: dados || null });
+  }
+  if (req.method === 'POST' && pathname === '/api/escala/dados') {
+    const body = await readBody(req);
+    if (!body || typeof body !== 'object') return json(res, 400, { error: 'corpo inválido' });
+    const dados = {
+      motoristas: Array.isArray(body.motoristas) ? body.motoristas : [],
+      regioes:    Array.isArray(body.regioes)    ? body.regioes    : [],
+      folgas:     Array.isArray(body.folgas)     ? body.folgas     : [],
+      atualizadoEm: new Date().toISOString()
+    };
+    await supabaseSet('escala:dados', dados);
+    return json(res, 200, { ok: true, atualizadoEm: dados.atualizadoEm });
   }
 
   // ─── SALVAR CORREÇÃO MANUAL ───────────────────────────────────────────────
