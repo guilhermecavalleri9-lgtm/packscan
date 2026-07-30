@@ -126,51 +126,56 @@ function custoRota(ordem, D, base, iniIdx, fimIdx) {
   return c;
 }
 
-// Or-opt: move blocos de 1, 2 ou 3 paradas pro melhor lugar (inclusive invertidos).
-// Estratégia primeira-melhoria: aplica a 1ª troca boa e devolve true (o loop externo
-// chama de novo). Isso escapa dos ótimos-locais que o 2-opt sozinho não sai.
-function osrmOrOpt(ordem, D, base, iniIdx, fimIdx) {
+// Or-opt: UMA passada completa — move blocos de 1, 2 ou 3 paradas pro melhor
+// lugar (inclusive invertidos), aplicando toda melhoria que achar. Como só aceita
+// troca que reduz o custo, o custo cai sempre → termina. Respeita o orçamento de
+// tempo (t0/orcamento) pra nunca travar em rotas grandes.
+function osrmOrOptPasse(ordem, D, base, iniIdx, fimIdx, t0, orcamento) {
   const di = (a, b) => { const v = D[a] && D[a][b]; return (v == null ? 1e12 : v); };
-  const n = ordem.length;
-  const at = pos => (pos < 0 ? iniIdx : (pos >= n ? fimIdx : base + ordem[pos]));
+  const at = pos => { const n = ordem.length; return (pos < 0 ? iniIdx : (pos >= n ? fimIdx : base + ordem[pos])); };
+  let mudou = false;
   for (let L = 1; L <= 3; L++) {
-    for (let i = 0; i + L <= n; i++) {
+    for (let i = 0; i + L <= ordem.length; i++) {
+      if ((i & 31) === 0 && Date.now() - t0 > orcamento) return mudou;
       const S0 = base + ordem[i], S1 = base + ordem[i + L - 1];
       const P = at(i - 1), N = at(i + L);
       let gain = 0;
       if (P >= 0) gain += di(P, S0);
       if (N >= 0) gain += di(S1, N);
       if (P >= 0 && N >= 0) gain -= di(P, N);
+      const n = ordem.length;
+      let bestDelta = -1e-6, bestJ = -1, bestRev = false;
       for (let j = 0; j <= n; j++) {
-        if (j >= i && j <= i + L) continue; // dentro/adjacente ao próprio segmento
+        if (j >= i && j <= i + L) continue;
         const B = at(j - 1), C = at(j);
-        let ligacao = (B >= 0 && C >= 0) ? di(B, C) : 0;
+        const ligacao = (B >= 0 && C >= 0) ? di(B, C) : 0;
         let insF = -ligacao; if (B >= 0) insF += di(B, S0); if (C >= 0) insF += di(S1, C);
         let insR = -ligacao; if (B >= 0) insR += di(B, S1); if (C >= 0) insR += di(S0, C);
-        const rev = insR < insF;
-        const delta = (rev ? insR : insF) - gain;
-        if (delta < -1e-6) {
-          const seg = ordem.splice(i, L);
-          if (rev) seg.reverse();
-          const insertAt = j > i ? j - L : j;
-          ordem.splice(insertAt, 0, ...seg);
-          return true;
-        }
+        const rev = insR < insF, delta = (rev ? insR : insF) - gain;
+        if (delta < bestDelta) { bestDelta = delta; bestJ = j; bestRev = rev; }
+      }
+      if (bestJ >= 0) {
+        const seg = ordem.splice(i, L);
+        if (bestRev) seg.reverse();
+        const insertAt = bestJ > i ? bestJ - L : bestJ;
+        ordem.splice(insertAt, 0, ...seg);
+        mudou = true; i--; // re-avalia a posição i
       }
     }
   }
-  return false;
+  return mudou;
 }
 
-// junta 2-opt e Or-opt em loop até não melhorar mais (busca local mais forte)
+// junta 2-opt e Or-opt em loop, COM ORÇAMENTO DE TEMPO (não trava nunca)
 function melhorarRota(ordem, D, base, iniIdx, fimIdx) {
-  let voltas = 0, melhorou = true;
-  while (melhorou && voltas < 4000) {
-    melhorou = false; voltas++;
-    const antes = custoRota(ordem, D, base, iniIdx, fimIdx);
-    osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
-    if (custoRota(ordem, D, base, iniIdx, fimIdx) < antes - 1e-6) melhorou = true;
-    if (osrmOrOpt(ordem, D, base, iniIdx, fimIdx)) melhorou = true;
+  const t0 = Date.now();
+  const n = ordem.length;
+  const orcamento = n > 150 ? 3000 : (n > 60 ? 1800 : 700); // ms
+  osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
+  let mudou = true;
+  while (mudou && Date.now() - t0 < orcamento) {
+    mudou = osrmOrOptPasse(ordem, D, base, iniIdx, fimIdx, t0, orcamento);
+    if (mudou) osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
   }
   return ordem;
 }
