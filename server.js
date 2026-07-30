@@ -203,7 +203,7 @@ async function otimizarOSRM(pontos, ini, fim) {
     if (best < 0) break;
     visit[best] = true; ordem.push(best); cur = idx(best);
   }
-  return melhorarRota(ordem, D, base, iniIdx, fimIdx);
+  return osrmDoisOpt(ordem, D, base, iniIdx, fimIdx); // roteirização de antes (só 2-opt)
 }
 
 function httpsGet(hostname, reqPath) {
