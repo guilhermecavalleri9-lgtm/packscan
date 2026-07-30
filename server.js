@@ -113,6 +113,68 @@ function osrmDoisOpt(ordem, D, base, iniIdx, fimIdx) {
   return ordem;
 }
 
+// custo total (tempo) de uma ordem, respeitando início/fim fixos
+function custoRota(ordem, D, base, iniIdx, fimIdx) {
+  const di = (a, b) => { const v = D[a] && D[a][b]; return (v == null ? 1e12 : v); };
+  let c = 0, n = ordem.length;
+  for (let k = 0; k < n; k++) {
+    const cur = base + ordem[k];
+    const prev = k === 0 ? iniIdx : base + ordem[k - 1];
+    if (prev >= 0) c += di(prev, cur);
+  }
+  if (fimIdx >= 0 && n > 0) c += di(base + ordem[n - 1], fimIdx);
+  return c;
+}
+
+// Or-opt: move blocos de 1, 2 ou 3 paradas pro melhor lugar (inclusive invertidos).
+// Estratégia primeira-melhoria: aplica a 1ª troca boa e devolve true (o loop externo
+// chama de novo). Isso escapa dos ótimos-locais que o 2-opt sozinho não sai.
+function osrmOrOpt(ordem, D, base, iniIdx, fimIdx) {
+  const di = (a, b) => { const v = D[a] && D[a][b]; return (v == null ? 1e12 : v); };
+  const n = ordem.length;
+  const at = pos => (pos < 0 ? iniIdx : (pos >= n ? fimIdx : base + ordem[pos]));
+  for (let L = 1; L <= 3; L++) {
+    for (let i = 0; i + L <= n; i++) {
+      const S0 = base + ordem[i], S1 = base + ordem[i + L - 1];
+      const P = at(i - 1), N = at(i + L);
+      let gain = 0;
+      if (P >= 0) gain += di(P, S0);
+      if (N >= 0) gain += di(S1, N);
+      if (P >= 0 && N >= 0) gain -= di(P, N);
+      for (let j = 0; j <= n; j++) {
+        if (j >= i && j <= i + L) continue; // dentro/adjacente ao próprio segmento
+        const B = at(j - 1), C = at(j);
+        let ligacao = (B >= 0 && C >= 0) ? di(B, C) : 0;
+        let insF = -ligacao; if (B >= 0) insF += di(B, S0); if (C >= 0) insF += di(S1, C);
+        let insR = -ligacao; if (B >= 0) insR += di(B, S1); if (C >= 0) insR += di(S0, C);
+        const rev = insR < insF;
+        const delta = (rev ? insR : insF) - gain;
+        if (delta < -1e-6) {
+          const seg = ordem.splice(i, L);
+          if (rev) seg.reverse();
+          const insertAt = j > i ? j - L : j;
+          ordem.splice(insertAt, 0, ...seg);
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+// junta 2-opt e Or-opt em loop até não melhorar mais (busca local mais forte)
+function melhorarRota(ordem, D, base, iniIdx, fimIdx) {
+  let voltas = 0, melhorou = true;
+  while (melhorou && voltas < 4000) {
+    melhorou = false; voltas++;
+    const antes = custoRota(ordem, D, base, iniIdx, fimIdx);
+    osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
+    if (custoRota(ordem, D, base, iniIdx, fimIdx) < antes - 1e-6) melhorou = true;
+    if (osrmOrOpt(ordem, D, base, iniIdx, fimIdx)) melhorou = true;
+  }
+  return ordem;
+}
+
 // devolve a ordem ótima (índices dos pontos de entrada) usando tempos reais
 async function otimizarOSRM(pontos, ini, fim) {
   const coords = [];
@@ -136,7 +198,7 @@ async function otimizarOSRM(pontos, ini, fim) {
     if (best < 0) break;
     visit[best] = true; ordem.push(best); cur = idx(best);
   }
-  return osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
+  return melhorarRota(ordem, D, base, iniIdx, fimIdx);
 }
 
 function httpsGet(hostname, reqPath) {
