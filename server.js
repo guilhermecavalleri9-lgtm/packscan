@@ -1435,7 +1435,12 @@ const server = http.createServer(async (req, res) => {
     const ctx = { usuario: req.usuarioAtual ? req.usuarioAtual.usuario : null, cep: cep ? cep.replace(/\D/g,'') : null };
 
     // verifica cache Supabase (a menos que "forcar" peça pra ignorar e regeocodificar)
-    const cached = body.forcar ? null : await supabaseGet(cacheKey);
+    let cached = body.forcar ? null : await supabaseGet(cacheKey);
+    // auto-cura: cache envenenado de ontem (coordenada fora de SC) é ignorado -> re-geocodifica
+    if (cached && cached.lat != null && !(cached.lat <= -25.8 && cached.lat >= -29.5 && cached.lng <= -48.2 && cached.lng >= -54.2)) {
+      console.log(`[cache] descartado (fora de SC): ${(endereco||cep||'').substring(0,35)}`);
+      cached = null;
+    }
     if (cached) {
       console.log(`[cache] ${(endereco||cep||'').substring(0,35)}`);
       return json(res, 200, { ...cached, fromCache: true });
@@ -1474,8 +1479,15 @@ const server = http.createServer(async (req, res) => {
         return json(res, 404, { error: 'Endereço não encontrado' });
       }
 
+      // trava de região: só entregamos na Grande Florianópolis / SC. Qualquer coordenada
+      // fora deste retângulo é impossível (rua homônima em outro estado, referência de CEP
+      // envenenada, etc.) e deve ser descartada — garante que os pontos nunca espalhem pelo Brasil.
+      const emSC = (la, ln) => la != null && ln != null && la <= -25.8 && la >= -29.5 && ln <= -48.2 && ln >= -54.2;
+
       // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
       const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,''), ctx) : { rua:'', bairro:'', cidade:'' };
+      // se a referência do CEP ficou fora de SC (envenenada), ignora a coordenada dela
+      if (cepInfo.lat != null && !emSC(cepInfo.lat, cepInfo.lng)) { cepInfo.lat = null; cepInfo.lng = null; }
       let ruaCep = cepInfo.rua;
       const info = await extrairInfoIA(endereco, ruaCep, ctx);
       const complemento = info.complemento || 'S/N';
@@ -1574,6 +1586,17 @@ const server = http.createServer(async (req, res) => {
       // fallback 5 (último recurso): coordenada aproximada do CEP — fica marcado pra corrigir
       if (!coord && cepInfo.lat) {
         coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
+      }
+
+      // trava de região final: se, apesar de tudo, o resultado caiu fora de SC, descarta.
+      // Usa o centro do CEP (se estiver em SC) como aproximação; senão marca pra corrigir manual.
+      if (coord && coord.lat != null && !emSC(coord.lat, coord.lng)) {
+        console.log(`[geocode] descartado (fora de SC): ${coord.lat},${coord.lng} — ${(endereco||cep||'').substring(0,30)}`);
+        if (emSC(cepInfo.lat, cepInfo.lng)) {
+          coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
+        } else {
+          coord = null;
+        }
       }
 
       if (!coord) {
