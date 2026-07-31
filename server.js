@@ -1474,29 +1474,30 @@ const server = http.createServer(async (req, res) => {
         return json(res, 404, { error: 'Endereço não encontrado' });
       }
 
-      // TENTATIVA PRECISA (como buscar direto no Google): manda o endereço BRUTO +
-      // bairro + cidade + CEP de uma vez. O CEP na busca faz o Google cravar o ponto
-      // exato. Só aceita se vier no nível do número (ROOFTOP/RANGE_INTERPOLATED) — aí
-      // pula todo o fluxo de reconstrução (mais preciso E mais barato). Se não vier
-      // exato, segue o fluxo antigo (bom pra endereço incompleto/bagunçado).
-      {
+      // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
+      const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,''), ctx) : { rua:'', bairro:'', cidade:'' };
+      let ruaCep = cepInfo.rua;
+
+      // TENTATIVA PRECISA (endereço bruto + bairro + cidade + CEP): o Google crava o
+      // ponto exato. SÓ aceita se vier no nível do número (ROOFTOP/RANGE_INTERPOLATED)
+      // E se cair PERTO do CEP — senão uma rua de mesmo nome em OUTRA cidade seria
+      // aceita (foi o que espalhou pontos pelo Brasil). Sem CEP-âncora, não usa o atalho.
+      if (endereco && /\d/.test(endereco) && cepInfo && cepInfo.lat) {
         const cepDig = (cep || '').replace(/\D/g, '');
         const cepFmt = cepDig.length === 8 ? (cepDig.slice(0,5) + '-' + cepDig.slice(5)) : '';
-        const cidadeOk = cidade && !/^\d+$/.test(cidade) ? cidade : '';
-        if (endereco && /\d/.test(endereco)) { // tem número → dá pra cravar
-          const partesQ = [endereco, bairro, cidadeOk, cepFmt, 'SC', 'Brasil'].filter(Boolean);
-          const cPreciso = await geocodificarEndereco(partesQ.join(', '), ctx);
-          if (cPreciso && (cPreciso.precisao === 'ROOFTOP' || cPreciso.precisao === 'RANGE_INTERPOLATED')) {
+        const cidadeOk = (cidade && !/^\d+$/.test(cidade)) ? cidade : (cepInfo.cidade || '');
+        const partesQ = [endereco, bairro, cidadeOk, cepFmt, 'SC', 'Brasil'].filter(Boolean);
+        const cPreciso = await geocodificarEndereco(partesQ.join(', '), ctx);
+        if (cPreciso && (cPreciso.precisao === 'ROOFTOP' || cPreciso.precisao === 'RANGE_INTERPOLATED')) {
+          const distKm = distanciaKm(cPreciso.lat, cPreciso.lng, cepInfo.lat, cepInfo.lng);
+          if (distKm <= 6) {
             await supabaseSet(cacheKey, { ...cPreciso, enderecoNormalizado: endereco });
             console.log(`[geocode] ✓ preciso (${cPreciso.precisao}) ${endereco.substring(0,45)}`);
             return json(res, 200, { ...cPreciso, enderecoNormalizado: endereco, fromCache: false });
           }
+          console.log(`[geocode] preciso descartado (${distKm.toFixed(1)}km do CEP): ${endereco.substring(0,40)}`);
         }
       }
-
-      // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
-      const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,''), ctx) : { rua:'', bairro:'', cidade:'' };
-      let ruaCep = cepInfo.rua;
       const info = await extrairInfoIA(endereco, ruaCep, ctx);
       const complemento = info.complemento || 'S/N';
       const cidadeValida = cidade && !/^\d+$/.test(cidade) ? cidade : '';
