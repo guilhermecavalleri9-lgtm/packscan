@@ -113,73 +113,6 @@ function osrmDoisOpt(ordem, D, base, iniIdx, fimIdx) {
   return ordem;
 }
 
-// custo total (tempo) de uma ordem, respeitando início/fim fixos
-function custoRota(ordem, D, base, iniIdx, fimIdx) {
-  const di = (a, b) => { const v = D[a] && D[a][b]; return (v == null ? 1e12 : v); };
-  let c = 0, n = ordem.length;
-  for (let k = 0; k < n; k++) {
-    const cur = base + ordem[k];
-    const prev = k === 0 ? iniIdx : base + ordem[k - 1];
-    if (prev >= 0) c += di(prev, cur);
-  }
-  if (fimIdx >= 0 && n > 0) c += di(base + ordem[n - 1], fimIdx);
-  return c;
-}
-
-// Or-opt: UMA passada completa — move blocos de 1, 2 ou 3 paradas pro melhor
-// lugar (inclusive invertidos), aplicando toda melhoria que achar. Como só aceita
-// troca que reduz o custo, o custo cai sempre → termina. Respeita o orçamento de
-// tempo (t0/orcamento) pra nunca travar em rotas grandes.
-function osrmOrOptPasse(ordem, D, base, iniIdx, fimIdx, t0, orcamento) {
-  const di = (a, b) => { const v = D[a] && D[a][b]; return (v == null ? 1e12 : v); };
-  const at = pos => { const n = ordem.length; return (pos < 0 ? iniIdx : (pos >= n ? fimIdx : base + ordem[pos])); };
-  let mudou = false;
-  for (let L = 1; L <= 3; L++) {
-    for (let i = 0; i + L <= ordem.length; i++) {
-      if ((i & 31) === 0 && Date.now() - t0 > orcamento) return mudou;
-      const S0 = base + ordem[i], S1 = base + ordem[i + L - 1];
-      const P = at(i - 1), N = at(i + L);
-      let gain = 0;
-      if (P >= 0) gain += di(P, S0);
-      if (N >= 0) gain += di(S1, N);
-      if (P >= 0 && N >= 0) gain -= di(P, N);
-      const n = ordem.length;
-      let bestDelta = -1e-6, bestJ = -1, bestRev = false;
-      for (let j = 0; j <= n; j++) {
-        if (j >= i && j <= i + L) continue;
-        const B = at(j - 1), C = at(j);
-        const ligacao = (B >= 0 && C >= 0) ? di(B, C) : 0;
-        let insF = -ligacao; if (B >= 0) insF += di(B, S0); if (C >= 0) insF += di(S1, C);
-        let insR = -ligacao; if (B >= 0) insR += di(B, S1); if (C >= 0) insR += di(S0, C);
-        const rev = insR < insF, delta = (rev ? insR : insF) - gain;
-        if (delta < bestDelta) { bestDelta = delta; bestJ = j; bestRev = rev; }
-      }
-      if (bestJ >= 0) {
-        const seg = ordem.splice(i, L);
-        if (bestRev) seg.reverse();
-        const insertAt = bestJ > i ? bestJ - L : bestJ;
-        ordem.splice(insertAt, 0, ...seg);
-        mudou = true; i--; // re-avalia a posição i
-      }
-    }
-  }
-  return mudou;
-}
-
-// junta 2-opt e Or-opt em loop, COM ORÇAMENTO DE TEMPO (não trava nunca)
-function melhorarRota(ordem, D, base, iniIdx, fimIdx) {
-  const t0 = Date.now();
-  const n = ordem.length;
-  const orcamento = n > 150 ? 3000 : (n > 60 ? 1800 : 700); // ms
-  osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
-  let mudou = true;
-  while (mudou && Date.now() - t0 < orcamento) {
-    mudou = osrmOrOptPasse(ordem, D, base, iniIdx, fimIdx, t0, orcamento);
-    if (mudou) osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
-  }
-  return ordem;
-}
-
 // devolve a ordem ótima (índices dos pontos de entrada) usando tempos reais
 async function otimizarOSRM(pontos, ini, fim) {
   const coords = [];
@@ -203,7 +136,7 @@ async function otimizarOSRM(pontos, ini, fim) {
     if (best < 0) break;
     visit[best] = true; ordem.push(best); cur = idx(best);
   }
-  return osrmDoisOpt(ordem, D, base, iniIdx, fimIdx); // roteirização de antes (só 2-opt)
+  return osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
 }
 
 function httpsGet(hostname, reqPath) {
@@ -743,22 +676,9 @@ function distanciaKm(lat1, lng1, lat2, lng2) {
 // quando a rua usada na busca veio de uma fonte indireta (CEP, cache, sugestão de pacote
 // vizinho), o Google às vezes "corrige" o nome pra uma rua homônima/parecida em outro bairro
 // inteiro — descarta o resultado se ficar longe demais do ponto conhecido do CEP
-// só entregamos na Grande Florianópolis / SC — qualquer coordenada fora deste retângulo
-// é impossível (rua homônima em outro estado/cidade) e é sempre descartada.
-function dentroDeSC(lat, lng) {
-  return lat != null && lng != null && lat <= -25.8 && lat >= -29.5 && lng <= -48.2 && lng >= -54.2;
-}
-
 async function geocodificarValidado(enderecoCompleto, cepInfo, ctx) {
   const coord = await geocodificarEndereco(enderecoCompleto, ctx);
-  if (!coord) return null;
-  // trava dura de região: mesmo SEM referência de CEP, nunca aceita ponto fora de SC.
-  // Esse é o furo que espalhava os pontos pelo Brasil quando o CEP não tinha coordenada.
-  if (!dentroDeSC(coord.lat, coord.lng)) {
-    console.log(`[geocode] descartado (fora de SC ${coord.lat},${coord.lng}): ${enderecoCompleto}`);
-    return null;
-  }
-  if (cepInfo && cepInfo.lat) {
+  if (coord && cepInfo && cepInfo.lat) {
     const d = distanciaKm(coord.lat, coord.lng, cepInfo.lat, cepInfo.lng);
     // se o ponto do CEP já foi corrigido manualmente, é uma referência precisa (não um
     // centroide aproximado do Google) — exige proximidade bem maior antes de confiar num
@@ -1448,12 +1368,7 @@ const server = http.createServer(async (req, res) => {
     const ctx = { usuario: req.usuarioAtual ? req.usuarioAtual.usuario : null, cep: cep ? cep.replace(/\D/g,'') : null };
 
     // verifica cache Supabase (a menos que "forcar" peça pra ignorar e regeocodificar)
-    let cached = body.forcar ? null : await supabaseGet(cacheKey);
-    // auto-cura: cache envenenado de ontem (coordenada fora de SC) é ignorado -> re-geocodifica
-    if (cached && cached.lat != null && !dentroDeSC(cached.lat, cached.lng)) {
-      console.log(`[cache] descartado (fora de SC): ${(endereco||cep||'').substring(0,35)}`);
-      cached = null;
-    }
+    const cached = body.forcar ? null : await supabaseGet(cacheKey);
     if (cached) {
       console.log(`[cache] ${(endereco||cep||'').substring(0,35)}`);
       return json(res, 200, { ...cached, fromCache: true });
@@ -1485,17 +1400,35 @@ const server = http.createServer(async (req, res) => {
       // forcarEndereco: geocodifica direto sem passar pelo CEP
       if (body.forcarEndereco && endereco) {
         const coord = await geocodificarEndereco(`${endereco}, SC, Brasil`, ctx);
-        if (coord && dentroDeSC(coord.lat, coord.lng)) {
+        if (coord) {
           await supabaseSet(cacheKey, { ...coord, enderecoNormalizado: endereco });
           return json(res, 200, { ...coord, enderecoNormalizado: endereco, fromCache: false });
         }
         return json(res, 404, { error: 'Endereço não encontrado' });
       }
 
+      // TENTATIVA PRECISA (como buscar direto no Google): manda o endereço BRUTO +
+      // bairro + cidade + CEP de uma vez. O CEP na busca faz o Google cravar o ponto
+      // exato. Só aceita se vier no nível do número (ROOFTOP/RANGE_INTERPOLATED) — aí
+      // pula todo o fluxo de reconstrução (mais preciso E mais barato). Se não vier
+      // exato, segue o fluxo antigo (bom pra endereço incompleto/bagunçado).
+      {
+        const cepDig = (cep || '').replace(/\D/g, '');
+        const cepFmt = cepDig.length === 8 ? (cepDig.slice(0,5) + '-' + cepDig.slice(5)) : '';
+        const cidadeOk = cidade && !/^\d+$/.test(cidade) ? cidade : '';
+        if (endereco && /\d/.test(endereco)) { // tem número → dá pra cravar
+          const partesQ = [endereco, bairro, cidadeOk, cepFmt, 'SC', 'Brasil'].filter(Boolean);
+          const cPreciso = await geocodificarEndereco(partesQ.join(', '), ctx);
+          if (cPreciso && (cPreciso.precisao === 'ROOFTOP' || cPreciso.precisao === 'RANGE_INTERPOLATED')) {
+            await supabaseSet(cacheKey, { ...cPreciso, enderecoNormalizado: endereco });
+            console.log(`[geocode] ✓ preciso (${cPreciso.precisao}) ${endereco.substring(0,45)}`);
+            return json(res, 200, { ...cPreciso, enderecoNormalizado: endereco, fromCache: false });
+          }
+        }
+      }
+
       // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
       const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,''), ctx) : { rua:'', bairro:'', cidade:'' };
-      // se a referência do CEP ficou fora de SC (envenenada), ignora a coordenada dela
-      if (cepInfo.lat != null && !dentroDeSC(cepInfo.lat, cepInfo.lng)) { cepInfo.lat = null; cepInfo.lng = null; }
       let ruaCep = cepInfo.rua;
       const info = await extrairInfoIA(endereco, ruaCep, ctx);
       const complemento = info.complemento || 'S/N';
@@ -1594,17 +1527,6 @@ const server = http.createServer(async (req, res) => {
       // fallback 5 (último recurso): coordenada aproximada do CEP — fica marcado pra corrigir
       if (!coord && cepInfo.lat) {
         coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
-      }
-
-      // trava de região final: se, apesar de tudo, o resultado caiu fora de SC, descarta.
-      // Usa o centro do CEP (se estiver em SC) como aproximação; senão marca pra corrigir manual.
-      if (coord && coord.lat != null && !dentroDeSC(coord.lat, coord.lng)) {
-        console.log(`[geocode] descartado (fora de SC): ${coord.lat},${coord.lng} — ${(endereco||cep||'').substring(0,30)}`);
-        if (dentroDeSC(cepInfo.lat, cepInfo.lng)) {
-          coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
-        } else {
-          coord = null;
-        }
       }
 
       if (!coord) {
