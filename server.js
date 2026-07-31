@@ -743,9 +743,22 @@ function distanciaKm(lat1, lng1, lat2, lng2) {
 // quando a rua usada na busca veio de uma fonte indireta (CEP, cache, sugestão de pacote
 // vizinho), o Google às vezes "corrige" o nome pra uma rua homônima/parecida em outro bairro
 // inteiro — descarta o resultado se ficar longe demais do ponto conhecido do CEP
+// só entregamos na Grande Florianópolis / SC — qualquer coordenada fora deste retângulo
+// é impossível (rua homônima em outro estado/cidade) e é sempre descartada.
+function dentroDeSC(lat, lng) {
+  return lat != null && lng != null && lat <= -25.8 && lat >= -29.5 && lng <= -48.2 && lng >= -54.2;
+}
+
 async function geocodificarValidado(enderecoCompleto, cepInfo, ctx) {
   const coord = await geocodificarEndereco(enderecoCompleto, ctx);
-  if (coord && cepInfo && cepInfo.lat) {
+  if (!coord) return null;
+  // trava dura de região: mesmo SEM referência de CEP, nunca aceita ponto fora de SC.
+  // Esse é o furo que espalhava os pontos pelo Brasil quando o CEP não tinha coordenada.
+  if (!dentroDeSC(coord.lat, coord.lng)) {
+    console.log(`[geocode] descartado (fora de SC ${coord.lat},${coord.lng}): ${enderecoCompleto}`);
+    return null;
+  }
+  if (cepInfo && cepInfo.lat) {
     const d = distanciaKm(coord.lat, coord.lng, cepInfo.lat, cepInfo.lng);
     // se o ponto do CEP já foi corrigido manualmente, é uma referência precisa (não um
     // centroide aproximado do Google) — exige proximidade bem maior antes de confiar num
@@ -1437,7 +1450,7 @@ const server = http.createServer(async (req, res) => {
     // verifica cache Supabase (a menos que "forcar" peça pra ignorar e regeocodificar)
     let cached = body.forcar ? null : await supabaseGet(cacheKey);
     // auto-cura: cache envenenado de ontem (coordenada fora de SC) é ignorado -> re-geocodifica
-    if (cached && cached.lat != null && !(cached.lat <= -25.8 && cached.lat >= -29.5 && cached.lng <= -48.2 && cached.lng >= -54.2)) {
+    if (cached && cached.lat != null && !dentroDeSC(cached.lat, cached.lng)) {
       console.log(`[cache] descartado (fora de SC): ${(endereco||cep||'').substring(0,35)}`);
       cached = null;
     }
@@ -1472,22 +1485,17 @@ const server = http.createServer(async (req, res) => {
       // forcarEndereco: geocodifica direto sem passar pelo CEP
       if (body.forcarEndereco && endereco) {
         const coord = await geocodificarEndereco(`${endereco}, SC, Brasil`, ctx);
-        if (coord) {
+        if (coord && dentroDeSC(coord.lat, coord.lng)) {
           await supabaseSet(cacheKey, { ...coord, enderecoNormalizado: endereco });
           return json(res, 200, { ...coord, enderecoNormalizado: endereco, fromCache: false });
         }
         return json(res, 404, { error: 'Endereço não encontrado' });
       }
 
-      // trava de região: só entregamos na Grande Florianópolis / SC. Qualquer coordenada
-      // fora deste retângulo é impossível (rua homônima em outro estado, referência de CEP
-      // envenenada, etc.) e deve ser descartada — garante que os pontos nunca espalhem pelo Brasil.
-      const emSC = (la, ln) => la != null && ln != null && la <= -25.8 && la >= -29.5 && ln <= -48.2 && ln >= -54.2;
-
       // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
       const cepInfo = cep ? await ruaPeloCep(cep.replace(/\D/g,''), ctx) : { rua:'', bairro:'', cidade:'' };
       // se a referência do CEP ficou fora de SC (envenenada), ignora a coordenada dela
-      if (cepInfo.lat != null && !emSC(cepInfo.lat, cepInfo.lng)) { cepInfo.lat = null; cepInfo.lng = null; }
+      if (cepInfo.lat != null && !dentroDeSC(cepInfo.lat, cepInfo.lng)) { cepInfo.lat = null; cepInfo.lng = null; }
       let ruaCep = cepInfo.rua;
       const info = await extrairInfoIA(endereco, ruaCep, ctx);
       const complemento = info.complemento || 'S/N';
@@ -1590,9 +1598,9 @@ const server = http.createServer(async (req, res) => {
 
       // trava de região final: se, apesar de tudo, o resultado caiu fora de SC, descarta.
       // Usa o centro do CEP (se estiver em SC) como aproximação; senão marca pra corrigir manual.
-      if (coord && coord.lat != null && !emSC(coord.lat, coord.lng)) {
+      if (coord && coord.lat != null && !dentroDeSC(coord.lat, coord.lng)) {
         console.log(`[geocode] descartado (fora de SC): ${coord.lat},${coord.lng} — ${(endereco||cep||'').substring(0,30)}`);
-        if (emSC(cepInfo.lat, cepInfo.lng)) {
+        if (dentroDeSC(cepInfo.lat, cepInfo.lng)) {
           coord = { lat: cepInfo.lat, lng: cepInfo.lng, enderecoFormatado: `CEP ${cep}`, precisao: 'APPROXIMATE', cidade: cidadeFinal };
         } else {
           coord = null;
