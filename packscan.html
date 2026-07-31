@@ -652,6 +652,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div><label>Bairro / Distrito</label><select id="c2"><option>—</option></select></div>
         <div><label>Cidade</label><select id="c4"><option>—</option></select></div>
         <div><label>CEP</label><select id="c3"><option>—</option></select></div>
+        <div><label>2º código (Nº pedidos terceiros)</label><select id="c5"><option>—</option></select></div>
       </div>
       <div class="btn-row">
         <button class="btn btn-p" onclick="confirmarImport()">✓ Confirmar importação</button>
@@ -885,7 +886,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 
     <!-- resultado grande -->
     <div id="sc-result" style="background:linear-gradient(180deg,#151b28,#10141d);border:1px solid var(--border);border-radius:16px;padding:26px 16px 22px;text-align:center;margin-bottom:14px">
-      <div id="sc-rota" style="font-family:var(--mono);font-size:12px;color:var(--text3);letter-spacing:3px;text-transform:uppercase;margin-bottom:6px"> </div>
+      <div id="sc-rota" style="font-family:var(--mono);font-size:26px;font-weight:800;color:var(--text2);letter-spacing:3px;text-transform:uppercase;margin-bottom:8px"> </div>
       <div id="sc-num" style="font-size:44px;font-weight:800;font-family:var(--mono);line-height:1.05;color:var(--text3);word-break:break-word">aguardando</div>
       <div id="sc-sub" style="font-size:12px;color:var(--text2);margin-top:12px;line-height:1.5"> </div>
     </div>
@@ -1718,16 +1719,34 @@ function handleFile(inp, cb) {
     var hdrs;
     if (ext==='csv') hdrs = e.target.result.split('\n')[0].split(/[,;\t]/).map(function(h){ return h.trim().replace(/"/g,''); });
     else { var wb = XLSX.read(e.target.result,{type:'binary'}); hdrs = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1})[0].map(function(h){ return String(h); }); }
-    ['c0','c1','c2','c3','c4'].forEach(function(id) {
-      var s = document.getElementById(id); s.innerHTML = '<option>—</option>';
+    ['c0','c1','c2','c3','c4','c5'].forEach(function(id) {
+      var s = document.getElementById(id); if(!s) return; s.innerHTML = '<option>—</option>';
       hdrs.forEach(function(h){ s.innerHTML += '<option>'+h+'</option>'; });
     });
-    var auto = {c0:['pedido','tracking','cod','jms'],c1:['complemento','endereco','endereço','address','logr'],c2:['distrito','bairro','neigh'],c3:['cep','postal','zip'],c4:['cidade','city','destino']};
+    // want = palavras que identificam a coluna; avoid = penaliza (ex: NUNCA pegar "origem").
+    // bônus forte pra "destino"/"destinatário" — a planilha tem origem E destino, tem que
+    // pegar sempre o DESTINO (é pra onde a entrega vai).
+    var auto = {
+      c0:{want:['pedido','tracking','cod','jms'], avoid:[]},
+      c1:{want:['complemento','endereco','endereço','address','logr'], avoid:[]},
+      c2:{want:['distrito','bairro','neigh'], avoid:['origem']},
+      c3:{want:['cep','postal','zip'], avoid:['origem']},
+      c4:{want:['cidade','city'], avoid:['origem']},
+      c5:{want:['terceiro','pedidos terceiros','pedido terceiro','codigo 2','cod2','2o codigo','2º codigo'], avoid:[]}
+    };
     Object.keys(auto).forEach(function(id) {
-      var s = document.getElementById(id);
+      var s = document.getElementById(id); if(!s) return;
+      var cfg = auto[id], melhorIdx=-1, melhorPts=0;
       for (var i=1;i<s.options.length;i++) {
-        if (auto[id].some(function(k){ return s.options[i].text.toLowerCase().includes(k); })) { s.selectedIndex=i; break; }
+        var t = s.options[i].text.toLowerCase();
+        var bate = cfg.want.some(function(k){ return t.includes(k); });
+        if (!bate) continue;
+        var pts = 1;
+        if (/destin/.test(t)) pts += 3;              // prefere destino/destinatário
+        if (cfg.avoid.some(function(a){ return t.includes(a); })) pts -= 10; // foge de origem
+        if (pts > melhorPts) { melhorPts = pts; melhorIdx = i; }
       }
+      if (melhorIdx > 0) s.selectedIndex = melhorIdx;
     });
     if (typeof cb === 'function') cb(hdrs);
   };
@@ -1745,7 +1764,7 @@ function adicionarImport() {
 
 function _importarPlanilha(adicionar) {
   if (!_pFile) { alert('Selecione um arquivo.'); return; }
-  var cols = ['c0','c1','c2','c3','c4'].map(function(id){ return document.getElementById(id).value; });
+  var cols = ['c0','c1','c2','c3','c4','c5'].map(function(id){ var el=document.getElementById(id); return el?el.value:'—'; });
   if (cols[0]==='—'||cols[1]==='—') { alert('Mapeie pelo menos Tracking e Endereço.'); return; }
   var ext = _pFile.name.split('.').pop().toLowerCase();
   var reader = new FileReader();
@@ -1759,7 +1778,8 @@ function _importarPlanilha(adicionar) {
     var linhas = rows.filter(function(r){ return r[cols[0]]; }).map(function(r){
       return { tracking:String(r[cols[0]]||'').trim(), endereco:String(r[cols[1]]||'').trim(),
         bairro:cols[2]!=='—'?String(r[cols[2]]||'').trim():'', cep:String(r[cols[3]]||'').trim().replace(/\D/g,''),
-        cidade:cols[4]!=='—'?String(r[cols[4]]||'').trim():'', lat:null,lng:null,enderecoNorm:null,precisao:null,rota:null,numNaRota:null };
+        cidade:cols[4]!=='—'?String(r[cols[4]]||'').trim():'',
+        tracking2:cols[5]!=='—'?String(r[cols[5]]||'').trim():'', lat:null,lng:null,enderecoNorm:null,precisao:null,rota:null,numNaRota:null };
     });
     var _nNovos = 0;
     if (!adicionar) {
@@ -2317,13 +2337,19 @@ function atualizarProg() {
   document.getElementById('bip-prog').innerHTML='<div style="display:flex;justify-content:space-between;font-size:12px;font-family:var(--mono);margin-bottom:6px"><span style="color:var(--text2)">'+bip+' de '+total+'</span><span style="color:var(--accent)">'+pct+'%</span></div><div class="pb-wrap"><div class="pb-fill'+(pct===100?' g':'')+'" style="width:'+pct+'%"></div></div>';
 }
 
+// normaliza um código e acha o pacote por QUALQUER um dos dois códigos (principal ou 2º)
+function _normCod(c){ return String(c==null?'':c).trim().toUpperCase(); }
+function acharPacoteCodigo(cod){
+  var v=_normCod(cod); if(!v) return null;
+  return pacotes.find(function(p){ return _normCod(p.tracking)===v || _normCod(p.tracking2)===v; });
+}
 function handleBip(e) {
   if (e.key!=='Enter') return;
   var val=document.getElementById('bip').value.trim();
   document.getElementById('bip').value='';
   if (!val) return;
   if (!motAtivo) { showFb('Selecione um motorista primeiro.','err'); return; }
-  var pacote=pacotes.find(function(p){ return p.tracking===val; });
+  var pacote=acharPacoteCodigo(val);
   if (!pacote) { showFb('Código não encontrado: '+val,'err'); return; }
   var rota;
   if (motAtivo==='all') {
@@ -2333,8 +2359,8 @@ function handleBip(e) {
     rota=rotas.find(function(r){ return r.id===motAtivo; });
     if (pacote.rota!==motAtivo) { var or=rotas.find(function(r){ return r.id===pacote.rota; }); showFb('Pacote da Rota '+String(pacote.rota||'?').padStart(2,'0')+' — '+(or?or.motorista:'sem rota')+'!','warn'); return; }
   }
-  if (bipados[val]) { showFb('Já bipado: '+val,'warn'); return; }
-  bipados[val]=true;
+  if (bipados[pacote.tracking]) { showFb('Já bipado: '+val,'warn'); return; }
+  bipados[pacote.tracking]=true;
   showFb('✓ R'+String(rota.id).padStart(2,'0')+' · P'+String(pacote.numNaRota).padStart(3,'0')+' · '+(pacote.bairro||pacote.cidade),'ok');
   if (document.getElementById('auto-print').checked) imprimirEtiqueta(pacote,rota);
   var tb=document.getElementById('bip-tbody');
@@ -3430,10 +3456,10 @@ function scParar() {
 
 // registra a bipagem de fato (compartilha estado com a aba Bipar)
 function scRegistrar(codigo) {
-  var pacote = pacotes.find(function(p) { return p.tracking === codigo; });
+  var pacote = acharPacoteCodigo(codigo);
   if (!pacote) return { tipo:'err', codigo: codigo };
-  var jaTinha = !!bipados[codigo];
-  bipados[codigo] = true;
+  var jaTinha = !!bipados[pacote.tracking];
+  bipados[pacote.tracking] = true;
   renderMotList(); atualizarProg(); persistirLocal();
   return { tipo: jaTinha ? 'warn' : 'ok', pacote: pacote, codigo: codigo };
 }
@@ -3500,7 +3526,7 @@ function scOnLeitura(codigo) {
   var r;
   if (_scModo === 'rota') {
     // consulta apenas — não marca como bipado (não afeta o progresso dos motoristas)
-    var pacote = pacotes.find(function(p) { return p.tracking === codigo; });
+    var pacote = acharPacoteCodigo(codigo);
     r = pacote ? { tipo:'ok', pacote: pacote, codigo: codigo } : { tipo:'err', codigo: codigo };
   } else {
     r = scRegistrar(codigo);
@@ -3804,7 +3830,7 @@ function homeArquivoPick(adicionar){
   fi.click();
 }
 function homeImportSheet(){
-  var campos=[['c0','Tracking / pedido'],['c1','Endereço'],['c2','Bairro'],['c3','CEP'],['c4','Cidade']];
+  var campos=[['c0','Tracking / pedido'],['c1','Endereço'],['c2','Bairro'],['c3','CEP'],['c4','Cidade'],['c5','2º código (Nº pedidos terceiros)']];
   var html='';
   campos.forEach(function(c){
     var src=document.getElementById(c[0]);
@@ -3821,7 +3847,7 @@ function homeImportSheet(){
 }
 function fecharImport(){ document.getElementById('imp-bg').classList.remove('show'); document.getElementById('imp-sheet').style.display='none'; }
 function homeConfirmImport(){
-  ['c0','c1','c2','c3','c4'].forEach(function(id){
+  ['c0','c1','c2','c3','c4','c5'].forEach(function(id){
     var s=document.getElementById('imp-'+id); if(s) document.getElementById(id).selectedIndex=s.selectedIndex;
   });
   fecharImport();
