@@ -3795,6 +3795,14 @@ function homeGeo(){
   if(!pacotes.length){ alert('Importe uma planilha primeiro.'); return; }
   iniciarGeo(false); // usa o mesmo motor; a barra aparece dentro do botão
 }
+// força refazer a geocodificação de TODOS (ignora o cache) — corrige pontos errados
+function homeForcarGeo(){
+  if(!pacotes.length){ alert('Importe uma planilha primeiro.'); return; }
+  if(!confirm('Refazer a geocodificação de TODOS os '+pacotes.length+' pacotes?\n\nIsso re-consulta o Google (gasta 1 crédito por pacote) e corrige os pontos que ficaram errados.')) return;
+  if(typeof fecharMenu==='function') fecharMenu();
+  goHome();
+  iniciarGeo(true); // forçar = ignora cache e refaz tudo; a barra aparece no botão Geocodificar
+}
 
 // ── IMPORTAR / ADICIONAR direto da tela inicial ──
 var _homeAdd=false;
@@ -4348,6 +4356,7 @@ async function confirmarRoteirizar(){
 function abrirMenu(){
   var itens=[
     {t:'Início e fim da rota', s:'ponto de partida e chegada', act:'abrirPontos()', ic:'<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/>'},
+    {t:'Reprocessar geocodificação', s:'refaz todos (gasta crédito)', act:'homeForcarGeo()', ic:'<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M3 21v-5h5" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Regiões CEP', s:'faixas de CEP por bairro', act:'goTab(4)', ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
     {t:'Corrigir CEP', s:'ajustar ponto no mapa', act:'goTab(6)', ic:'<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/>'},
     {t:'Corrigir nome de rua', s:'errado → certo, pra todos', act:'goTab(0)', ic:'<path d="M4 7V5h16v2M9 20h6M12 5v15" stroke-linecap="round" stroke-linejoin="round"/>'},
