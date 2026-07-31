@@ -3754,7 +3754,7 @@ function renderListaPacotes(){
              : '<span style="color:var(--green)">geocodificado</span>');
     html+='<div class="pcard"><span class="pdot" style="background:'+cor+'"></span>'
       +'<div class="pmid"><div class="pt">'+esc(p.tracking||p.codigo||'')+'</div>'
-      +'<div class="pe" title="'+esc(p.endereco||'')+'">'+esc(p.endereco||'')+'</div>'
+      +'<div class="pe" title="'+esc(p.enderecoNorm||p.endereco||'')+'">'+esc(p.enderecoNorm||p.endereco||'')+'</div>'
       +'<div class="pb">'+badge+'</div></div>'
       +'<div class="pact"><button title="Editar" onclick="homeEditar(\''+tkEsc+'\')">✏</button>'
       +'<button class="del" title="Excluir" onclick="homeExcluirPacote(\''+tkEsc+'\')">🗑</button></div></div>';
