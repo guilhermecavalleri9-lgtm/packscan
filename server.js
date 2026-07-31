@@ -1417,18 +1417,17 @@ const server = http.createServer(async (req, res) => {
 
       let enderecoFinal, coord;
 
-      // melhor caso: rua MENCIONADA NO PRÓPRIO TEXTO (mais confiável que a rua do CEP,
-      // que é só uma aproximação do Google e pode estar errada para a região) — mas ainda
-      // valida distância, já que erro de digitação no texto pode casar com uma rua homônima
-      // bem longe (ex: "Maria Saturnina de Jesus" → rua errada em outro bairro)
-      if (info.rua) {
-        enderecoFinal = `${info.rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
+      // PRINCIPAL: rua vinda do CEP (Correios/Google) + complemento. É a fonte de verdade —
+      // primeiro puxa a rua pelo CEP, depois soma o número/complemento. Sem adivinhação.
+      if (ruaCep) {
+        enderecoFinal = `${ruaCep}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
         coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
       }
 
-      // fallback 1: rua do CEP + complemento (quando o texto não tinha nome de rua)
-      if (!coord && ruaCep) {
-        enderecoFinal = `${ruaCep}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
+      // fallback: só se o CEP NÃO tem rua (CEP de bairro), aí sim usa a rua que veio escrita
+      // no próprio texto da planilha — ainda validando distância pra não casar rua homônima longe
+      if (!coord && !ruaCep && info.rua) {
+        enderecoFinal = `${info.rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
         coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
       }
 
