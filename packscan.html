@@ -313,8 +313,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div id="auth-form-registro" style="display:none">
       <div class="auth-field"><label>Usuário</label><input type="text" id="auth-reg-usuario" autocomplete="username"></div>
       <div class="auth-field"><label>Senha (mín. 4 caracteres)</label><input type="password" id="auth-reg-senha" autocomplete="new-password"></div>
+      <div class="auth-field"><label>Código de indicação (opcional)</label><input type="text" id="auth-reg-ref" placeholder="ganhe 20% de desconto" autocomplete="off" style="text-transform:uppercase"></div>
       <button class="btn btn-p" style="width:100%" onclick="authRegistrar()">Registrar</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:.6rem">Após registrar, um administrador precisa aprovar seu acesso antes que você consiga entrar. Ao ser aprovado, você ganha <strong style="color:var(--green)">500 créditos grátis</strong> para testar.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:.6rem">Após registrar, um administrador precisa aprovar seu acesso antes que você consiga entrar. Ao ser aprovado, você ganha <strong style="color:var(--green)">150 créditos grátis</strong> para testar. Com um código de indicação, seu 1º plano sai com <strong style="color:var(--green)">20% de desconto</strong>.</div>
     </div>
 
     <div id="auth-msg"></div>
@@ -375,6 +376,24 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <button class="btn btn-sm" style="width:100%;justify-content:center" onclick="comprarCopiar()">📋 Copiar código</button>
       <div id="comprar-status" style="font-size:13px;color:var(--amber);margin-top:.75rem">⏳ Aguardando pagamento...</div>
     </div>
+  </div>
+</div>
+
+<!-- modal: indique e ganhe -->
+<div id="indicar-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:10002;align-items:center;justify-content:center;overflow:auto">
+  <div class="auth-box" style="width:440px">
+    <div style="display:flex;align-items:center;margin-bottom:.4rem">
+      <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">Indique e ganhe 🎁</div>
+      <button class="btn btn-sm" onclick="indicarFechar()">✕</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Compartilhe seu link. Quem assinar por ele ganha <strong style="color:var(--green)">20% de desconto</strong>, e você ganha <strong style="color:var(--green)">20% acumulativo</strong> — a cada <strong>5 assinantes</strong>, <strong>1 mês grátis</strong>.</div>
+    <label style="font-size:11px;color:var(--text3)">Seu link de indicação</label>
+    <div style="display:flex;gap:6px;margin:4px 0 .8rem">
+      <input type="text" id="indicar-link" readonly style="flex:1;font-size:12px;font-family:var(--mono)">
+      <button class="btn btn-sm" onclick="indicarCopiar()">📋</button>
+    </div>
+    <button class="btn btn-g" style="width:100%;justify-content:center;margin-bottom:1rem" onclick="indicarWhats()">💬 Compartilhar no WhatsApp</button>
+    <div id="indicar-stats" style="font-size:13px;color:var(--text3)">Carregando...</div>
   </div>
 </div>
 
@@ -1086,7 +1105,9 @@ function guardarDadosConta(d) {
   AUTH_CREDITOS = (d.creditos === null || d.creditos === undefined) ? null : d.creditos;
   AUTH_PLANO_ATIVO = !!d.planoAtivo;
   AUTH_PLANO_ATE = d.planoAte || null;
+  if (typeof d.indicacaoDesconto !== 'undefined') AUTH_IND_DESCONTO = d.indicacaoDesconto || 0;
 }
+var AUTH_IND_DESCONTO = 0; // 20 se o usuário tem desconto de indicação disponível
 
 // texto curto de saldo/plano para o cabeçalho
 function saldoTexto() {
@@ -1194,15 +1215,25 @@ function comprarRenderLista() {
     return;
   }
   var preco = d.plano ? d.plano.preco : 24.90;
+  // desconto de indicação (aplicado pelo servidor); mostra o preço já com desconto quando não há cupom
+  var temInd = AUTH_IND_DESCONTO > 0 && !_cupomAtivo;
+  function _fmt(p){
+    if (temInd) {
+      var fin = 'R$ ' + Math.max(0.01, Math.round(p*(1-AUTH_IND_DESCONTO/100)*100)/100).toFixed(2).replace('.', ',');
+      return '<span style="text-decoration:line-through;color:var(--text3);font-weight:400;font-size:11px">R$ '+p.toFixed(2).replace('.', ',')+'</span> ' + fin;
+    }
+    return _fmtPreco(p);
+  }
   var html = ''
+    + (temInd ? '<div style="background:rgba(52,201,126,.12);border:1px solid rgba(52,201,126,.4);border-radius:8px;padding:.5rem .7rem;font-size:12px;color:var(--green);margin-bottom:.7rem">🎁 Desconto de indicação de '+AUTH_IND_DESCONTO+'% aplicado no seu 1º plano!</div>' : '')
     + '<div style="font-size:13px;color:var(--text2);margin-bottom:.7rem">Plano mensal PackScan — você usa <strong>sua própria chave</strong> do Google (10 mil buscas grátis/mês).</div>'
     // opção 1: assinatura recorrente no cartão
     + '<button class="btn btn-g" style="width:100%;justify-content:space-between" onclick="assinarCartao()">'
-    + '<span>💳 Assinar no cartão · renova sozinho</span><strong>' + _fmtPreco(preco) + '/mês</strong></button>'
+    + '<span>💳 Assinar no cartão · renova sozinho</span><strong>' + _fmt(preco) + '/mês</strong></button>'
     + '<div style="font-size:11px;color:var(--text3);margin:.35rem 0 .9rem">Cobrança automática todo mês no cartão. Cancele quando quiser.</div>'
     // opção 2: PIX avulso (1 mês)
     + '<button class="btn" style="width:100%;justify-content:space-between" onclick="comprarPacote(\'' + (d.plano ? d.plano.id : 'plano_mensal') + '\')">'
-    + '<span>🔑 Pagar 1 mês no PIX</span><strong>' + _fmtPreco(preco) + '</strong></button>'
+    + '<span>🔑 Pagar 1 mês no PIX</span><strong>' + _fmt(preco) + '</strong></button>'
     + '<div style="font-size:11px;color:var(--text3);margin-top:.35rem">Pagamento único, vale 30 dias (não renova sozinho).</div>'
     + '<div style="font-size:11px;color:var(--text3);margin-top:.6rem">Depois de pagar, cadastre sua chave em "🔑 Minhas chaves".</div>';
   lista.innerHTML = html;
@@ -1261,6 +1292,35 @@ function comprarCopiar() {
 function comprarFechar() {
   if (_comprarPoll) { clearInterval(_comprarPoll); _comprarPoll = null; }
   document.getElementById('comprar-bg').style.display = 'none';
+}
+
+// ── indique e ganhe ────────────────────────────────────────────────────────────
+var _indicarLink = '';
+function indicarAbrir() {
+  document.getElementById('indicar-bg').style.display = 'flex';
+  document.getElementById('indicar-stats').innerHTML = 'Carregando...';
+  document.getElementById('indicar-link').value = '';
+  apiFetch(BACKEND + '/api/referral').then(function(r){ return r.json(); }).then(function(d){
+    _indicarLink = d.link || '';
+    document.getElementById('indicar-link').value = _indicarLink;
+    var barra = '';
+    for (var i = 0; i < d.meta; i++) barra += i < d.pendentes ? '🟢' : '⚪';
+    document.getElementById('indicar-stats').innerHTML =
+        '<div style="margin-bottom:.5rem"><strong style="color:var(--text)">' + d.total + '</strong> assinatura(s) pela sua indicação</div>'
+      + '<div style="margin-bottom:.4rem">Progresso pro próximo mês grátis: ' + barra + '</div>'
+      + '<div style="color:var(--text3);font-size:12px">Faltam <strong>' + d.faltam + '</strong> pra ganhar mais 1 mês grátis.'
+      + (d.mesesGratis ? ' Você já ganhou <strong style="color:var(--green)">' + d.mesesGratis + '</strong> mês(es) grátis.' : '') + '</div>';
+  }).catch(function(e){ document.getElementById('indicar-stats').innerHTML = '<span style="color:var(--red)">Erro: ' + esc(e.message) + '</span>'; });
+}
+function indicarFechar() { document.getElementById('indicar-bg').style.display = 'none'; }
+function indicarCopiar() {
+  var t = document.getElementById('indicar-link'); t.select();
+  try { document.execCommand('copy'); } catch(e){}
+  if (navigator.clipboard) navigator.clipboard.writeText(t.value).catch(function(){});
+}
+function indicarWhats() {
+  var msg = 'Use o PackScan pra roteirizar suas entregas! Assine pelo meu link e ganhe 20% de desconto: ' + _indicarLink;
+  window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank', 'noopener');
 }
 
 // ── minhas chaves de API (plano próprio) ───────────────────────────────────────
@@ -1379,13 +1439,14 @@ async function authRegistrar() {
   var senha = document.getElementById('auth-reg-senha').value;
   var msg = document.getElementById('auth-msg');
   if (!usuario || senha.length < 4) { msg.textContent='Usuário obrigatório e senha com pelo menos 4 caracteres.'; msg.style.color='var(--red)'; return; }
+  var ref = (document.getElementById('auth-reg-ref').value || '').trim().toUpperCase();
   msg.textContent='Registrando...'; msg.style.color='var(--amber)';
   try {
-    var r = await fetch(BACKEND+'/api/auth/registrar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,senha:senha}) });
+    var r = await fetch(BACKEND+'/api/auth/registrar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,senha:senha,ref:ref}) });
     var d = await r.json();
     if (!r.ok) { msg.textContent='✗ '+(d.error||'Erro ao registrar.'); msg.style.color='var(--red)'; return; }
     if (d.pendente) {
-      msg.textContent='✓ Cadastro enviado! Aguarde a aprovação — você começa com '+(d.creditosGratis||500)+' créditos grátis para testar.'; msg.style.color='var(--green)';
+      msg.textContent='✓ Cadastro enviado! Aguarde a aprovação — você começa com '+(d.creditosGratis||150)+' créditos grátis para testar.'; msg.style.color='var(--green)';
     } else {
       msg.textContent='✓ Cadastro criado e aprovado automaticamente (primeiro usuário do sistema). Já pode entrar.'; msg.style.color='var(--green)';
     }
@@ -4403,6 +4464,7 @@ function abrirMenu(){
     {sep:true},
     {t:'Minhas chaves', s:'chave do Google (plano)', act:'chavesAbrir()', ic:'<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M17 6l2 2M15 8l2 2" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Assinar plano', s:'cartão recorrente ou PIX', act:'comprarAbrir()', ic:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20" stroke-linecap="round"/>'},
+    {t:'Indique e ganhe', s:'20% pra você e pra quem assinar', act:'indicarAbrir()', ic:'<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0M17 8l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Sair', s:'', act:'authLogout()', danger:true, ic:'<path d="M15 12H4M4 12l4-4M4 12l4 4M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" stroke-linecap="round" stroke-linejoin="round"/>'}
   ];
   var arw='<span style="color:var(--text3)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>';
@@ -4425,6 +4487,21 @@ function fecharMenu(){ document.getElementById('menu-bg').classList.remove('show
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function(){ navigator.serviceWorker.register('/sw.js').catch(function(){}); });
 }
+// se chegou por um link de indicação (?ref=CODE), prefill o campo de cadastro
+(function(){
+  var m = location.search.match(/[?&]ref=([A-Za-z0-9]+)/);
+  if (m && m[1]) {
+    try { localStorage.setItem('packscan_ref', m[1].toUpperCase()); } catch(e){}
+  }
+  var salvo = '';
+  try { salvo = localStorage.getItem('packscan_ref') || ''; } catch(e){}
+  if (salvo) {
+    var el = document.getElementById('auth-reg-ref');
+    if (el && !el.value) el.value = salvo;
+    // já mostra a aba de cadastro pra quem veio pelo link
+    if (m && typeof authMostrarAba === 'function') { try { authMostrarAba('registrar'); } catch(e){} }
+  }
+})();
 authBootstrap();
 </script>
 </body>

@@ -17,7 +17,11 @@ const PACOTES_CREDITOS = [
 // plano mensal com chave própria: usa a própria chave do Google (obrigatória; a da IA é opcional) por 30 dias, sem gastar créditos
 const PLANO_MENSAL = { id: 'plano_mensal', preco: 24.90, dias: 30 };
 // créditos de boas-vindas pra testar o sistema ao se registrar
-const CREDITOS_BOAS_VINDAS = 500;
+const CREDITOS_BOAS_VINDAS = 150;
+// programa de indicação: quem assina por um link ganha 20% de desconto, e quem indicou
+// ganha 20% acumulativo por indicação confirmada — a cada 5 indicações, 1 mês grátis.
+const INDICACAO_PCT = 20;
+const INDICACOES_POR_MES_GRATIS = 5;
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 
@@ -386,6 +390,57 @@ async function ativarPlano(usuario, dias) {
   return true;
 }
 
+// ─── INDICAÇÕES (referral) ─────────────────────────────────────────────────────
+// código curto e estável por usuário (gerado 1x e guardado no registro)
+function novoRefCode() {
+  return crypto.randomBytes(4).toString('hex').toUpperCase(); // 8 chars
+}
+async function garantirRefCode(usuario) {
+  const lista = await getUsuarios();
+  const u = lista.find(x => x.usuario === usuario);
+  if (!u) return null;
+  if (!u.refCode) {
+    let code; const usados = new Set(lista.map(x => x.refCode).filter(Boolean));
+    do { code = novoRefCode(); } while (usados.has(code));
+    u.refCode = code;
+    await setUsuarios(lista);
+  }
+  return u.refCode;
+}
+function acharPorRefCode(lista, code) {
+  const c = String(code || '').trim().toUpperCase();
+  if (!c) return null;
+  return lista.find(x => x.refCode === c) || null;
+}
+// desconto de indicação disponível pro usuário (20% enquanto não foi consumido no 1º pagamento)
+function descontoIndicacao(u) {
+  return (u && u.indicadoPor && !u.indicacaoUsada) ? INDICACAO_PCT : 0;
+}
+// confirma a indicação do usuário que acabou de pagar (idempotente): marca o desconto como
+// usado e credita quem indicou (20% acumulativo → a cada 5, 1 mês grátis).
+async function confirmarIndicacao(usuarioPagante) {
+  const lista = await getUsuarios();
+  const u = lista.find(x => x.usuario === usuarioPagante);
+  if (!u || !u.indicadoPor || u.indicacaoCreditada) return;
+  u.indicacaoUsada = true;       // já aproveitou o desconto de 20%
+  u.indicacaoCreditada = true;   // não credita o padrinho duas vezes
+  const padrinho = acharPorRefCode(lista, u.indicadoPor) || lista.find(x => x.usuario === u.indicadoPor);
+  if (padrinho && padrinho.usuario !== u.usuario) {
+    padrinho.refTotal = (padrinho.refTotal || 0) + 1;         // histórico total
+    padrinho.refPendentes = (padrinho.refPendentes || 0) + 1; // rumo ao próximo mês grátis
+    while (padrinho.refPendentes >= INDICACOES_POR_MES_GRATIS) {
+      padrinho.refPendentes -= INDICACOES_POR_MES_GRATIS;
+      const base = (padrinho.planoAte && padrinho.planoAte > Date.now()) ? padrinho.planoAte : Date.now();
+      padrinho.planoProprio = true;
+      padrinho.planoAte = base + PLANO_MENSAL.dias * 24 * 60 * 60 * 1000;
+      padrinho.refMesesGratis = (padrinho.refMesesGratis || 0) + 1;
+      console.log(`[indicacao] ${padrinho.usuario} ganhou 1 mês grátis (${INDICACOES_POR_MES_GRATIS} indicações)`);
+    }
+    console.log(`[indicacao] confirmada: ${u.usuario} indicado por ${padrinho.usuario} (total ${padrinho.refTotal})`);
+  }
+  await setUsuarios(lista);
+}
+
 const _creditandoAgora = new Set();
 async function creditarPagamento(mpId) {
   if (_creditandoAgora.has(mpId)) return await supabaseGet('pay:' + mpId);
@@ -398,6 +453,7 @@ async function _creditarPagamentoInterno(mpId) {
   if (!rec || rec.status === 'creditado') return rec; // já aplicado ou inexistente
   if (rec.tipo === 'plano') {
     await ativarPlano(rec.usuario, rec.dias || 30);
+    await confirmarIndicacao(rec.usuario); // credita quem indicou (1ª vez só)
   } else {
     // compatibilidade: pagamentos de crédito antigos ainda são creditados
     const lista = await getUsuarios();
@@ -788,11 +844,16 @@ const server = http.createServer(async (req, res) => {
     // primeiro usuário cadastrado no sistema nasce admin e já aprovado, pra alguém
     // conseguir entrar e aprovar os próximos
     const ehPrimeiro = lista.length === 0;
+    // código de indicação (opcional): guarda quem indicou pra aplicar os 20% no 1º pagamento
+    const refCode = String(body.ref || '').trim().toUpperCase();
+    const padrinho = refCode ? acharPorRefCode(lista, refCode) : null;
+    const indicadoPor = (padrinho && padrinho.usuario !== usuario) ? padrinho.refCode : null;
     lista.push({
       usuario, senhaHash: hashSenha(senha),
       status: ehPrimeiro ? 'aprovado' : 'pendente',
       admin: ehPrimeiro,
       creditos: CREDITOS_BOAS_VINDAS, // créditos grátis pra testar (liberados após aprovação)
+      indicadoPor, // refCode de quem indicou (ou null)
       criadoEm: new Date().toISOString()
     });
     await setUsuarios(lista);
@@ -838,6 +899,7 @@ const server = http.createServer(async (req, res) => {
       planoProprio: !!(u && u.planoProprio),
       planoAte: (u && u.planoAte) || null,
       planoAtivo: !!(u && u.planoProprio && u.planoAte && u.planoAte > Date.now()),
+      indicacaoDesconto: descontoIndicacao(u), // 20 se tem desconto de indicação disponível
       temGoogleKey: !!(u && u.googleKey),
       temAnthropicKey: !!(u && u.anthropicKey)
     });
@@ -981,8 +1043,15 @@ const server = http.createServer(async (req, res) => {
     let descricao = 'PackScan — plano mensal (chave própria)';
     // cupom de desconto (validado de novo aqui, nunca confia só no frontend)
     const cupom = await validarCupom(body.cupom);
-    const precoFinal = precoComCupom(pacote.preco, cupom);
+    let precoFinal = precoComCupom(pacote.preco, cupom);
     if (cupom) descricao += ` (cupom ${cupom.codigo} -${cupom.pct}%)`;
+    // desconto de indicação (20%) — não acumula com cupom, usa o maior desconto
+    const meRec = (await getUsuarios()).find(x => x.usuario === usuario);
+    const pctInd = descontoIndicacao(meRec);
+    if (pctInd && (!cupom || cupom.pct < pctInd)) {
+      precoFinal = Math.max(0.01, Math.round(pacote.preco * (1 - pctInd/100) * 100) / 100);
+      descricao = `PackScan — plano mensal (indicação -${pctInd}%)`;
+    }
     try {
       const idemKey = crypto.randomBytes(16).toString('hex'); // MP exige X-Idempotency-Key
       const mp = await mpRequest('POST', '/v1/payments', {
@@ -1034,13 +1103,17 @@ const server = http.createServer(async (req, res) => {
     if (!MERCADOPAGO_TOKEN) return json(res, 503, { error: 'Pagamento ainda não configurado pelo administrador.' });
     const usuario = req.usuarioAtual.usuario;
     const base = process.env.APP_URL || ('https://' + (req.headers.host || 'packscan-noma.onrender.com'));
+    // desconto de indicação (20%) aplicado à mensalidade enquanto assinar pelo link
+    const meRec = (await getUsuarios()).find(x => x.usuario === usuario);
+    const pctInd = descontoIndicacao(meRec);
+    const valorMensal = pctInd ? Math.round(PLANO_MENSAL.preco * (1 - pctInd/100) * 100) / 100 : PLANO_MENSAL.preco;
     try {
       const mp = await mpRequest('POST', '/preapproval', {
-        reason: 'PackScan — plano mensal',
+        reason: pctInd ? `PackScan — plano mensal (indicação -${pctInd}%)` : 'PackScan — plano mensal',
         external_reference: usuario,
         payer_email: emailPagador(usuario),
         back_url: base + '/?assinatura=ok',
-        auto_recurring: { frequency: 1, frequency_type: 'months', transaction_amount: PLANO_MENSAL.preco, currency_id: 'BRL' },
+        auto_recurring: { frequency: 1, frequency_type: 'months', transaction_amount: valorMensal, currency_id: 'BRL' },
         status: 'pending'
       });
       if (mp.status >= 300 || !mp.body || !mp.body.id) {
@@ -1069,7 +1142,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const mp = await mpRequest('GET', '/preapproval/' + ref.id);
         if (mp.body && mp.body.status) {
-          if (mp.body.status === 'authorized' && sub.status !== 'authorized') { await ativarPlano(usuario, 30); }
+          if (mp.body.status === 'authorized' && sub.status !== 'authorized') { await ativarPlano(usuario, 30); await confirmarIndicacao(usuario); }
           sub = { ...sub, status: mp.body.status };
           await supabaseSet('sub:' + ref.id, sub);
         }
@@ -1092,6 +1165,25 @@ const server = http.createServer(async (req, res) => {
     } catch(e) { console.error('[cancelar]', e.message); return json(res, 502, { error: 'Erro ao cancelar.' }); }
   }
 
+  // ─── INDICAÇÃO: código, link e progresso do usuário logado ─────────────────
+  if (req.method === 'GET' && pathname === '/api/referral') {
+    const usuario = req.usuarioAtual.usuario;
+    const code = await garantirRefCode(usuario);
+    const u = (await getUsuarios()).find(x => x.usuario === usuario) || {};
+    const base = process.env.APP_URL || ('https://' + (req.headers.host || 'packscan-noma.onrender.com'));
+    const pendentes = u.refPendentes || 0;
+    return json(res, 200, {
+      code,
+      link: `${base}/?ref=${code}`,
+      pct: INDICACAO_PCT,
+      total: u.refTotal || 0,                       // indicações confirmadas (histórico)
+      mesesGratis: u.refMesesGratis || 0,           // meses grátis já ganhos
+      pendentes,                                     // rumo ao próximo mês grátis
+      faltam: INDICACOES_POR_MES_GRATIS - pendentes, // quantas faltam pro próximo mês grátis
+      meta: INDICACOES_POR_MES_GRATIS
+    });
+  }
+
   // ─── PAGAMENTO: webhook do Mercado Pago (público) ──────────────────────────
   if (pathname === '/api/pagamento/webhook') {
     // o MP avisa via POST {type,data:{id}} ou via querystring ?type=...&data.id=...
@@ -1112,7 +1204,7 @@ const server = http.createServer(async (req, res) => {
         if (usuario) {
           const rec = (await supabaseGet('sub:' + idRaw)) || { usuario };
           if (p.status === 'authorized') {
-            if (rec.status !== 'authorized') { await ativarPlano(usuario, 30); console.log(`[assinatura] autorizada: ${usuario}`); }
+            if (rec.status !== 'authorized') { await ativarPlano(usuario, 30); await confirmarIndicacao(usuario); console.log(`[assinatura] autorizada: ${usuario}`); }
             await supabaseSet('sub:' + idRaw, { ...rec, usuario, status: 'authorized' });
           } else if (p.status === 'cancelled' || p.status === 'paused') {
             await supabaseSet('sub:' + idRaw, { ...rec, usuario, status: p.status });
