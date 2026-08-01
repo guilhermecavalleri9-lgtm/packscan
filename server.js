@@ -373,6 +373,19 @@ function precoComCupom(preco, cupom) {
 // créditos (rec.tipo='creditos') ou renovação do plano mensal (rec.tipo='plano').
 // O lock em memória evita crédito em dobro quando o webhook e o polling do
 // frontend confirmam o mesmo pagamento ao mesmo tempo.
+// estende (ou ativa) o plano mensal de um usuário por N dias. Acumula se ainda
+// estiver vigente. Usado tanto pelo PIX avulso quanto pela assinatura recorrente.
+async function ativarPlano(usuario, dias) {
+  const lista = await getUsuarios();
+  const u = lista.find(x => x.usuario === usuario);
+  if (!u) return false;
+  const base = (u.planoAte && u.planoAte > Date.now()) ? u.planoAte : Date.now();
+  u.planoProprio = true;
+  u.planoAte = base + (dias || 30) * 24 * 60 * 60 * 1000;
+  await setUsuarios(lista);
+  return true;
+}
+
 const _creditandoAgora = new Set();
 async function creditarPagamento(mpId) {
   if (_creditandoAgora.has(mpId)) return await supabaseGet('pay:' + mpId);
@@ -383,18 +396,13 @@ async function creditarPagamento(mpId) {
 async function _creditarPagamentoInterno(mpId) {
   const rec = await supabaseGet('pay:' + mpId);
   if (!rec || rec.status === 'creditado') return rec; // já aplicado ou inexistente
-  const lista = await getUsuarios();
-  const u = lista.find(x => x.usuario === rec.usuario);
-  if (u) {
-    if (rec.tipo === 'plano') {
-      // renova a partir de agora ou do vencimento futuro (acumula se renovar antes)
-      const base = (u.planoAte && u.planoAte > Date.now()) ? u.planoAte : Date.now();
-      u.planoProprio = true;
-      u.planoAte = base + (rec.dias || 30) * 24 * 60 * 60 * 1000;
-    } else {
-      u.creditos = (Number(u.creditos) || 0) + rec.creditos;
-    }
-    await setUsuarios(lista);
+  if (rec.tipo === 'plano') {
+    await ativarPlano(rec.usuario, rec.dias || 30);
+  } else {
+    // compatibilidade: pagamentos de crédito antigos ainda são creditados
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === rec.usuario);
+    if (u) { u.creditos = (Number(u.creditos) || 0) + rec.creditos; await setUsuarios(lista); }
   }
   await supabaseSet('pay:' + mpId, { ...rec, status: 'creditado' });
   if (rec.cupom) await consumirCupom(rec.cupom); // desconta 1 uso do cupom
@@ -956,21 +964,21 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, codigo: c.codigo, pct: c.pct });
   }
 
-  // ─── PAGAMENTO: lista de pacotes à venda ───────────────────────────────────
+  // ─── PAGAMENTO: o que está à venda (só o plano mensal — créditos são só de teste) ──
   if (req.method === 'GET' && pathname === '/api/pagamento/pacotes') {
-    return json(res, 200, { pacotes: PACOTES_CREDITOS, plano: PLANO_MENSAL, ativo: !!MERCADOPAGO_TOKEN });
+    return json(res, 200, { pacotes: [], plano: PLANO_MENSAL, ativo: !!MERCADOPAGO_TOKEN });
   }
 
-  // ─── PAGAMENTO: cria um PIX no Mercado Pago ────────────────────────────────
+  // ─── PAGAMENTO: cria um PIX avulso (paga 1 mês do plano) no Mercado Pago ────
   if (req.method === 'POST' && pathname === '/api/pagamento/criar') {
     if (!MERCADOPAGO_TOKEN) return json(res, 503, { error: 'Pagamento ainda não configurado pelo administrador.' });
     const body = await readBody(req);
     const usuario = req.usuarioAtual.usuario;
-    // pode ser compra de créditos ou o plano mensal com chave própria
+    // só o plano mensal é vendável por PIX (não vendemos mais pacotes de crédito)
     const ehPlano = body.pacoteId === PLANO_MENSAL.id;
-    const pacote = ehPlano ? PLANO_MENSAL : PACOTES_CREDITOS.find(p => p.id === body.pacoteId);
+    const pacote = ehPlano ? PLANO_MENSAL : null;
     if (!pacote) return json(res, 400, { error: 'Pacote inválido' });
-    let descricao = ehPlano ? 'PackScan — plano mensal (chave própria)' : `PackScan — ${pacote.creditos} créditos`;
+    let descricao = 'PackScan — plano mensal (chave própria)';
     // cupom de desconto (validado de novo aqui, nunca confia só no frontend)
     const cupom = await validarCupom(body.cupom);
     const precoFinal = precoComCupom(pacote.preco, cupom);
@@ -1019,21 +1027,115 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { status: rec.status });
   }
 
+  // ─── ASSINATURA: cria a assinatura recorrente no cartão (Mercado Pago) ─────
+  // devolve init_point (link do checkout hospedado do MP) — sem PCI, o cartão é
+  // digitado no ambiente do Mercado Pago.
+  if (req.method === 'POST' && pathname === '/api/pagamento/assinar') {
+    if (!MERCADOPAGO_TOKEN) return json(res, 503, { error: 'Pagamento ainda não configurado pelo administrador.' });
+    const usuario = req.usuarioAtual.usuario;
+    const base = process.env.APP_URL || ('https://' + (req.headers.host || 'packscan-noma.onrender.com'));
+    try {
+      const mp = await mpRequest('POST', '/preapproval', {
+        reason: 'PackScan — plano mensal',
+        external_reference: usuario,
+        payer_email: emailPagador(usuario),
+        back_url: base + '/?assinatura=ok',
+        auto_recurring: { frequency: 1, frequency_type: 'months', transaction_amount: PLANO_MENSAL.preco, currency_id: 'BRL' },
+        status: 'pending'
+      });
+      if (mp.status >= 300 || !mp.body || !mp.body.id) {
+        console.error('[assinar]', mp.status, JSON.stringify(mp.body));
+        const b = mp.body || {};
+        const detalhe = b.message || (b.cause && b.cause[0] && (b.cause[0].description || b.cause[0].code)) || ('HTTP ' + mp.status);
+        return json(res, 502, { error: 'Mercado Pago recusou: ' + detalhe });
+      }
+      await supabaseSet('sub:' + mp.body.id, { usuario, status: 'pendente', criadoEm: Date.now() });
+      await supabaseSet('usub:' + usuario, { id: String(mp.body.id) });
+      return json(res, 200, { id: String(mp.body.id), init_point: mp.body.init_point || mp.body.sandbox_init_point || '' });
+    } catch(e) {
+      console.error('[assinar]', e.message);
+      return json(res, 502, { error: 'Erro ao falar com o Mercado Pago.' });
+    }
+  }
+
+  // ─── ASSINATURA: status da assinatura do usuário logado ────────────────────
+  if (req.method === 'GET' && pathname === '/api/pagamento/assinatura') {
+    const usuario = req.usuarioAtual.usuario;
+    const ref = await supabaseGet('usub:' + usuario);
+    if (!ref || !ref.id) return json(res, 200, { assinada: false });
+    let sub = await supabaseGet('sub:' + ref.id) || {};
+    // reconcilia com o MP (pode ter sido autorizada sem o webhook chegar ainda)
+    if (MERCADOPAGO_TOKEN && sub.status !== 'cancelled') {
+      try {
+        const mp = await mpRequest('GET', '/preapproval/' + ref.id);
+        if (mp.body && mp.body.status) {
+          if (mp.body.status === 'authorized' && sub.status !== 'authorized') { await ativarPlano(usuario, 30); }
+          sub = { ...sub, status: mp.body.status };
+          await supabaseSet('sub:' + ref.id, sub);
+        }
+      } catch(e) { console.error('[assinatura status]', e.message); }
+    }
+    return json(res, 200, { assinada: sub.status === 'authorized', status: sub.status || 'pendente', id: ref.id });
+  }
+
+  // ─── ASSINATURA: cancelar a recorrência (o plano segue válido até vencer) ──
+  if (req.method === 'POST' && pathname === '/api/pagamento/cancelar') {
+    const usuario = req.usuarioAtual.usuario;
+    const ref = await supabaseGet('usub:' + usuario);
+    if (!ref || !ref.id) return json(res, 404, { error: 'Nenhuma assinatura ativa.' });
+    if (!MERCADOPAGO_TOKEN) return json(res, 503, { error: 'Pagamento não configurado.' });
+    try {
+      const mp = await mpRequest('PUT', '/preapproval/' + ref.id, { status: 'cancelled' });
+      if (mp.status >= 300) return json(res, 502, { error: 'Não foi possível cancelar no Mercado Pago.' });
+      await supabaseSet('sub:' + ref.id, { usuario, status: 'cancelled' });
+      return json(res, 200, { ok: true });
+    } catch(e) { console.error('[cancelar]', e.message); return json(res, 502, { error: 'Erro ao cancelar.' }); }
+  }
+
   // ─── PAGAMENTO: webhook do Mercado Pago (público) ──────────────────────────
   if (pathname === '/api/pagamento/webhook') {
-    // o MP avisa via POST {type:'payment', data:{id}} ou via querystring ?type=payment&data.id=...
+    // o MP avisa via POST {type,data:{id}} ou via querystring ?type=...&data.id=...
     let body = {};
     if (req.method === 'POST') { try { body = await readBody(req); } catch(e) {} }
     const tipo = body.type || parsedUrl.query.type || parsedUrl.query.topic;
-    let id = (body.data && body.data.id) || parsedUrl.query['data.id'] || parsedUrl.query.id;
-    // endpoint público: só aceita id numérico (formato dos pagamentos do MP)
-    id = /^\d+$/.test(String(id || '')) ? String(id) : null;
-    if (tipo === 'payment' && id && MERCADOPAGO_TOKEN) {
-      try {
-        const mp = await mpRequest('GET', '/v1/payments/' + id);
-        if (mp.body && mp.body.status === 'approved') await creditarPagamento(String(id));
-      } catch(e) { console.error('[pagamento webhook]', e.message); }
-    }
+    const idRaw = String((body.data && body.data.id) || parsedUrl.query['data.id'] || parsedUrl.query.id || '');
+    try {
+      if (tipo === 'payment' && /^\d+$/.test(idRaw) && MERCADOPAGO_TOKEN) {
+        // PIX avulso
+        const mp = await mpRequest('GET', '/v1/payments/' + idRaw);
+        if (mp.body && mp.body.status === 'approved') await creditarPagamento(idRaw);
+      } else if ((tipo === 'subscription_preapproval' || tipo === 'preapproval') && idRaw && MERCADOPAGO_TOKEN) {
+        // assinatura autorizada/cancelada
+        const mp = await mpRequest('GET', '/preapproval/' + idRaw);
+        const p = mp.body || {};
+        const usuario = p.external_reference;
+        if (usuario) {
+          const rec = (await supabaseGet('sub:' + idRaw)) || { usuario };
+          if (p.status === 'authorized') {
+            if (rec.status !== 'authorized') { await ativarPlano(usuario, 30); console.log(`[assinatura] autorizada: ${usuario}`); }
+            await supabaseSet('sub:' + idRaw, { ...rec, usuario, status: 'authorized' });
+          } else if (p.status === 'cancelled' || p.status === 'paused') {
+            await supabaseSet('sub:' + idRaw, { ...rec, usuario, status: p.status });
+          }
+        }
+      } else if (tipo === 'subscription_authorized_payment' && idRaw && MERCADOPAGO_TOKEN) {
+        // cobrança recorrente mensal aprovada → estende +30 dias (idempotente)
+        const mp = await mpRequest('GET', '/authorized_payments/' + idRaw);
+        const ap = mp.body || {};
+        const aprovado = ap.status === 'processed' || (ap.payment && ap.payment.status === 'approved');
+        if (aprovado && ap.preapproval_id) {
+          const rec = await supabaseGet('sub:' + ap.preapproval_id);
+          if (rec && rec.usuario) {
+            const key = 'apay:' + idRaw;
+            if (!(await supabaseGet(key))) {
+              await ativarPlano(rec.usuario, 30);
+              await supabaseSet(key, { done: true });
+              console.log(`[assinatura] cobrança recorrente: ${rec.usuario} +30 dias`);
+            }
+          }
+        }
+      }
+    } catch(e) { console.error('[pagamento webhook]', e.message); }
     // sempre 200 pro MP parar de reenviar
     return json(res, 200, { ok: true });
   }
@@ -1392,7 +1494,7 @@ const server = http.createServer(async (req, res) => {
         ctx.forcarChavePropria = true; // não usa a chave de IA global (custo é do usuário)
       } else {
         const saldo = await saldoCreditos(meuRec);
-        if (saldo <= 0) return json(res, 402, { error: 'Seus créditos acabaram. Compre mais para continuar.', semCreditos: true });
+        if (saldo <= 0) return json(res, 402, { error: 'Seus créditos de teste acabaram. Assine o plano mensal para continuar.', semCreditos: true });
       }
     }
 

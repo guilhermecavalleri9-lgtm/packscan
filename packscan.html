@@ -329,10 +329,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <!-- overlay: créditos esgotados -->
 <div id="creditos-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:10001;align-items:center;justify-content:center">
   <div class="auth-box" style="text-align:center">
-    <div style="font-size:34px;margin-bottom:.5rem">🪙</div>
-    <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:.5rem">Seus créditos acabaram</div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:1.25rem">Compre mais créditos para continuar geocodificando pacotes.</div>
-    <button class="btn btn-p" style="width:100%;justify-content:center;margin-bottom:.5rem" onclick="document.getElementById('creditos-bg').style.display='none';comprarAbrir()">🪙 Comprar com PIX</button>
+    <div style="font-size:34px;margin-bottom:.5rem">🔑</div>
+    <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:.5rem">Seus créditos de teste acabaram</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:1.25rem">Assine o plano mensal (R$ 24,90) e use sua própria chave do Google para continuar.</div>
+    <button class="btn btn-p" style="width:100%;justify-content:center;margin-bottom:.5rem" onclick="document.getElementById('creditos-bg').style.display='none';comprarAbrir()">💳 Ver planos</button>
     <a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-bottom:.5rem" href="https://wa.me/5554981194621" target="_blank" rel="noopener">💬 Comprar no WhatsApp</a>
     <button class="btn" style="width:100%;justify-content:center" onclick="recarregarSaldo()">↻ Já comprei — atualizar saldo</button>
   </div>
@@ -358,7 +358,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <div id="comprar-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:10002;align-items:center;justify-content:center;overflow:auto">
   <div class="auth-box" style="width:420px">
     <div style="display:flex;align-items:center;margin-bottom:1rem">
-      <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">Comprar créditos</div>
+      <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">Plano mensal PackScan</div>
       <button class="btn btn-sm" onclick="comprarFechar()">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:.75rem">
@@ -368,7 +368,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div id="comprar-cupom-msg" style="font-size:11px;font-family:var(--mono);min-height:14px;margin-bottom:.5rem"></div>
     <div id="comprar-lista" style="font-size:13px;color:var(--text3)">Carregando...</div>
     <div id="comprar-pix" style="display:none;text-align:center">
-      <div style="font-size:13px;color:var(--text2);margin-bottom:.6rem">Pague o PIX abaixo. O crédito cai automaticamente após a confirmação.</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:.6rem">Pague o PIX abaixo. O plano é ativado automaticamente após a confirmação.</div>
       <img id="comprar-qr" alt="QR PIX" style="width:200px;height:200px;background:#fff;border-radius:8px;padding:6px;margin:0 auto .6rem;display:block">
       <label style="font-size:11px;color:var(--text3)">PIX copia e cola</label>
       <textarea id="comprar-copia" readonly style="width:100%;height:64px;font-size:11px;font-family:var(--mono);margin:4px 0"></textarea>
@@ -1193,20 +1193,30 @@ function comprarRenderLista() {
       + '<a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-top:.6rem" href="' + WHATSAPP_COMPRA + '" target="_blank" rel="noopener">💬 Comprar no WhatsApp</a>';
     return;
   }
-  var html = '<div style="font-size:12px;color:var(--text3);margin-bottom:.6rem">Créditos avulsos (PIX):</div>';
-  for (var i = 0; i < d.pacotes.length; i++) {
-    var p = d.pacotes[i];
-    html += '<button class="btn" style="width:100%;justify-content:space-between;margin-bottom:6px" onclick="comprarPacote(\'' + p.id + '\')">'
-      + '<span>' + p.creditos.toLocaleString('pt-BR') + ' créditos</span>'
-      + '<strong>' + _fmtPreco(p.preco) + '</strong></button>';
-  }
-  if (d.plano) {
-    html += '<div style="border-top:1px solid var(--border);margin:.9rem 0 .6rem;padding-top:.6rem;font-size:12px;color:var(--text3)">Ou o plano com <strong>sua própria chave</strong>:</div>'
-      + '<button class="btn btn-g" style="width:100%;justify-content:space-between" onclick="comprarPacote(\'' + d.plano.id + '\')">'
-      + '<span>🔑 Plano mensal · sem limite</span><strong>' + _fmtPreco(d.plano.preco) + '/mês</strong></button>'
-      + '<div style="font-size:11px;color:var(--text3);margin-top:.4rem">Você usa sua chave do Google (10 mil buscas grátis/mês). Depois de pagar, cadastre a chave em "🔑 Minhas chaves".</div>';
-  }
+  var preco = d.plano ? d.plano.preco : 24.90;
+  var html = ''
+    + '<div style="font-size:13px;color:var(--text2);margin-bottom:.7rem">Plano mensal PackScan — você usa <strong>sua própria chave</strong> do Google (10 mil buscas grátis/mês).</div>'
+    // opção 1: assinatura recorrente no cartão
+    + '<button class="btn btn-g" style="width:100%;justify-content:space-between" onclick="assinarCartao()">'
+    + '<span>💳 Assinar no cartão · renova sozinho</span><strong>' + _fmtPreco(preco) + '/mês</strong></button>'
+    + '<div style="font-size:11px;color:var(--text3);margin:.35rem 0 .9rem">Cobrança automática todo mês no cartão. Cancele quando quiser.</div>'
+    // opção 2: PIX avulso (1 mês)
+    + '<button class="btn" style="width:100%;justify-content:space-between" onclick="comprarPacote(\'' + (d.plano ? d.plano.id : 'plano_mensal') + '\')">'
+    + '<span>🔑 Pagar 1 mês no PIX</span><strong>' + _fmtPreco(preco) + '</strong></button>'
+    + '<div style="font-size:11px;color:var(--text3);margin-top:.35rem">Pagamento único, vale 30 dias (não renova sozinho).</div>'
+    + '<div style="font-size:11px;color:var(--text3);margin-top:.6rem">Depois de pagar, cadastre sua chave em "🔑 Minhas chaves".</div>';
   lista.innerHTML = html;
+}
+// assinatura recorrente: cria no servidor e manda pro checkout do Mercado Pago
+function assinarCartao() {
+  var lista = document.getElementById('comprar-lista');
+  lista.innerHTML = 'Abrindo o checkout do cartão...';
+  apiFetch(BACKEND + '/api/pagamento/assinar', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' })
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+    .then(function(res){
+      if (!res.ok || !res.d.init_point) { lista.innerHTML = '<div style="color:var(--red)">' + esc((res.d && res.d.error) || 'Erro ao iniciar a assinatura') + '</div><button class="btn btn-sm" style="margin-top:.6rem" onclick="comprarRenderLista()">← Voltar</button>'; return; }
+      window.location.href = res.d.init_point;
+    }).catch(function(e){ lista.innerHTML = '<div style="color:var(--red)">Erro: ' + esc(e.message) + '</div>'; });
 }
 var _comprarEhPlano = false;
 function comprarPacote(pacoteId) {
@@ -3579,7 +3589,20 @@ function iniciarApp() {
   verificarSessao();
   carregarCorrecoesNome();
   if (AUTH_ADMIN) carregarPendentes();
+  checarRetornoAssinatura();
   goHome();
+}
+
+// voltou do checkout do cartão (Mercado Pago redireciona com ?assinatura=ok):
+// reconcilia o status e avisa o usuário.
+function checarRetornoAssinatura() {
+  if (!/[?&]assinatura=ok/.test(location.search)) return;
+  try { history.replaceState(null, '', location.pathname); } catch(e) {}
+  apiFetch(BACKEND + '/api/pagamento/assinatura').then(function(r){ return r.json(); }).then(function(d){
+    recarregarSaldo();
+    if (d && d.assinada) { alert('✓ Assinatura ativada! Agora cadastre sua chave do Google em "🔑 Minhas chaves".'); try{ chavesAbrir(); }catch(e){} }
+    else { alert('Recebemos sua solicitação. Se o pagamento foi aprovado, o plano ativa em instantes — pode atualizar o saldo em seguida.'); }
+  }).catch(function(){});
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4379,7 +4402,7 @@ function abrirMenu(){
     {t:'Rota pela câmera', s:'separar por rota no galpão', act:'goTab(8)', admin:true, ic:'<path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.2"/>'},
     {sep:true},
     {t:'Minhas chaves', s:'chave do Google (plano)', act:'chavesAbrir()', ic:'<circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M17 6l2 2M15 8l2 2" stroke-linecap="round" stroke-linejoin="round"/>'},
-    {t:'Comprar créditos', s:'PIX', act:'comprarAbrir()', ic:'<circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.2a2.6 2.2 0 0 1 5 .3c0 2.5-5 1.5-5 4a2.6 2.2 0 0 0 5 .3" stroke-linecap="round"/>'},
+    {t:'Assinar plano', s:'cartão recorrente ou PIX', act:'comprarAbrir()', ic:'<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20" stroke-linecap="round"/>'},
     {t:'Sair', s:'', act:'authLogout()', danger:true, ic:'<path d="M15 12H4M4 12l4-4M4 12l4 4M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" stroke-linecap="round" stroke-linejoin="round"/>'}
   ];
   var arw='<span style="color:var(--text3)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg></span>';
