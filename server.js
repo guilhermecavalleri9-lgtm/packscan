@@ -1435,11 +1435,16 @@ const server = http.createServer(async (req, res) => {
       out.push({
         usuario: u.usuario, status: u.status, admin: !!u.admin,
         criadoEm: u.criadoEm || null,
+        email: u.email || null,
+        emailVerificado: u.emailVerificado !== false,
         creditosComprados: comprados, creditosUsados: usado,
         saldo: u.admin ? null : Math.max(0, comprados - usado),
         planoAtivo: !!(u.planoProprio && u.planoAte && u.planoAte > Date.now()),
         planoAte: u.planoAte || null,
-        temGoogleKey: !!u.googleKey
+        temGoogleKey: !!u.googleKey,
+        indicacoes: u.refTotal || 0,          // quantos indicados dele já pagaram
+        indicacoesMesesGratis: u.refMesesGratis || 0, // meses grátis ganhos
+        indicadoPor: u.indicadoPor ? ((lista.find(x => x.refCode === u.indicadoPor) || {}).usuario || u.indicadoPor) : null
       });
     }
     return json(res, 200, { usuarios: out });

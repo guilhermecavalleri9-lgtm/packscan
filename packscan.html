@@ -1580,14 +1580,20 @@ async function carregarUsuarios() {
       } else {
         saldoTxt = '<strong style="color:'+((u.saldo||0) <= 0 ? 'var(--red)' : ((u.saldo||0) <= 100 ? 'var(--amber)' : 'var(--green)'))+'">'+(u.saldo||0).toLocaleString('pt-BR')+'</strong> créditos';
       }
+      var indBadge = (u.indicacoes || 0) > 0
+        ? '<span title="indicados que já pagaram" style="font-size:11px;color:var(--green);background:rgba(52,201,126,.14);border:1px solid rgba(52,201,126,.35);border-radius:20px;padding:1px 8px;white-space:nowrap">🎁 '+u.indicacoes+' indicaç'+(u.indicacoes>1?'ões':'ão')+(u.indicacoesMesesGratis?(' · '+u.indicacoesMesesGratis+' mês grátis'):'')+'</span>'
+        : '';
       var linha = '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'
         + '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-        +   '<div style="flex:1;min-width:120px;font-weight:500;color:var(--text)">'+esc(u.usuario)+(u.admin?' <span style="color:var(--accent);font-size:10px">(admin)</span>':'')+'</div>'
+        +   '<div style="flex:1;min-width:120px;font-weight:500;color:var(--text)">'+esc(u.usuario)+(u.admin?' <span style="color:var(--accent);font-size:10px">(admin)</span>':'')
+        +     (u.email?'<div style="font-size:10px;color:var(--text3);font-weight:400">'+esc(u.email)+(u.emailVerificado?'':' <span style="color:var(--amber)">(não confirmado)</span>')+'</div>':'')+'</div>'
+        +   indBadge
         +   '<div style="font-size:12px">'+saldoTxt+'</div>'
         + '</div>';
       if (!u.admin) {
         linha += '<div style="font-size:10px;color:var(--text3);margin-top:2px">comprou '+(u.creditosComprados||0).toLocaleString('pt-BR')+' · usou '+(u.creditosUsados||0).toLocaleString('pt-BR')
-          + (u.planoAtivo && u.planoAte ? ' · plano até '+new Date(u.planoAte).toLocaleDateString('pt-BR') : '')+'</div>'
+          + (u.planoAtivo && u.planoAte ? ' · plano até '+new Date(u.planoAte).toLocaleDateString('pt-BR') : '')
+          + (u.indicadoPor ? ' · indicado por '+esc(u.indicadoPor) : '')+'</div>'
         + '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">'
         +   '<span style="font-size:11px;color:var(--text3)">recarregar:</span>'
         +   '<button class="btn btn-sm" onclick="authAddCreditos(\''+nome+'\',1000)">+1.000</button>'
