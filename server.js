@@ -22,6 +22,10 @@ const CREDITOS_BOAS_VINDAS = 150;
 // ganha 20% acumulativo por indicação confirmada — a cada 5 indicações, 1 mês grátis.
 const INDICACAO_PCT = 20;
 const INDICACOES_POR_MES_GRATIS = 5;
+// e-mail transacional (Brevo) — confirmação de cadastro
+const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
+const BREVO_SENDER = process.env.BREVO_SENDER || '';
+const BREVO_SENDER_NOME = process.env.BREVO_SENDER_NOME || 'PackScan';
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_KEY || '';
 
@@ -524,6 +528,50 @@ function senhaConfere(senha, hashArmazenado) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// ─── CONFIRMAÇÃO DE E-MAIL (Brevo) ─────────────────────────────────────────────
+const EMAIL_ATIVO = !!(BREVO_API_KEY && BREVO_SENDER); // só exige confirmação se configurado
+const EMAIL_CODIGO_VALIDADE_MS = 15 * 60 * 1000; // 15 minutos
+function emailValido(e) { return /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(e || '').trim()); }
+function gerarCodigo6() { return String(crypto.randomInt(0, 1000000)).padStart(6, '0'); }
+function hashCodigo(c) { return crypto.createHash('sha256').update(String(c) + '|' + AUTH_SECRET).digest('hex'); }
+
+// envia um e-mail transacional pela API do Brevo
+function enviarEmailBrevo(to, subject, html) {
+  return new Promise(resolve => {
+    if (!EMAIL_ATIVO) return resolve({ ok: false, motivo: 'e-mail não configurado' });
+    const payload = Buffer.from(JSON.stringify({
+      sender: { name: BREVO_SENDER_NOME, email: BREVO_SENDER },
+      to: [{ email: to }],
+      subject, htmlContent: html
+    }));
+    const r = https.request({
+      hostname: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST',
+      headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Length': payload.length }
+    }, resp => {
+      let d = ''; resp.on('data', c => d += c);
+      resp.on('end', () => resolve({ ok: resp.statusCode < 300, status: resp.statusCode, body: d }));
+    });
+    r.on('error', e => resolve({ ok: false, motivo: e.message }));
+    r.write(payload); r.end();
+  });
+}
+
+// gera um código novo pro usuário, salva o hash+validade e dispara o e-mail
+async function enviarCodigoEmail(u) {
+  const codigo = gerarCodigo6();
+  u.emailCodigoHash = hashCodigo(codigo);
+  u.emailCodigoExp = Date.now() + EMAIL_CODIGO_VALIDADE_MS;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:460px;margin:0 auto;padding:24px;background:#0e1424;color:#e8ecf3;border-radius:12px">
+      <div style="font-size:20px;font-weight:700;letter-spacing:1px;margin-bottom:8px">PACK<span style="color:#4f8ef7">SCAN</span></div>
+      <p style="color:#aab3c5">Seu código de confirmação de cadastro é:</p>
+      <div style="font-size:34px;font-weight:800;letter-spacing:8px;color:#4f8ef7;text-align:center;margin:18px 0">${codigo}</div>
+      <p style="color:#7b869c;font-size:13px">Ele vale por 15 minutos. Se não foi você, ignore este e-mail.</p>
+    </div>`;
+  const r = await enviarEmailBrevo(u.email, 'Seu código PackScan: ' + codigo, html);
+  return r;
+}
+
 function base64url(buf) { return Buffer.from(buf).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 function base64urlDecode(str) { return Buffer.from(str.replace(/-/g,'+').replace(/_/g,'/'), 'base64'); }
 
@@ -822,7 +870,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/pagamento/webhook', '/api/escala/dados']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -838,7 +886,10 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     const usuario = (body.usuario || '').trim().toLowerCase();
     const senha = body.senha || '';
+    const email = (body.email || '').trim().toLowerCase();
     if (!usuario || senha.length < 4) return json(res, 400, { error: 'Usuário obrigatório e senha com pelo menos 4 caracteres' });
+    // com o e-mail configurado, ele é obrigatório e válido (é o que confirma a conta)
+    if (EMAIL_ATIVO && !emailValido(email)) return json(res, 400, { error: 'Informe um e-mail válido para confirmar o cadastro' });
     const lista = await getUsuarios();
     if (lista.some(u => u.usuario === usuario)) return json(res, 409, { error: 'Usuário já existe' });
     // primeiro usuário cadastrado no sistema nasce admin e já aprovado, pra alguém
@@ -848,17 +899,62 @@ const server = http.createServer(async (req, res) => {
     const refCode = String(body.ref || '').trim().toUpperCase();
     const padrinho = refCode ? acharPorRefCode(lista, refCode) : null;
     const indicadoPor = (padrinho && padrinho.usuario !== usuario) ? padrinho.refCode : null;
-    lista.push({
+    // cadastro automático: aprovado na hora (sem admin). O e-mail confirmado é o gate.
+    const novo = {
       usuario, senhaHash: hashSenha(senha),
-      status: ehPrimeiro ? 'aprovado' : 'pendente',
+      email: email || null,
+      emailVerificado: EMAIL_ATIVO ? ehPrimeiro : true, // se e-mail não configurado, não exige
+      status: 'aprovado',
       admin: ehPrimeiro,
-      creditos: CREDITOS_BOAS_VINDAS, // créditos grátis pra testar (liberados após aprovação)
+      creditos: CREDITOS_BOAS_VINDAS, // créditos grátis pra testar
       indicadoPor, // refCode de quem indicou (ou null)
       criadoEm: new Date().toISOString()
-    });
+    };
+    let emailEnviado = false;
+    if (EMAIL_ATIVO && !novo.emailVerificado) {
+      const r = await enviarCodigoEmail(novo);
+      emailEnviado = !!(r && r.ok);
+      if (!emailEnviado) console.error('[auth] falha ao enviar e-mail de confirmação:', r && (r.body || r.motivo));
+    }
+    lista.push(novo);
     await setUsuarios(lista);
-    console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ` (pendente, +${CREDITOS_BOAS_VINDAS} créditos de teste)`}`);
-    return json(res, 200, { ok: true, pendente: !ehPrimeiro, creditosGratis: CREDITOS_BOAS_VINDAS });
+    console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ` (auto-aprovado, +${CREDITOS_BOAS_VINDAS} créditos)`}${novo.emailVerificado ? '' : ' — aguardando confirmação de e-mail'}`);
+    return json(res, 200, { ok: true, pendente: false, creditosGratis: CREDITOS_BOAS_VINDAS, precisaEmail: EMAIL_ATIVO && !novo.emailVerificado, emailEnviado });
+  }
+
+  // ─── AUTENTICAÇÃO: confirma o código de e-mail ─────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/auth/verificar-email') {
+    const body = await readBody(req);
+    const usuario = (body.usuario || '').trim().toLowerCase();
+    const codigo = String(body.codigo || '').trim();
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === usuario);
+    if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
+    if (u.emailVerificado) return json(res, 200, { ok: true, jaConfirmado: true });
+    if (!u.emailCodigoHash || !u.emailCodigoExp || Date.now() > u.emailCodigoExp) {
+      return json(res, 400, { error: 'Código expirado. Reenvie um novo código.' });
+    }
+    if (hashCodigo(codigo) !== u.emailCodigoHash) return json(res, 400, { error: 'Código incorreto.' });
+    u.emailVerificado = true;
+    delete u.emailCodigoHash; delete u.emailCodigoExp;
+    await setUsuarios(lista);
+    console.log(`[auth] e-mail confirmado: ${usuario}`);
+    return json(res, 200, { ok: true, pendente: u.status !== 'aprovado' });
+  }
+
+  // ─── AUTENTICAÇÃO: reenvia o código de e-mail ──────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/auth/reenviar-email') {
+    const body = await readBody(req);
+    const usuario = (body.usuario || '').trim().toLowerCase();
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === usuario);
+    if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
+    if (u.emailVerificado) return json(res, 200, { ok: true, jaConfirmado: true });
+    if (!EMAIL_ATIVO || !u.email) return json(res, 400, { error: 'E-mail não disponível para este usuário.' });
+    const r = await enviarCodigoEmail(u);
+    await setUsuarios(lista);
+    if (!(r && r.ok)) return json(res, 502, { error: 'Não foi possível reenviar o e-mail agora.' });
+    return json(res, 200, { ok: true });
   }
 
   if (req.method === 'POST' && pathname === '/api/auth/login') {
@@ -879,6 +975,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 401, { error: 'Usuário ou senha inválidos' });
     }
     delete loginFalhas[chaveLogin]; // acertou a senha — zera o contador
+    if (u.emailVerificado === false) return json(res, 403, { error: 'Confirme seu e-mail antes de entrar.', emailNaoVerificado: true, usuario: u.usuario });
     if (u.status !== 'aprovado') return json(res, 403, { error: 'Cadastro ainda não foi aprovado por um administrador' });
     const saldoLogin = await saldoCreditos(u);
     return json(res, 200, {

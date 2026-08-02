@@ -312,10 +312,18 @@ tr:hover td{background:rgba(255,255,255,.02)}
 
     <div id="auth-form-registro" style="display:none">
       <div class="auth-field"><label>Usuário</label><input type="text" id="auth-reg-usuario" autocomplete="username"></div>
+      <div class="auth-field"><label>E-mail</label><input type="email" id="auth-reg-email" autocomplete="email" placeholder="para confirmar seu cadastro"></div>
       <div class="auth-field"><label>Senha (mín. 4 caracteres)</label><input type="password" id="auth-reg-senha" autocomplete="new-password"></div>
       <div class="auth-field"><label>Código de indicação (opcional)</label><input type="text" id="auth-reg-ref" placeholder="ganhe 20% de desconto" autocomplete="off" style="text-transform:uppercase"></div>
       <button class="btn btn-p" style="width:100%" onclick="authRegistrar()">Registrar</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:.6rem">Após registrar, um administrador precisa aprovar seu acesso antes que você consiga entrar. Ao ser aprovado, você ganha <strong style="color:var(--green)">150 créditos grátis</strong> para testar. Com um código de indicação, seu 1º plano sai com <strong style="color:var(--green)">20% de desconto</strong>.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:.6rem">Você recebe um <strong>código no e-mail</strong> para confirmar o cadastro e já entra na hora, com <strong style="color:var(--green)">150 créditos grátis</strong> para testar. Com um código de indicação, seu 1º plano sai com <strong style="color:var(--green)">20% de desconto</strong>.</div>
+    </div>
+
+    <div id="auth-form-verificar" style="display:none">
+      <div style="font-size:14px;color:var(--text2);margin-bottom:.8rem">Enviamos um código de 6 dígitos para <strong id="auth-ver-email"></strong>. Digite abaixo para confirmar.</div>
+      <div class="auth-field"><label>Código</label><input type="text" id="auth-ver-codigo" inputmode="numeric" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center;font-size:20px;font-family:var(--mono)" onkeydown="if(event.key==='Enter')authVerificarEmail()"></div>
+      <button class="btn btn-p" style="width:100%" onclick="authVerificarEmail()">Confirmar e-mail</button>
+      <button class="btn" style="width:100%;justify-content:center;margin-top:.5rem" onclick="authReenviarEmail()">Reenviar código</button>
     </div>
 
     <div id="auth-msg"></div>
@@ -1377,8 +1385,46 @@ function authMostrarAba(aba) {
   document.getElementById('auth-tab-registro').classList.toggle('active', aba==='registro');
   document.getElementById('auth-form-login').style.display = aba==='login' ? '' : 'none';
   document.getElementById('auth-form-registro').style.display = aba==='registro' ? '' : 'none';
-  document.getElementById('auth-msg').textContent = '';
+  var ver = document.getElementById('auth-form-verificar');
+  if (ver) ver.style.display = aba==='verificar' ? '' : 'none';
+  // esconde as abas quando está na tela de verificação
+  document.querySelector('.auth-tabs').style.display = aba==='verificar' ? 'none' : '';
+  if (aba!=='verificar') document.getElementById('auth-msg').textContent = '';
   document.getElementById('auth-reativar').style.display = 'none';
+}
+
+// usuário aguardando confirmar o e-mail (guarda pra tela de verificação)
+var _verUsuario = '', _verEmail = '';
+function authAbrirVerificacao(usuario, email) {
+  _verUsuario = usuario || ''; _verEmail = email || '';
+  document.getElementById('auth-ver-email').textContent = email || 'seu e-mail';
+  document.getElementById('auth-ver-codigo').value = '';
+  authMostrarAba('verificar');
+  setTimeout(function(){ var el=document.getElementById('auth-ver-codigo'); if(el) el.focus(); }, 100);
+}
+async function authVerificarEmail() {
+  var codigo = (document.getElementById('auth-ver-codigo').value||'').trim();
+  var msg = document.getElementById('auth-msg');
+  if (codigo.length !== 6) { msg.textContent='Digite os 6 dígitos.'; msg.style.color='var(--red)'; return; }
+  msg.textContent='Confirmando...'; msg.style.color='var(--amber)';
+  try {
+    var r = await fetch(BACKEND+'/api/auth/verificar-email', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:_verUsuario, codigo:codigo}) });
+    var d = await r.json();
+    if (!r.ok) { msg.textContent='✗ '+(d.error||'Código inválido.'); msg.style.color='var(--red)'; return; }
+    msg.textContent='✓ E-mail confirmado! Já pode entrar.'; msg.style.color='var(--green)';
+    var u=_verUsuario;
+    setTimeout(function(){ authMostrarAba('login'); var lu=document.getElementById('auth-login-usuario'); if(lu) lu.value=u; document.getElementById('auth-login-senha').focus(); }, 1200);
+  } catch(e) { msg.textContent='Erro: '+e.message; msg.style.color='var(--red)'; }
+}
+async function authReenviarEmail() {
+  var msg = document.getElementById('auth-msg');
+  msg.textContent='Reenviando...'; msg.style.color='var(--amber)';
+  try {
+    var r = await fetch(BACKEND+'/api/auth/reenviar-email', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:_verUsuario}) });
+    var d = await r.json();
+    msg.textContent = r.ok ? '✓ Código reenviado. Confira seu e-mail (e o spam).' : ('✗ '+(d.error||'Erro ao reenviar.'));
+    msg.style.color = r.ok ? 'var(--green)' : 'var(--red)';
+  } catch(e) { msg.textContent='Erro: '+e.message; msg.style.color='var(--red)'; }
 }
 
 function authAplicarPermissoes() {
@@ -1418,6 +1464,8 @@ async function authLogin() {
     var r = await fetch(BACKEND+'/api/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,senha:senha}) });
     var d = await r.json();
     if (!r.ok) {
+      // e-mail ainda não confirmado → manda pra tela de código
+      if (d.emailNaoVerificado) { authAbrirVerificacao(d.usuario||usuario, ''); var m2=document.getElementById('auth-msg'); m2.textContent='Confirme seu e-mail para entrar. Reenvie o código se precisar.'; m2.style.color='var(--amber)'; return; }
       msg.textContent='✗ '+(d.error||'Erro ao entrar.'); msg.style.color='var(--red)';
       // plano expirado → oferece reativação via WhatsApp
       document.getElementById('auth-reativar').style.display = (r.status===403 && /expir/i.test(d.error||'')) ? 'block' : 'none';
@@ -1436,21 +1484,27 @@ async function authLogin() {
 
 async function authRegistrar() {
   var usuario = document.getElementById('auth-reg-usuario').value.trim();
+  var email = (document.getElementById('auth-reg-email').value || '').trim();
   var senha = document.getElementById('auth-reg-senha').value;
   var msg = document.getElementById('auth-msg');
   if (!usuario || senha.length < 4) { msg.textContent='Usuário obrigatório e senha com pelo menos 4 caracteres.'; msg.style.color='var(--red)'; return; }
+  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { msg.textContent='Informe um e-mail válido.'; msg.style.color='var(--red)'; return; }
   var ref = (document.getElementById('auth-reg-ref').value || '').trim().toUpperCase();
   msg.textContent='Registrando...'; msg.style.color='var(--amber)';
   try {
-    var r = await fetch(BACKEND+'/api/auth/registrar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,senha:senha,ref:ref}) });
+    var r = await fetch(BACKEND+'/api/auth/registrar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,email:email,senha:senha,ref:ref}) });
     var d = await r.json();
     if (!r.ok) { msg.textContent='✗ '+(d.error||'Erro ao registrar.'); msg.style.color='var(--red)'; return; }
-    if (d.pendente) {
-      msg.textContent='✓ Cadastro enviado! Aguarde a aprovação — você começa com '+(d.creditosGratis||150)+' créditos grátis para testar.'; msg.style.color='var(--green)';
+    if (d.precisaEmail) {
+      // manda pra tela de código
+      authAbrirVerificacao(usuario, email);
+      var m2=document.getElementById('auth-msg');
+      m2.textContent = d.emailEnviado ? ('✓ Enviamos um código para '+email+'. Confira (e o spam).') : ('Cadastro criado, mas o e-mail falhou — clique em "Reenviar código".');
+      m2.style.color = d.emailEnviado ? 'var(--green)' : 'var(--amber)';
     } else {
-      msg.textContent='✓ Cadastro criado e aprovado automaticamente (primeiro usuário do sistema). Já pode entrar.'; msg.style.color='var(--green)';
+      msg.textContent='✓ Cadastro criado! Já pode entrar.'; msg.style.color='var(--green)';
+      authMostrarAba('login');
     }
-    authMostrarAba('login');
   } catch(e) { msg.textContent='Erro: '+e.message; msg.style.color='var(--red)'; }
 }
 
