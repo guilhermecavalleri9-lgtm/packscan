@@ -1142,7 +1142,8 @@ function apiFetch(url, opts) {
       if (!apiFetch._ultimo402 || agora - apiFetch._ultimo402 > 5000) {
         apiFetch._ultimo402 = agora;
         r.clone().json().then(function(d){
-          if (d && d.semChaves) { chavesAbrir(); }             // pagou o plano mas não cadastrou a chave
+          if (d && d.chaveGoogleRuim) { chavesAbrir(); alert('⚠ ' + (d.error || 'Sua chave do Google foi recusada.')); } // chave do Google com problema
+          else if (d && d.semChaves) { chavesAbrir(); }        // pagou o plano mas não cadastrou a chave
           else if (d && d.planoExpirado) { comprarAbrir(); alert('Seu plano mensal expirou. Renove por R$ 24,90 para continuar.'); }
           else { mostrarSemCreditos(); }                        // créditos acabaram
         }).catch(function(){ mostrarSemCreditos(); });
@@ -2031,7 +2032,9 @@ async function iniciarGeo(forcar) {
       // 402 = créditos acabaram / plano expirado / falta chave — não adianta insistir nos
       // próximos pacotes, o apiFetch já abriu a tela certa; para o lote aqui
       if (r.status === 402) {
-        log.innerHTML = '<span class="err">⛔ Processamento pausado: sem créditos/plano. Os pacotes já feitos foram mantidos.</span><br>'+log.innerHTML;
+        var d402 = null; try { d402 = await r.clone().json(); } catch(e){}
+        var motivo = (d402 && d402.chaveGoogleRuim) ? ('Chave do Google recusada — '+(d402.error||'verifique a chave')) : 'sem créditos/plano';
+        log.innerHTML = '<span class="err">⛔ Processamento pausado: '+motivo+'. Os pacotes já feitos foram mantidos.</span><br>'+log.innerHTML;
         break;
       }
       var d = await r.json();

@@ -654,6 +654,10 @@ async function ruaPeloCep(cep, ctx) {
     // chamada real ao Google (passou do cache de CEP) — conta no contador.
     // chave própria (plano) é registrada com tipo separado: não gasta crédito nem entra no custo do admin
     logGoogleCall(ctx && ctx.usuario, cep, (ctx && ctx.googleKey) ? 'geocoding_propria' : 'geocoding');
+    if (ctx && (d.status === 'REQUEST_DENIED' || d.status === 'OVER_QUERY_LIMIT' || d.status === 'OVER_DAILY_LIMIT')) {
+      ctx.googleErro = { status: d.status, msg: d.error_message || '' };
+      console.error(`[google] chave recusada no CEP (${d.status}): ${d.error_message || ''}`);
+    }
     if (d.status === 'OK' && d.results[0]) {
       const comps = d.results[0].address_components;
       const get = type => (comps.find(c => c.types.includes(type)) || {}).long_name || '';
@@ -812,6 +816,11 @@ async function geocodificarEndereco(enderecoCompleto, ctx) {
   // chamada real ao Google (passou do cache de endereço) — conta no contador.
   // chave própria (plano) é registrada com tipo separado: não gasta crédito nem entra no custo do admin
   logGoogleCall(ctx && ctx.usuario, ctx && ctx.cep, (ctx && ctx.googleKey) ? 'geocoding_propria' : 'geocoding');
+  // chave recusada / sem cota / faturamento desligado → registra no ctx pra avisar o usuário
+  if (ctx && (d.status === 'REQUEST_DENIED' || d.status === 'OVER_QUERY_LIMIT' || d.status === 'OVER_DAILY_LIMIT')) {
+    ctx.googleErro = { status: d.status, msg: d.error_message || '' };
+    console.error(`[google] chave recusada (${d.status}): ${d.error_message || ''}`);
+  }
   if (d.status !== 'OK' || !d.results[0]) return null;
   const r = d.results[0];
   const comps = r.address_components;
@@ -1805,6 +1814,15 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (!coord) {
+        // se o Google recusou a chave própria do usuário, avisa claramente (não é erro de endereço)
+        if (ctx.googleErro) {
+          const st = ctx.googleErro.status;
+          const msgChave = st === 'REQUEST_DENIED'
+            ? 'O Google recusou sua chave. Ative a "Geocoding API" e configure o faturamento (billing) no projeto do Google Cloud.'
+            : 'Sua chave do Google atingiu o limite de consultas (cota). Verifique o faturamento/limites no Google Cloud.';
+          console.log(`[geocode] falha por chave Google (${st}): ${(endereco || cep || '').substring(0,30)}`);
+          return json(res, 402, { error: msgChave, chaveGoogleRuim: true, googleStatus: st });
+        }
         console.log(`[geocode] não encontrado: ${(endereco || cep || '').substring(0,40)}`);
         return json(res, 404, { error: 'Endereço não encontrado', enderecoFinal });
       }
