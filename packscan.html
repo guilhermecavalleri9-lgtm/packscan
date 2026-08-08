@@ -989,6 +989,13 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div class="alert alert-blue">ℹ <div>Painel do administrador. Aqui você aprova cadastros novos e recarrega os créditos pré-pagos de cada usuário (1 crédito = 1 requisição ao Google). Quando o saldo zera, o usuário é bloqueado até comprar mais.</div></div>
 
     <div class="card" style="margin-bottom:1rem">
+      <div class="card-title">banco de endereços local (CNEFE / IBGE)</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Carrega todos os endereços da cidade (com coordenada) direto do IBGE. Depois disso, a geocodificação vira <strong>instantânea e grátis</strong> — o Google só é usado no que faltar. Faça uma cidade por vez (leva 1-2 min).</div>
+      <div id="cnefe-cidades" class="btn-row" style="margin-bottom:.5rem;flex-wrap:wrap;gap:6px">Carregando…</div>
+      <div id="cnefe-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);min-height:18px"></div>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem">
       <div class="card-title">roteirização por ruas (OSRM)</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Testa se o servidor alcança o motor de rotas. Enquanto em teste, só o admin usa o OSRM ao roteirizar (os demais usam o modo padrão).</div>
       <div class="btn-row" style="margin-bottom:.5rem">
@@ -1825,7 +1832,7 @@ function goTab(n) {
   if (n===3) renderMotDownload();
   if (n===4) renderRegioes();
   if (n===6 && _cepCorrMap) setTimeout(function(){ _cepCorrMap.invalidateSize(); }, 100);
-  if (n===7 && AUTH_ADMIN) { carregarPendentes(); carregarUsuarios(); carregarUsoGoogle(); carregarCupons(); }
+  if (n===7 && AUTH_ADMIN) { carregarPendentes(); carregarUsuarios(); carregarUsoGoogle(); carregarCupons(); carregarCnefe(); }
   if (n!==5 && n!==8 && _scAtivo) scParar();
   if (n===5) scUsar('pacote');
   if (n===8) scUsar('rota');
@@ -3122,6 +3129,26 @@ async function ordenarRotaOSRM(pkgs){
   return null;
 }
 
+// ── banco de endereços local (CNEFE) ──
+async function carregarCnefe(){
+  var box=document.getElementById('cnefe-cidades'); if(!box) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/cnefe'); var d=await r.json();
+    box.innerHTML=(d.cidades||[]).map(function(c){
+      return '<button class="btn btn-sm" onclick="importarCnefe(\''+c.cod+'\',\''+esc(c.nome).replace(/'/g,"\\'")+'\')">⬇ '+esc(c.nome)+'</button>';
+    }).join('');
+  }catch(e){ box.textContent='Erro ao carregar cidades.'; }
+}
+async function importarCnefe(cod, nome){
+  var el=document.getElementById('cnefe-status');
+  el.innerHTML='⏳ Importando <strong>'+esc(nome)+'</strong>… (pode levar 1-2 min, não feche a aba)'; el.style.color='var(--amber)';
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/cnefe/importar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cod:cod})});
+    var d=await r.json();
+    if(r.ok && d.ok){ el.innerHTML='✓ <strong>'+esc(d.cidade)+'</strong>: '+(d.enderecos||0).toLocaleString('pt-BR')+' endereços carregados. Geocodificação dessa cidade agora é instantânea.'; el.style.color='var(--green)'; }
+    else { el.textContent='✗ '+(d.error||'Falha ao importar.'); el.style.color='var(--red)'; }
+  }catch(e){ el.textContent='✗ erro: '+e.message; el.style.color='var(--red)'; }
+}
 async function testarOSRM(){
   var el=document.getElementById('osrm-status');
   el.textContent='⏳ testando...'; el.style.color='var(--amber)';

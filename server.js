@@ -22,6 +22,16 @@ const CREDITOS_BOAS_VINDAS = 150;
 // ganha 20% acumulativo por indicação confirmada — a cada 5 indicações, 1 mês grátis.
 const INDICACAO_PCT = 20;
 const INDICACOES_POR_MES_GRATIS = 5;
+// banco de endereços local (CNEFE/IBGE Censo 2022) — geocodificação instantânea e grátis.
+// Baixa por município; chave no cache = 'cnefe:<cep8>:<numero>' -> {lat,lng,logradouro,bairro,cidade}
+const CNEFE_BASE = 'https://ftp.ibge.gov.br/Cadastro_Nacional_de_Enderecos_para_Fins_Estatisticos/Censo_Demografico_2022/Arquivos_CNEFE/CSV/Municipio/42_SC/';
+const CNEFE_CIDADES = [
+  { cod: '4216602', nome: 'São José',       arq: '4216602_SAO_JOSE.zip' },
+  { cod: '4205407', nome: 'Florianópolis',  arq: '4205407_FLORIANOPOLIS.zip' },
+  { cod: '4211900', nome: 'Palhoça',        arq: '4211900_PALHOCA.zip' },
+  { cod: '4202305', nome: 'Biguaçu',        arq: '4202305_BIGUACU.zip' }
+];
+
 // e-mail transacional (Brevo) — confirmação de cadastro
 const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
 const BREVO_SENDER = process.env.BREVO_SENDER || '';
@@ -166,6 +176,47 @@ function httpsPost(hostname, reqPath, headers, payload) {
     );
     req.on('error', reject); req.write(buf); req.end();
   });
+}
+
+// baixa uma URL https e devolve o corpo como Buffer (segue redirecionamentos simples)
+function httpsGetBuffer(urlStr, saltos) {
+  saltos = saltos || 0;
+  return new Promise((resolve, reject) => {
+    if (saltos > 5) return reject(new Error('muitos redirecionamentos'));
+    https.get(urlStr, { headers: { 'User-Agent': 'PackScan/3.0' } }, r => {
+      if (r.statusCode >= 300 && r.statusCode < 400 && r.headers.location) {
+        r.resume();
+        const next = r.headers.location.startsWith('http') ? r.headers.location : new URL(r.headers.location, urlStr).toString();
+        return resolve(httpsGetBuffer(next, saltos + 1));
+      }
+      if (r.statusCode !== 200) { r.resume(); return reject(new Error('HTTP ' + r.statusCode)); }
+      const chunks = [];
+      r.on('data', c => chunks.push(c));
+      r.on('end', () => resolve(Buffer.concat(chunks)));
+    }).on('error', reject);
+  });
+}
+
+// descompacta o PRIMEIRO arquivo de um .zip usando só o zlib nativo (lê o diretório
+// central pra achar o tamanho comprimido e o offset — funciona pra zip de 1 arquivo).
+const zlib = require('zlib');
+function unzipPrimeiroArquivo(buf) {
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= 0 && i > buf.length - 22 - 65536; i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('zip: EOCD não encontrado');
+  const cdOffset = buf.readUInt32LE(eocd + 16);
+  if (buf.readUInt32LE(cdOffset) !== 0x02014b50) throw new Error('zip: diretório central inválido');
+  const method = buf.readUInt16LE(cdOffset + 10);
+  const compSize = buf.readUInt32LE(cdOffset + 20);
+  const localOffset = buf.readUInt32LE(cdOffset + 42);
+  if (buf.readUInt32LE(localOffset) !== 0x04034b50) throw new Error('zip: header local inválido');
+  const lFnLen = buf.readUInt16LE(localOffset + 26);
+  const lExtraLen = buf.readUInt16LE(localOffset + 28);
+  const dataStart = localOffset + 30 + lFnLen + lExtraLen;
+  const comp = buf.slice(dataStart, dataStart + compSize);
+  return method === 8 ? zlib.inflateRawSync(comp) : comp;
 }
 
 // ─── SUPABASE CACHE ───────────────────────────────────────────────────────────
@@ -638,6 +689,53 @@ async function buscarRuaViaCep(cep) {
   return null;
 }
 
+// ─── BANCO DE ENDEREÇOS LOCAL (CNEFE) ─────────────────────────────────────────
+// pega só o primeiro número do texto (o número da casa), pra casar com o CNEFE
+function numeroDoTexto(t) {
+  const m = String(t || '').match(/\d+/);
+  return m ? m[0] : '';
+}
+// busca instantânea no banco local por CEP + número
+async function buscarCnefe(cepDigitos, numero) {
+  if (!cepDigitos || cepDigitos.length !== 8 || !numero) return null;
+  const c = await supabaseGet('cnefe:' + cepDigitos + ':' + numero);
+  return (c && c.lat) ? c : null;
+}
+
+// importa uma cidade do CNEFE pro cache (chaves cnefe:cep:numero). Retorna o resumo.
+async function importarCnefe(cidade, onProgress) {
+  const buf = await httpsGetBuffer(CNEFE_BASE + cidade.arq);
+  const csv = unzipPrimeiroArquivo(buf).toString('utf8');
+  const linhas = csv.split('\n');
+  const head = linhas[0].split(';').map(s => s.trim());
+  const col = n => head.indexOf(n);
+  const iCep = col('CEP'), iTipo = col('NOM_TIPO_SEGLOGR'), iTit = col('NOM_TITULO_SEGLOGR'),
+        iNome = col('NOM_SEGLOGR'), iNum = col('NUM_ENDERECO'), iLoc = col('DSC_LOCALIDADE'),
+        iLat = col('LATITUDE'), iLng = col('LONGITUDE');
+  const mapa = new Map(); // cnefe:cep:numero -> coord_data (dedup, último vence)
+  for (let k = 1; k < linhas.length; k++) {
+    const p = linhas[k].split(';');
+    if (p.length < head.length) continue;
+    const cep = (p[iCep] || '').replace(/\D/g, '');
+    const numero = (p[iNum] || '').trim();
+    const lat = parseFloat(p[iLat]), lng = parseFloat(p[iLng]);
+    if (cep.length !== 8 || !numero || numero === '0' || !isFinite(lat) || !isFinite(lng)) continue;
+    const logradouro = [p[iTipo], p[iTit], p[iNome]].map(s => (s || '').trim()).filter(Boolean).join(' ');
+    mapa.set('cnefe:' + cep + ':' + numero, { lat, lng, logradouro, bairro: (p[iLoc] || '').trim(), cidade: cidade.nome });
+  }
+  // grava em lote na geo_cache (batches de 1000)
+  const linhasCache = [];
+  for (const [cache_key, coord_data] of mapa) linhasCache.push({ cache_key, coord_data });
+  let gravados = 0;
+  for (let i = 0; i < linhasCache.length; i += 1000) {
+    const lote = linhasCache.slice(i, i + 1000);
+    await supabaseRequest('POST', '/rest/v1/geo_cache', lote, { 'Prefer': 'return=minimal' });
+    gravados += lote.length;
+    if (onProgress) onProgress(gravados, linhasCache.length);
+  }
+  return { cidade: cidade.nome, enderecos: linhasCache.length };
+}
+
 async function ruaPeloCep(cep, ctx) {
   if (!cep || cep.length !== 8) return { rua: '', bairro: '', cidade: '' };
   const cepKey = 'cep:' + cep;
@@ -881,7 +979,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1481,6 +1579,28 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
+  // ─── BANCO LOCAL CNEFE: lista de cidades disponíveis (admin) ──────────────
+  if (req.method === 'GET' && pathname === '/api/admin/cnefe') {
+    return json(res, 200, { cidades: CNEFE_CIDADES.map(c => ({ cod: c.cod, nome: c.nome })) });
+  }
+  // ─── BANCO LOCAL CNEFE: importa uma cidade (admin) ────────────────────────
+  if (req.method === 'POST' && pathname === '/api/admin/cnefe/importar') {
+    const body = await readBody(req);
+    const cidade = CNEFE_CIDADES.find(c => c.cod === String(body.cod || ''));
+    if (!cidade) return json(res, 400, { error: 'Cidade inválida' });
+    try {
+      console.log(`[cnefe] importando ${cidade.nome}…`);
+      const resumo = await importarCnefe(cidade, (feito, total) => {
+        if (feito % 10000 === 0) console.log(`[cnefe] ${cidade.nome}: ${feito}/${total}`);
+      });
+      console.log(`[cnefe] ✓ ${cidade.nome}: ${resumo.enderecos} endereços`);
+      return json(res, 200, { ok: true, ...resumo });
+    } catch(e) {
+      console.error('[cnefe] erro:', e.message);
+      return json(res, 502, { error: 'Falha ao importar: ' + e.message });
+    }
+  }
+
   // ─── EXCLUIR REFERÊNCIA DE CEP (lat/lng salvos manualmente) — admin ────────
   if (req.method === 'POST' && pathname === '/api/cep/excluir') {
     const body = await readBody(req);
@@ -1710,6 +1830,21 @@ const server = http.createServer(async (req, res) => {
           return json(res, 200, { ...coord, enderecoNormalizado: endereco, fromCache: false });
         }
         return json(res, 404, { error: 'Endereço não encontrado' });
+      }
+
+      // ATALHO: banco local (CNEFE) por CEP + número — instantâneo, grátis, preciso.
+      // Se achar, nem toca no Google/IA. É a fonte de verdade pras cidades já importadas.
+      const cepDig0 = (cep || '').replace(/\D/g, '');
+      const num0 = numeroDoTexto(endereco);
+      if (cepDig0.length === 8 && num0) {
+        const local = await buscarCnefe(cepDig0, num0);
+        if (local) {
+          const enderecoNormalizado = `${local.logradouro}, ${num0}, ${local.cidade}, SC, Brasil`;
+          const resultado = { lat: local.lat, lng: local.lng, enderecoFormatado: enderecoNormalizado, enderecoNormalizado, logradouro: local.logradouro, bairro: local.bairro, cidade: local.cidade, precisao: 'CNEFE', ruaCep: local.logradouro, complemento: num0, fromCache: false };
+          await supabaseSet(cacheKey, resultado);
+          console.log(`[geocode] ✓ CNEFE ${enderecoNormalizado.substring(0,50)}`);
+          return json(res, 200, resultado);
+        }
       }
 
       // fluxo: CEP → rua (referência) → IA extrai rua-do-texto + complemento → geocodifica
