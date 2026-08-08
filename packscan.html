@@ -3161,7 +3161,8 @@ async function importarCnefe(cod, nome){
           el.innerHTML='✓ <strong>'+esc(s.cidade||nome)+'</strong>: '+(s.enderecos||0).toLocaleString('pt-BR')+' endereços carregados. Geocodificação dessa cidade agora é instantânea.'; el.style.color='var(--green)';
         } else if(s.estado==='erro'){
           clearInterval(_cnefePoll); _cnefePoll=null;
-          el.textContent='✗ '+(s.error||'Falha ao importar.'); el.style.color='var(--red)';
+          var diag = (s.bytes!=null)?(' [baixado '+Math.round((s.bytes||0)/1024)+'KB, linhas '+(s.linhas||0)+']'):'';
+          el.textContent='✗ '+(s.error||'Falha ao importar.')+diag; el.style.color='var(--red)';
         }
       }catch(e){}
     },3000);

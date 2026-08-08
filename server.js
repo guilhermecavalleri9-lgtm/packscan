@@ -704,10 +704,13 @@ async function buscarCnefe(cepDigitos, numero) {
 }
 
 // importa uma cidade do CNEFE pro cache (chaves cnefe:cep:numero). Retorna o resumo.
-async function importarCnefe(cidade, onProgress) {
+// job (opcional) recebe diagnósticos: bytes, linhas, parseados, feito/total.
+async function importarCnefe(cidade, onProgress, job) {
   const buf = await httpsGetBuffer(CNEFE_BASE + cidade.arq);
+  if (job) job.bytes = buf.length;
   const csv = unzipPrimeiroArquivo(buf).toString('utf8');
-  const linhas = csv.split('\n');
+  const linhas = csv.split(/\r?\n/);
+  if (job) job.linhas = linhas.length;
   const head = linhas[0].split(';').map(s => s.trim());
   const col = n => head.indexOf(n);
   const iCep = col('CEP'), iTipo = col('NOM_TIPO_SEGLOGR'), iTit = col('NOM_TITULO_SEGLOGR'),
@@ -727,14 +730,20 @@ async function importarCnefe(cidade, onProgress) {
   // grava em lote na geo_cache (batches de 1000)
   const linhasCache = [];
   for (const [cache_key, coord_data] of mapa) linhasCache.push({ cache_key, coord_data });
+  if (job) { job.parseados = linhasCache.length; job.total = linhasCache.length; job.colunas = { iCep, iNum, iLat, iLng }; }
+  if (!linhasCache.length) {
+    throw new Error(`0 endereços parseados (bytes ${job ? job.bytes : '?'}, linhas ${linhas.length}, colunas cep/num/lat/lng=${iCep}/${iNum}/${iLat}/${iLng})`);
+  }
   let gravados = 0;
   for (let i = 0; i < linhasCache.length; i += 1000) {
     const lote = linhasCache.slice(i, i + 1000);
-    await supabaseRequest('POST', '/rest/v1/geo_cache', lote, { 'Prefer': 'return=minimal' });
+    const resp = await supabaseRequest('POST', '/rest/v1/geo_cache', lote, { 'Prefer': 'return=minimal' });
+    if (resp && resp.status >= 300) throw new Error(`Supabase rejeitou (HTTP ${resp.status}): ${JSON.stringify(resp.body).substring(0,160)}`);
     gravados += lote.length;
+    if (job) job.feito = gravados;
     if (onProgress) onProgress(gravados, linhasCache.length);
   }
-  return { cidade: cidade.nome, enderecos: linhasCache.length };
+  return { cidade: cidade.nome, enderecos: gravados };
 }
 
 async function ruaPeloCep(cep, ctx) {
@@ -1599,13 +1608,15 @@ const server = http.createServer(async (req, res) => {
     (async () => {
       try {
         console.log(`[cnefe] importando ${cidade.nome}…`);
-        const resumo = await importarCnefe(cidade, (feito, total) => {
-          _cnefeJobs[cidade.cod].feito = feito; _cnefeJobs[cidade.cod].total = total;
-        });
-        _cnefeJobs[cidade.cod] = { estado: 'ok', enderecos: resumo.enderecos, cidade: cidade.nome };
+        const resumo = await importarCnefe(cidade, null, _cnefeJobs[cidade.cod]);
+        _cnefeJobs[cidade.cod].estado = 'ok';
+        _cnefeJobs[cidade.cod].enderecos = resumo.enderecos;
+        _cnefeJobs[cidade.cod].cidade = cidade.nome;
         console.log(`[cnefe] ✓ ${cidade.nome}: ${resumo.enderecos} endereços`);
       } catch(e) {
-        _cnefeJobs[cidade.cod] = { estado: 'erro', error: e.message, cidade: cidade.nome };
+        _cnefeJobs[cidade.cod].estado = 'erro';
+        _cnefeJobs[cidade.cod].error = e.message;
+        _cnefeJobs[cidade.cod].cidade = cidade.nome;
         console.error('[cnefe] erro:', e.message);
       }
     })();
