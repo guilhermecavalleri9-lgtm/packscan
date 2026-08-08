@@ -737,7 +737,8 @@ async function importarCnefe(cidade, onProgress, job) {
   let gravados = 0;
   for (let i = 0; i < linhasCache.length; i += 1000) {
     const lote = linhasCache.slice(i, i + 1000);
-    const resp = await supabaseRequest('POST', '/rest/v1/geo_cache', lote, { 'Prefer': 'return=minimal' });
+    // upsert: se a chave já existir (reimport), atualiza em vez de quebrar com 409
+    const resp = await supabaseRequest('POST', '/rest/v1/geo_cache', lote, { 'Prefer': 'resolution=merge-duplicates,return=minimal' });
     if (resp && resp.status >= 300) throw new Error(`Supabase rejeitou (HTTP ${resp.status}): ${JSON.stringify(resp.body).substring(0,160)}`);
     gravados += lote.length;
     if (job) job.feito = gravados;
