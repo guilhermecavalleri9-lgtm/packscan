@@ -3168,7 +3168,7 @@ async function carregarGkeys(){
     if(!(d.chaves||[]).length){ el.innerHTML='<span style="color:var(--amber)">Nenhuma chave cadastrada — o sistema usa a chave global do servidor.</span>'; return; }
     el.innerHTML=d.chaves.map(function(k){
       return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'
-        +'<span style="flex:1">'+esc(k.mascara)+(k.atual?' <span style="color:var(--green);font-size:10px">● em uso</span>':'')+'</span>'
+        +'<span style="flex:1">'+esc(k.mascara)+(k.origem?' <span style="color:var(--text2);font-size:10px">('+esc(k.origem)+')</span>':' <span style="color:var(--text3);font-size:10px">(manual)</span>')+(k.atual?' <span style="color:var(--green);font-size:10px">● em uso</span>':'')+'</span>'
         +'<button class="btn btn-r btn-sm" onclick="gkeyRemover('+k.indice+')">remover</button></div>';
     }).join('')+'<div style="color:var(--text3);margin-top:6px">Rodízio: '+d.trocaCada+' requisições por chave.</div>';
   }catch(e){ el.textContent='Erro ao carregar.'; }
@@ -3201,7 +3201,7 @@ async function gkeyTestar(){
     var d=await r.json();
     if(!r.ok){ el.textContent='✗ '+(d.error||'Erro'); el.style.color='var(--red)'; return; }
     var cor=function(s){ return s==='ATIVA'?'var(--green)':(s==='SEM COTA'?'var(--amber)':'var(--red)'); };
-    var linhas=(d.chaves||[]).map(function(k){ return '<div style="margin-bottom:3px">'+esc(k.mascara)+' — <span style="color:'+cor(k.status)+'">'+esc(k.status)+'</span>'+(k.motivo?'<div style="color:var(--text3);font-size:10px;margin-left:12px">'+esc(k.motivo)+'</div>':'')+'</div>'; }).join('');
+    var linhas=(d.chaves||[]).map(function(k){ return '<div style="margin-bottom:3px">'+esc(k.mascara)+(k.origem?' <span style="color:var(--text2);font-size:10px">('+esc(k.origem)+')</span>':'')+' — <span style="color:'+cor(k.status)+'">'+esc(k.status)+'</span>'+(k.motivo?'<div style="color:var(--text3);font-size:10px;margin-left:12px">'+esc(k.motivo)+'</div>':'')+'</div>'; }).join('');
     el.innerHTML='<div style="color:'+(d.ativas>0?'var(--green)':'var(--red)')+';font-weight:600;margin-bottom:4px">'+d.ativas+' de '+d.total+' chave(s) ativa(s)</div>'+linhas;
   }catch(e){ el.textContent='Erro: '+e.message; el.style.color='var(--red)'; }
 }

@@ -1712,6 +1712,7 @@ const server = http.createServer(async (req, res) => {
       chaves: lista.map((k, i) => ({
         indice: i,
         mascara: '…' + String(k.key).slice(-6),
+        origem: k.origem || null,
         adicionadaEm: k.adicionadaEm || null,
         atual: i === _gkIdx
       }))
@@ -1763,7 +1764,7 @@ const server = http.createServer(async (req, res) => {
         else if (d.status === 'OVER_QUERY_LIMIT' || d.status === 'OVER_DAILY_LIMIT') status = 'SEM COTA';
         else status = d.status || 'ERRO';
       } catch(e) { status = 'ERRO'; motivo = e.message; }
-      out.push({ mascara: '…' + String(k.key).slice(-6), status, ok: status === 'ATIVA', motivo });
+      out.push({ mascara: '…' + String(k.key).slice(-6), origem: k.origem || null, status, ok: status === 'ATIVA', motivo });
     }
     return json(res, 200, { chaves: out, ativas: out.filter(x => x.ok).length, total: out.length });
   }
