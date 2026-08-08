@@ -999,6 +999,16 @@ tr:hover td{background:rgba(255,255,255,.02)}
     </div>
 
     <div class="card" style="margin-bottom:1rem">
+      <div class="card-title">chaves do Google (pool)</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">O sistema usa estas chaves em rodízio: <strong>50 requisições por chave</strong>, depois troca. Chave sem cota é pulada; chave inválida é removida sozinha. Os usuários não precisam mais cadastrar chave.</div>
+      <div style="display:flex;gap:6px;margin-bottom:.6rem">
+        <input type="text" id="gkey-input" placeholder="Cole uma chave do Google (AIza...)" style="flex:1;font-family:var(--mono);font-size:12px" autocomplete="off">
+        <button class="btn btn-p btn-sm" onclick="gkeyAdd()">+ Adicionar</button>
+      </div>
+      <div id="gkeys-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Carregando…</div>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem">
       <div class="card-title">roteirização por ruas (OSRM)</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Testa se o servidor alcança o motor de rotas. Enquanto em teste, só o admin usa o OSRM ao roteirizar (os demais usam o modo padrão).</div>
       <div class="btn-row" style="margin-bottom:.5rem">
@@ -1835,7 +1845,7 @@ function goTab(n) {
   if (n===3) renderMotDownload();
   if (n===4) renderRegioes();
   if (n===6 && _cepCorrMap) setTimeout(function(){ _cepCorrMap.invalidateSize(); }, 100);
-  if (n===7 && AUTH_ADMIN) { carregarPendentes(); carregarUsuarios(); carregarUsoGoogle(); carregarCupons(); carregarCnefe(); }
+  if (n===7 && AUTH_ADMIN) { carregarPendentes(); carregarUsuarios(); carregarUsoGoogle(); carregarCupons(); carregarCnefe(); carregarGkeys(); }
   if (n!==5 && n!==8 && _scAtivo) scParar();
   if (n===5) scUsar('pacote');
   if (n===8) scUsar('rota');
@@ -3145,6 +3155,36 @@ async function ordenarRotaOSRM(pkgs){
   return null;
 }
 
+// ── pool de chaves do Google ──
+async function carregarGkeys(){
+  var el=document.getElementById('gkeys-lista'); if(!el) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/gkeys'); var d=await r.json();
+    if(!(d.chaves||[]).length){ el.innerHTML='<span style="color:var(--amber)">Nenhuma chave cadastrada — o sistema usa a chave global do servidor.</span>'; return; }
+    el.innerHTML=d.chaves.map(function(k){
+      return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'
+        +'<span style="flex:1">'+esc(k.mascara)+(k.atual?' <span style="color:var(--green);font-size:10px">● em uso</span>':'')+'</span>'
+        +'<button class="btn btn-r btn-sm" onclick="gkeyRemover('+k.indice+')">remover</button></div>';
+    }).join('')+'<div style="color:var(--text3);margin-top:6px">Rodízio: '+d.trocaCada+' requisições por chave.</div>';
+  }catch(e){ el.textContent='Erro ao carregar.'; }
+}
+async function gkeyAdd(){
+  var inp=document.getElementById('gkey-input'); var key=(inp.value||'').trim();
+  if(!key){ alert('Cole uma chave.'); return; }
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/gkeys',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key})});
+    var d=await r.json();
+    if(!r.ok){ alert('✗ '+(d.error||'Erro')); return; }
+    inp.value=''; carregarGkeys();
+  }catch(e){ alert('Erro: '+e.message); }
+}
+async function gkeyRemover(indice){
+  if(!confirm('Remover esta chave do pool?')) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/gkeys/remover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indice:indice})});
+    if(r.ok) carregarGkeys(); else { var d=await r.json(); alert('✗ '+(d.error||'Erro')); }
+  }catch(e){ alert('Erro: '+e.message); }
+}
 // ── banco de endereços local (CNEFE) ──
 async function carregarCnefe(){
   var box=document.getElementById('cnefe-cidades'); if(!box) return;

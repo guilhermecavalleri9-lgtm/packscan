@@ -767,6 +767,62 @@ async function importarCnefe(cidade, onProgress, job) {
   return { cidade: cidade.nome, enderecos: gravados };
 }
 
+// ─── POOL DE CHAVES DO GOOGLE ─────────────────────────────────────────────────
+// chaves cadastradas pelo admin. Rotaciona a cada GK_TROCA requisições; se uma chave
+// falha (sem cota) pula pra próxima; se está inválida (recusada) remove automático.
+const GK_KEY = 'cfg:googlekeys';
+const GK_TROCA = 50;
+let _gkLista = null, _gkIdx = 0, _gkCount = 0;
+async function gkCarregar() {
+  if (_gkLista) return _gkLista;
+  const v = await supabaseGet(GK_KEY);
+  _gkLista = (Array.isArray(v) ? v : []).filter(k => k && k.key);
+  return _gkLista;
+}
+async function gkSalvar() { _gkLista = (_gkLista || []).filter(k => k && k.key); await supabaseSet(GK_KEY, _gkLista); }
+async function gkAtual() {
+  const lista = await gkCarregar();
+  if (!lista.length) return null;
+  if (_gkIdx >= lista.length) _gkIdx = 0;
+  if (_gkCount >= GK_TROCA) { _gkCount = 0; _gkIdx = (_gkIdx + 1) % lista.length; } // trocou de chave
+  return lista[_gkIdx];
+}
+function gkAvancar() { const n = _gkLista ? _gkLista.length : 0; if (n) { _gkIdx = (_gkIdx + 1) % n; _gkCount = 0; } }
+async function gkRemover(keyStr) {
+  if (!_gkLista) return;
+  _gkLista = _gkLista.filter(k => k.key !== keyStr);
+  _gkIdx = 0; _gkCount = 0;
+  await gkSalvar();
+  console.warn(`[gkeys] chave removida automaticamente (inválida): …${String(keyStr).slice(-6)}`);
+}
+
+// GET no Geocoding do Google usando o POOL (rotação/failover/auto-remoção).
+// reqPathSemKey já vem com "?...": esta função só acrescenta &key=.
+async function googleGeocodePool(reqPathSemKey, ctx) {
+  // usuário com chave própria (plano antigo) ainda é respeitado; senão, usa o pool
+  if (ctx && ctx.googleKey) {
+    return await httpsGet('maps.googleapis.com', reqPathSemKey + '&key=' + ctx.googleKey);
+  }
+  const lista = await gkCarregar();
+  if (!lista.length) {
+    // sem pool: cai na chave global do sistema, se houver
+    return await httpsGet('maps.googleapis.com', reqPathSemKey + '&key=' + GOOGLE_KEY);
+  }
+  const tentativas = lista.length;
+  for (let t = 0; t < tentativas; t++) {
+    const atual = await gkAtual();
+    if (!atual) break;
+    let d;
+    try { d = await httpsGet('maps.googleapis.com', reqPathSemKey + '&key=' + atual.key); }
+    catch(e) { gkAvancar(); continue; } // erro de rede nessa chave → tenta a próxima
+    if (d.status === 'REQUEST_DENIED') { await gkRemover(atual.key); continue; }      // chave inválida → remove
+    if (d.status === 'OVER_QUERY_LIMIT' || d.status === 'OVER_DAILY_LIMIT') { gkAvancar(); continue; } // sem cota → pula
+    _gkCount++; // requisição válida contou nesta chave (troca a cada GK_TROCA)
+    return d;
+  }
+  return { status: 'ALL_KEYS_FAILED', results: [] };
+}
+
 async function ruaPeloCep(cep, ctx) {
   if (!cep || cep.length !== 8) return { rua: '', bairro: '', cidade: '' };
   const cepKey = 'cep:' + cep;
@@ -777,11 +833,10 @@ async function ruaPeloCep(cep, ctx) {
   const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
   const query = encodeURIComponent(`${cepFmt}, Brasil`);
   try {
-    const d = await httpsGet('maps.googleapis.com',
-      `/maps/api/geocode/json?address=${query}&key=${(ctx && ctx.googleKey) || GOOGLE_KEY}&language=pt-BR&region=BR`
+    const d = await googleGeocodePool(
+      `/maps/api/geocode/json?address=${query}&language=pt-BR&region=BR`, ctx
     );
     // chamada real ao Google (passou do cache de CEP) — conta no contador.
-    // chave própria (plano) é registrada com tipo separado: não gasta crédito nem entra no custo do admin
     logGoogleCall(ctx && ctx.usuario, cep, (ctx && ctx.googleKey) ? 'geocoding_propria' : 'geocoding');
     if (ctx && (d.status === 'REQUEST_DENIED' || d.status === 'OVER_QUERY_LIMIT' || d.status === 'OVER_DAILY_LIMIT')) {
       ctx.googleErro = { status: d.status, msg: d.error_message || '' };
@@ -939,8 +994,8 @@ async function geocodificarValidado(enderecoCompleto, cepInfo, ctx) {
 
 async function geocodificarEndereco(enderecoCompleto, ctx) {
   const query = encodeURIComponent(enderecoCompleto);
-  const d = await httpsGet('maps.googleapis.com',
-    `/maps/api/geocode/json?address=${query}&key=${(ctx && ctx.googleKey) || GOOGLE_KEY}&language=pt-BR&region=BR`
+  const d = await googleGeocodePool(
+    `/maps/api/geocode/json?address=${query}&language=pt-BR&region=BR`, ctx
   );
   // chamada real ao Google (passou do cache de endereço) — conta no contador.
   // chave própria (plano) é registrada com tipo separado: não gasta crédito nem entra no custo do admin
@@ -1010,7 +1065,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1649,6 +1704,44 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, _cnefeJobs[cod] || { estado: 'nenhum' });
   }
 
+  // ─── POOL DE CHAVES GOOGLE: listar (admin) — mostra mascarado ─────────────
+  if (req.method === 'GET' && pathname === '/api/admin/gkeys') {
+    const lista = await gkCarregar();
+    return json(res, 200, {
+      trocaCada: GK_TROCA,
+      chaves: lista.map((k, i) => ({
+        indice: i,
+        mascara: '…' + String(k.key).slice(-6),
+        adicionadaEm: k.adicionadaEm || null,
+        atual: i === _gkIdx
+      }))
+    });
+  }
+  // ─── POOL DE CHAVES GOOGLE: adicionar (admin) ─────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/admin/gkeys') {
+    const body = await readBody(req);
+    const key = String(body.key || '').trim();
+    if (!key || key.length < 20) return json(res, 400, { error: 'Chave inválida' });
+    await gkCarregar();
+    if (_gkLista.some(k => k.key === key)) return json(res, 409, { error: 'Chave já cadastrada' });
+    _gkLista.push({ key, adicionadaEm: new Date().toISOString() });
+    await gkSalvar();
+    console.log(`[gkeys] chave adicionada (…${key.slice(-6)}) por ${req.usuarioAtual.usuario}`);
+    return json(res, 200, { ok: true, total: _gkLista.length });
+  }
+  // ─── POOL DE CHAVES GOOGLE: remover (admin) ───────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/admin/gkeys/remover') {
+    const body = await readBody(req);
+    await gkCarregar();
+    const idx = parseInt(body.indice, 10);
+    if (!isFinite(idx) || idx < 0 || idx >= _gkLista.length) return json(res, 400, { error: 'Índice inválido' });
+    const rem = _gkLista.splice(idx, 1)[0];
+    _gkIdx = 0; _gkCount = 0;
+    await gkSalvar();
+    console.log(`[gkeys] chave removida (…${String(rem.key).slice(-6)}) por ${req.usuarioAtual.usuario}`);
+    return json(res, 200, { ok: true, total: _gkLista.length });
+  }
+
   // ─── EXCLUIR REFERÊNCIA DE CEP (lat/lng salvos manualmente) — admin ────────
   if (req.method === 'POST' && pathname === '/api/cep/excluir') {
     const body = await readBody(req);
@@ -1871,10 +1964,7 @@ const server = http.createServer(async (req, res) => {
       } else if (meuRec && meuRec.planoProprio && !planoAtivo) {
         return json(res, 402, { error: 'Seu plano mensal expirou. Renove por R$ 24,90 para continuar.', planoExpirado: true });
       } else if (planoAtivo) {
-        if (!meuRec.googleKey) return json(res, 402, { error: 'Configure sua chave de API do Google para usar seu plano.', semChaves: true });
-        ctx.googleKey = meuRec.googleKey;
-        ctx.anthropicKey = meuRec.anthropicKey || '';
-        ctx.forcarChavePropria = true; // não usa a chave de IA global (custo é do usuário)
+        // plano ativo: usa o POOL de chaves do admin (não pede mais chave do usuário)
       } else {
         const saldo = await saldoCreditos(meuRec);
         if (saldo <= 0) return json(res, 402, { error: 'Seus créditos de teste acabaram. Assine o plano mensal para continuar.', semCreditos: true });
