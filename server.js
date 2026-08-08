@@ -25,6 +25,7 @@ const INDICACOES_POR_MES_GRATIS = 5;
 // banco de endereços local (CNEFE/IBGE Censo 2022) — geocodificação instantânea e grátis.
 // Baixa por município; chave no cache = 'cnefe:<cep8>:<numero>' -> {lat,lng,logradouro,bairro,cidade}
 const CNEFE_BASE = 'https://ftp.ibge.gov.br/Cadastro_Nacional_de_Enderecos_para_Fins_Estatisticos/Censo_Demografico_2022/Arquivos_CNEFE/CSV/Municipio/42_SC/';
+const _cnefeJobs = {}; // cod -> { estado:'rodando'|'ok'|'erro', feito, total, enderecos, error, cidade }
 const CNEFE_CIDADES = [
   { cod: '4216602', nome: 'São José',       arq: '4216602_SAO_JOSE.zip' },
   { cod: '4205407', nome: 'Florianópolis',  arq: '4205407_FLORIANOPOLIS.zip' },
@@ -979,7 +980,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1583,22 +1584,37 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/admin/cnefe') {
     return json(res, 200, { cidades: CNEFE_CIDADES.map(c => ({ cod: c.cod, nome: c.nome })) });
   }
-  // ─── BANCO LOCAL CNEFE: importa uma cidade (admin) ────────────────────────
+  // ─── BANCO LOCAL CNEFE: importa uma cidade EM SEGUNDO PLANO (admin) ────────
+  // a carga leva 1-2 min; rodar sincronamente estoura o tempo do navegador ("Load
+  // failed"). Então inicia o job e o frontend consulta /status até terminar.
   if (req.method === 'POST' && pathname === '/api/admin/cnefe/importar') {
     const body = await readBody(req);
     const cidade = CNEFE_CIDADES.find(c => c.cod === String(body.cod || ''));
     if (!cidade) return json(res, 400, { error: 'Cidade inválida' });
-    try {
-      console.log(`[cnefe] importando ${cidade.nome}…`);
-      const resumo = await importarCnefe(cidade, (feito, total) => {
-        if (feito % 10000 === 0) console.log(`[cnefe] ${cidade.nome}: ${feito}/${total}`);
-      });
-      console.log(`[cnefe] ✓ ${cidade.nome}: ${resumo.enderecos} endereços`);
-      return json(res, 200, { ok: true, ...resumo });
-    } catch(e) {
-      console.error('[cnefe] erro:', e.message);
-      return json(res, 502, { error: 'Falha ao importar: ' + e.message });
+    if (_cnefeJobs[cidade.cod] && _cnefeJobs[cidade.cod].estado === 'rodando') {
+      return json(res, 200, { ok: true, jaRodando: true });
     }
+    _cnefeJobs[cidade.cod] = { estado: 'rodando', feito: 0, total: 0, cidade: cidade.nome };
+    // roda sem await — responde na hora
+    (async () => {
+      try {
+        console.log(`[cnefe] importando ${cidade.nome}…`);
+        const resumo = await importarCnefe(cidade, (feito, total) => {
+          _cnefeJobs[cidade.cod].feito = feito; _cnefeJobs[cidade.cod].total = total;
+        });
+        _cnefeJobs[cidade.cod] = { estado: 'ok', enderecos: resumo.enderecos, cidade: cidade.nome };
+        console.log(`[cnefe] ✓ ${cidade.nome}: ${resumo.enderecos} endereços`);
+      } catch(e) {
+        _cnefeJobs[cidade.cod] = { estado: 'erro', error: e.message, cidade: cidade.nome };
+        console.error('[cnefe] erro:', e.message);
+      }
+    })();
+    return json(res, 200, { ok: true, iniciado: true });
+  }
+  // ─── BANCO LOCAL CNEFE: progresso da importação (admin) ────────────────────
+  if (req.method === 'GET' && pathname === '/api/admin/cnefe/status') {
+    const cod = (parsedUrl.query.cod || '').toString();
+    return json(res, 200, _cnefeJobs[cod] || { estado: 'nenhum' });
   }
 
   // ─── EXCLUIR REFERÊNCIA DE CEP (lat/lng salvos manualmente) — admin ────────

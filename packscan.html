@@ -3139,14 +3139,32 @@ async function carregarCnefe(){
     }).join('');
   }catch(e){ box.textContent='Erro ao carregar cidades.'; }
 }
+var _cnefePoll=null;
 async function importarCnefe(cod, nome){
   var el=document.getElementById('cnefe-status');
-  el.innerHTML='⏳ Importando <strong>'+esc(nome)+'</strong>… (pode levar 1-2 min, não feche a aba)'; el.style.color='var(--amber)';
+  el.innerHTML='⏳ Iniciando importação de <strong>'+esc(nome)+'</strong>…'; el.style.color='var(--amber)';
   try{
     var r=await apiFetch(BACKEND+'/api/admin/cnefe/importar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cod:cod})});
     var d=await r.json();
-    if(r.ok && d.ok){ el.innerHTML='✓ <strong>'+esc(d.cidade)+'</strong>: '+(d.enderecos||0).toLocaleString('pt-BR')+' endereços carregados. Geocodificação dessa cidade agora é instantânea.'; el.style.color='var(--green)'; }
-    else { el.textContent='✗ '+(d.error||'Falha ao importar.'); el.style.color='var(--red)'; }
+    if(!r.ok){ el.textContent='✗ '+(d.error||'Falha ao iniciar.'); el.style.color='var(--red)'; return; }
+    // consulta o progresso a cada 3s (a carga roda no servidor, não trava o app)
+    if(_cnefePoll) clearInterval(_cnefePoll);
+    _cnefePoll=setInterval(async function(){
+      try{
+        var sr=await apiFetch(BACKEND+'/api/admin/cnefe/status?cod='+encodeURIComponent(cod));
+        var s=await sr.json();
+        if(s.estado==='rodando'){
+          el.innerHTML='⏳ Importando <strong>'+esc(nome)+'</strong>… '+(s.total?((s.feito||0).toLocaleString('pt-BR')+'/'+s.total.toLocaleString('pt-BR')):'baixando do IBGE')+' (pode fechar a aba, continua no servidor)';
+          el.style.color='var(--amber)';
+        } else if(s.estado==='ok'){
+          clearInterval(_cnefePoll); _cnefePoll=null;
+          el.innerHTML='✓ <strong>'+esc(s.cidade||nome)+'</strong>: '+(s.enderecos||0).toLocaleString('pt-BR')+' endereços carregados. Geocodificação dessa cidade agora é instantânea.'; el.style.color='var(--green)';
+        } else if(s.estado==='erro'){
+          clearInterval(_cnefePoll); _cnefePoll=null;
+          el.textContent='✗ '+(s.error||'Falha ao importar.'); el.style.color='var(--red)';
+        }
+      }catch(e){}
+    },3000);
   }catch(e){ el.textContent='✗ erro: '+e.message; el.style.color='var(--red)'; }
 }
 async function testarOSRM(){
