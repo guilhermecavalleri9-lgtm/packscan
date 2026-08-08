@@ -696,11 +696,31 @@ function numeroDoTexto(t) {
   const m = String(t || '').match(/\d+/);
   return m ? m[0] : '';
 }
-// busca instantânea no banco local por CEP + número
+// busca instantânea no banco local por CEP + número. Se o número exato não existir,
+// pega o número MAIS PRÓXIMO na mesma CEP (CNEFE é denso → ótima aproximação).
 async function buscarCnefe(cepDigitos, numero) {
   if (!cepDigitos || cepDigitos.length !== 8 || !numero) return null;
-  const c = await supabaseGet('cnefe:' + cepDigitos + ':' + numero);
-  return (c && c.lat) ? c : null;
+  const exato = await supabaseGet('cnefe:' + cepDigitos + ':' + numero);
+  if (exato && exato.lat) return exato;
+  if (!SUPABASE_URL || !SUPABASE_KEY) return null;
+  try {
+    const r = await supabaseRequest('GET',
+      `/rest/v1/geo_cache?cache_key=like.${encodeURIComponent('cnefe:' + cepDigitos + ':*')}&select=cache_key,coord_data&limit=800`);
+    if (r.status >= 300 || !Array.isArray(r.body) || !r.body.length) return null;
+    const alvo = parseInt(numero, 10);
+    if (!isFinite(alvo)) return null;
+    let best = null, bd = Infinity;
+    for (const row of r.body) {
+      const c = row.coord_data; if (!c || c.lat == null) continue;
+      const n = parseInt((String(row.cache_key).split(':')[2] || ''), 10);
+      if (!isFinite(n)) continue;
+      const d = Math.abs(n - alvo);
+      if (d < bd) { bd = d; best = c; }
+    }
+    // só aceita se o vizinho estiver razoavelmente perto (mesmo trecho da rua)
+    if (best && bd <= 60) return { ...best, precisao: 'CNEFE_APROX' };
+  } catch(e) { console.error('[cnefe-aprox]', e.message); }
+  return null;
 }
 
 // importa uma cidade do CNEFE pro cache (chaves cnefe:cep:numero). Retorna o resumo.
