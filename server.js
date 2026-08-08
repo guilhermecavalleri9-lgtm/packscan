@@ -1820,6 +1820,18 @@ const server = http.createServer(async (req, res) => {
     // há cache miss e o Google é de fato chamado
     const ctx = { usuario: req.usuarioAtual ? req.usuarioAtual.usuario : null, cep: cep ? cep.replace(/\D/g,'') : null };
 
+    // MODO TESTE: só o banco local (CNEFE), sem cache e sem Google — mostra a cobertura pura
+    if (body.soLocal) {
+      const cepD = (cep || '').replace(/\D/g, '');
+      const numT = numeroDoTexto(endereco);
+      const loc = (cepD.length === 8 && numT) ? await buscarCnefe(cepD, numT) : null;
+      if (loc) {
+        const enderecoNormalizado = `${loc.logradouro}, ${numT}, ${loc.cidade}, SC, Brasil`;
+        return json(res, 200, { lat: loc.lat, lng: loc.lng, enderecoFormatado: enderecoNormalizado, enderecoNormalizado, logradouro: loc.logradouro, bairro: loc.bairro, cidade: loc.cidade, precisao: 'CNEFE', complemento: numT, fromCache: false });
+      }
+      return json(res, 404, { error: 'não está no banco local (CNEFE)', soLocal: true });
+    }
+
     // verifica cache Supabase (a menos que "forcar" peça pra ignorar e regeocodificar)
     const cached = body.forcar ? null : await supabaseGet(cacheKey);
     if (cached) {

@@ -716,6 +716,9 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <button class="btn btn-g" id="btn-ver-mapa" style="display:none" onclick="goTab(1)">→ Ver no mapa</button>
         <button class="btn btn-r btn-sm" id="btn-parar" style="display:none" onclick="geoParar=true">⏹ Parar</button>
       </div>
+      <label class="admin-only" style="display:none;font-size:12px;color:var(--text2);align-items:center;gap:6px;margin-bottom:1rem;cursor:pointer">
+        <input type="checkbox" id="geo-so-local" style="width:auto;margin:0"> Testar só com o banco local (CNEFE, sem Google) — mostra a cobertura pura
+      </label>
       <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text2);margin-bottom:6px">
         <span id="geo-status" style="font-family:var(--mono)">aguardando...</span>
         <span id="geo-pct" style="font-family:var(--mono);color:var(--accent)">0%</span>
@@ -2006,7 +2009,9 @@ async function iniciarGeo(forcar) {
   if (_geoRodando) return; // já está geocodificando — ignora cliques repetidos
   _geoRodando = true;
   try {
-  if (forcar) {
+  var _soLocalEl = document.getElementById('geo-so-local');
+  var soLocal = !!(_soLocalEl && _soLocalEl.checked);
+  if (forcar || soLocal) {
     pacotes.forEach(function(p){ p.lat=null;p.lng=null;p.enderecoNorm=null;p.precisao=null; });
   }
   geoParar = false;
@@ -2034,7 +2039,7 @@ async function iniciarGeo(forcar) {
     try {
       var r = await apiFetch(BACKEND+'/api/geocode', {
         method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:!!forcar})
+        body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:!!forcar,soLocal:soLocal})
       });
       // 402 = créditos acabaram / plano expirado / falta chave — não adianta insistir nos
       // próximos pacotes, o apiFetch já abriu a tela certa; para o lote aqui
@@ -2075,7 +2080,8 @@ async function iniciarGeo(forcar) {
     var _hl=document.getElementById('home-geo-lb'); if(_hl)_hl.textContent='Geocodificando…';
   }
   var com=pacotes.filter(function(p){ return p.lat; }).length;
-  document.getElementById('geo-status').textContent='concluído — '+com+'/'+pacotes.length+' com coordenadas';
+  var pctCob = pacotes.length ? Math.round(com/pacotes.length*100) : 0;
+  document.getElementById('geo-status').textContent = (soLocal ? ('TESTE banco local — cobertura '+pctCob+'% ('+com+'/'+pacotes.length+' no CNEFE)') : ('concluído — '+com+'/'+pacotes.length+' com coordenadas'));
   document.getElementById('geo-prog').style.width='100%';
   document.getElementById('geo-pct').textContent='100%';
   btn.disabled=false; btn.textContent='▶ Iniciar';
