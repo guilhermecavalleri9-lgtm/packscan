@@ -1753,16 +1753,17 @@ const server = http.createServer(async (req, res) => {
     const lista = await gkCarregar();
     const out = [];
     for (const k of lista) {
-      let status = 'ERRO';
+      let status = 'ERRO', motivo = '';
       try {
         const d = await httpsGet('maps.googleapis.com',
           `/maps/api/geocode/json?address=${encodeURIComponent('Florianópolis, SC, Brasil')}&key=${k.key}`);
+        motivo = d.error_message || '';
         if (d.status === 'OK') status = 'ATIVA';
         else if (d.status === 'REQUEST_DENIED') status = 'INVÁLIDA';
         else if (d.status === 'OVER_QUERY_LIMIT' || d.status === 'OVER_DAILY_LIMIT') status = 'SEM COTA';
         else status = d.status || 'ERRO';
-      } catch(e) { status = 'ERRO'; }
-      out.push({ mascara: '…' + String(k.key).slice(-6), status, ok: status === 'ATIVA' });
+      } catch(e) { status = 'ERRO'; motivo = e.message; }
+      out.push({ mascara: '…' + String(k.key).slice(-6), status, ok: status === 'ATIVA', motivo });
     }
     return json(res, 200, { chaves: out, ativas: out.filter(x => x.ok).length, total: out.length });
   }
