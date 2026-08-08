@@ -1065,7 +1065,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1747,6 +1747,24 @@ const server = http.createServer(async (req, res) => {
     if (adicionadas) await gkSalvar();
     console.log(`[gkeys] importadas dos usuários: +${adicionadas} (por ${req.usuarioAtual.usuario})`);
     return json(res, 200, { ok: true, adicionadas, jaExistiam, total: _gkLista.length });
+  }
+  // ─── POOL DE CHAVES GOOGLE: testar quais estão ativas (admin) ─────────────
+  if (req.method === 'POST' && pathname === '/api/admin/gkeys/testar') {
+    const lista = await gkCarregar();
+    const out = [];
+    for (const k of lista) {
+      let status = 'ERRO';
+      try {
+        const d = await httpsGet('maps.googleapis.com',
+          `/maps/api/geocode/json?address=${encodeURIComponent('Florianópolis, SC, Brasil')}&key=${k.key}`);
+        if (d.status === 'OK') status = 'ATIVA';
+        else if (d.status === 'REQUEST_DENIED') status = 'INVÁLIDA';
+        else if (d.status === 'OVER_QUERY_LIMIT' || d.status === 'OVER_DAILY_LIMIT') status = 'SEM COTA';
+        else status = d.status || 'ERRO';
+      } catch(e) { status = 'ERRO'; }
+      out.push({ mascara: '…' + String(k.key).slice(-6), status, ok: status === 'ATIVA' });
+    }
+    return json(res, 200, { chaves: out, ativas: out.filter(x => x.ok).length, total: out.length });
   }
   // ─── POOL DE CHAVES GOOGLE: remover (admin) ───────────────────────────────
   if (req.method === 'POST' && pathname === '/api/admin/gkeys/remover') {
