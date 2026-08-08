@@ -718,7 +718,7 @@ async function buscarCnefe(cepDigitos, numero) {
       if (d < bd) { bd = d; best = c; }
     }
     // só aceita se o vizinho estiver razoavelmente perto (mesmo trecho da rua)
-    if (best && bd <= 60) return { ...best, precisao: 'CNEFE_APROX' };
+    if (best && bd <= 200) return { ...best, precisao: 'CNEFE_APROX' };
   } catch(e) { console.error('[cnefe-aprox]', e.message); }
   return null;
 }
