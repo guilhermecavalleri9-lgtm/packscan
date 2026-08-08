@@ -2004,13 +2004,13 @@ function montarCepRuaMap() {
   });
   return mapa;
 }
-async function iniciarGeo(forcar) {
+async function iniciarGeo(forcar, soLocalArg) {
   if (!pacotes.length) { alert('Importe os pacotes primeiro.'); return; }
   if (_geoRodando) return; // já está geocodificando — ignora cliques repetidos
   _geoRodando = true;
   try {
   var _soLocalEl = document.getElementById('geo-so-local');
-  var soLocal = !!(_soLocalEl && _soLocalEl.checked);
+  var soLocal = !!soLocalArg || !!(_soLocalEl && _soLocalEl.checked);
   if (forcar || soLocal) {
     pacotes.forEach(function(p){ p.lat=null;p.lng=null;p.enderecoNorm=null;p.precisao=null; });
   }
@@ -2097,9 +2097,19 @@ async function iniciarGeo(forcar) {
   setTimeout(function(){ var f=document.getElementById('home-geo-fill'); if(f)f.style.width='0'; var l=document.getElementById('home-geo-lb'); if(l)l.textContent='Geocodificar'; renderHome(); }, 1800);
   renderHome();
   homeMapPlot(); // mostra os pinos no mapa da tela inicial
+  if (soLocal) {
+    var faltaram = pacotes.length - com;
+    alert('📊 Cobertura do banco local (CNEFE):\n\n'+pctCob+'% — '+com+' de '+pacotes.length+' resolvidos só pelo banco local.\n'+(faltaram>0?(faltaram+' não estavam no banco (apareceriam pro Google no modo normal).'):'Todos resolvidos sem tocar no Google! 🎉'));
+  }
   } finally {
     _geoRodando = false;
   }
+}
+// teste rápido pelo menu: geocodifica só com o banco local e mostra a cobertura
+function testarCoberturaLocal(){
+  if(!pacotes.length){ alert('Importe uma planilha primeiro.'); return; }
+  if(!confirm('Testar a cobertura só com o banco local (CNEFE)? Isso vai refazer a geocodificação dos '+pacotes.length+' pacotes sem usar o Google. No fim mostro a % de acerto.')) return;
+  iniciarGeo(true, true);
 }
 
 async function limparCacheServidor() {
@@ -4571,6 +4581,7 @@ function abrirMenu(){
   var itens=[
     {t:'Início e fim da rota', s:'ponto de partida e chegada', act:'abrirPontos()', ic:'<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/>'},
     {t:'Reprocessar geocodificação', s:'refaz tudo ignorando o cache', act:'homeForcarGeo()', ic:'<path d="M20 11A8 8 0 1 0 6.3 6.3M20 4v4h-4" stroke-linecap="round" stroke-linejoin="round"/>'},
+    {t:'Testar cobertura (banco local)', s:'só CNEFE, sem Google', act:'testarCoberturaLocal()', admin:true, ic:'<path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Regiões CEP', s:'faixas de CEP por bairro', act:'goTab(4)', ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
     {t:'Corrigir CEP', s:'ajustar ponto no mapa', act:'goTab(6)', ic:'<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/>'},
     {t:'Corrigir nome de rua', s:'errado → certo, pra todos', act:'goTab(0)', ic:'<path d="M4 7V5h16v2M9 20h6M12 5v15" stroke-linecap="round" stroke-linejoin="round"/>'},
