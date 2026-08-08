@@ -1005,6 +1005,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <input type="text" id="gkey-input" placeholder="Cole uma chave do Google (AIza...)" style="flex:1;font-family:var(--mono);font-size:12px" autocomplete="off">
         <button class="btn btn-p btn-sm" onclick="gkeyAdd()">+ Adicionar</button>
       </div>
+      <button class="btn btn-g btn-sm" style="margin-bottom:.6rem" onclick="gkeyImportarUsuarios()">⬇ Importar chaves já cadastradas pelos usuários</button>
       <div id="gkeys-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Carregando…</div>
     </div>
 
@@ -3176,6 +3177,16 @@ async function gkeyAdd(){
     var d=await r.json();
     if(!r.ok){ alert('✗ '+(d.error||'Erro')); return; }
     inp.value=''; carregarGkeys();
+  }catch(e){ alert('Erro: '+e.message); }
+}
+async function gkeyImportarUsuarios(){
+  if(!confirm('Importar pro pool as chaves que os usuários já cadastraram?\n\nSó faça isso se você TEM a autorização dos donos das chaves — o billing do Google deles será usado.')) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/gkeys/importar-usuarios',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var d=await r.json();
+    if(!r.ok){ alert('✗ '+(d.error||'Erro')); return; }
+    alert('✓ '+d.adicionadas+' chave(s) importada(s). '+(d.jaExistiam?('('+d.jaExistiam+' já estavam no pool.) '):'')+'Total no pool: '+d.total+'.');
+    carregarGkeys();
   }catch(e){ alert('Erro: '+e.message); }
 }
 async function gkeyRemover(indice){

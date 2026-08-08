@@ -1065,7 +1065,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1728,6 +1728,25 @@ const server = http.createServer(async (req, res) => {
     await gkSalvar();
     console.log(`[gkeys] chave adicionada (…${key.slice(-6)}) por ${req.usuarioAtual.usuario}`);
     return json(res, 200, { ok: true, total: _gkLista.length });
+  }
+  // ─── POOL DE CHAVES GOOGLE: importar as chaves já cadastradas pelos usuários (admin) ──
+  // o admin declara que tem autorização dos donos. Copia pro pool sem expor as chaves.
+  if (req.method === 'POST' && pathname === '/api/admin/gkeys/importar-usuarios') {
+    const usuarios = await getUsuarios();
+    await gkCarregar();
+    const existentes = new Set(_gkLista.map(k => k.key));
+    let adicionadas = 0, jaExistiam = 0;
+    for (const u of usuarios) {
+      const k = (u.googleKey || '').trim();
+      if (!k || k.length < 20) continue;
+      if (existentes.has(k)) { jaExistiam++; continue; }
+      existentes.add(k);
+      _gkLista.push({ key: k, adicionadaEm: new Date().toISOString(), origem: u.usuario });
+      adicionadas++;
+    }
+    if (adicionadas) await gkSalvar();
+    console.log(`[gkeys] importadas dos usuários: +${adicionadas} (por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true, adicionadas, jaExistiam, total: _gkLista.length });
   }
   // ─── POOL DE CHAVES GOOGLE: remover (admin) ───────────────────────────────
   if (req.method === 'POST' && pathname === '/api/admin/gkeys/remover') {
