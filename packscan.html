@@ -2607,12 +2607,8 @@ function linhasExcelRota(pkgs, atId) {
     mapa[key].nums.push('P'+String(p.numNaRota).padStart(3,'0'));
   });
   return grupos.map(function(g){
-    // escreve a coordenada de TODO ponto geocodificado (antes só saía a de correção
-    // manual, o que fazia a planilha parecer "sem coordenada"). Só deixa em branco o
-    // que é aproximado demais (centro do CEP), pra o app do motorista tentar de novo.
-    var impreciso = (g.precisao==='APPROXIMATE' || g.precisao==='GEOMETRIC_CENTER');
-    var temCoord = g.lat && g.lng && !impreciso;
-    return [atId, g.endereco, g.bairro, g.cidade, formatarCep(g.cep), temCoord?g.lat.toFixed(6):'', temCoord?g.lng.toFixed(6):'', '', g.nums.join(', ')];
+    var temCoordConfiavel = g.precisao==='MANUAL'||g.precisao==='CEP_MANUAL';
+    return [atId, g.endereco, g.bairro, g.cidade, formatarCep(g.cep), temCoordConfiavel&&g.lat?g.lat.toFixed(6):'', temCoordConfiavel&&g.lng?g.lng.toFixed(6):'', '', g.nums.join(', ')];
   });
 }
 
