@@ -2126,42 +2126,11 @@ async function iniciarGeo(forcar, soLocalArg) {
     _geoRodando=false; renderHome();
     return;
   }
-  for (var i=0;i<pendentes.length;i++) {
-    if (geoParar) break;
-    var p = pendentes[i];
-    try {
-      var r = await apiFetch(BACKEND+'/api/geocode', {
-        method:'POST', headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:!!forcar,soLocal:soLocal})
-      });
-      // 402 = créditos acabaram / plano expirado / falta chave — não adianta insistir nos
-      // próximos pacotes, o apiFetch já abriu a tela certa; para o lote aqui
-      if (r.status === 402) {
-        var d402 = null; try { d402 = await r.clone().json(); } catch(e){}
-        var motivo = (d402 && d402.chaveGoogleRuim) ? ('Chave do Google recusada — '+(d402.error||'verifique a chave')) : 'sem créditos/plano';
-        log.innerHTML = '<span class="err">⛔ Processamento pausado: '+motivo+'. Os pacotes já feitos foram mantidos.</span><br>'+log.innerHTML;
-        break;
-      }
-      var d = await r.json();
-      if (r.ok && d.lat) {
-        var j=(Math.random()-.5)*0.0003;
-        p.lat=d.lat+j; p.lng=d.lng+j; p.enderecoNorm=d.enderecoNormalizado; p.precisao=d.precisao;
-        if (d.bairro&&!p.bairro) p.bairro=d.bairro;
-        if (d.cidade) p.cidade=d.cidade;
-        var prec = d.precisao==='ROOFTOP'?'📍':d.precisao==='RANGE_INTERPOLATED'?'~':'≈';
-        var cls = d.fromCache?'cache':'ok';
-        if (d.fromCache) cntCache++; else cntOk++;
-        log.innerHTML = '<span class="'+cls+'">'+(d.fromCache?'⚡':'✓')+prec+' '+p.endereco.substring(0,35)+' → '+(d.enderecoFormatado||d.enderecoNormalizado||'').substring(0,50)+'</span><br>'+log.innerHTML;
-      } else {
-        cntErr++;
-        log.innerHTML = '<span class="err">✗ '+p.endereco.substring(0,40)+' → '+(d.error||'não encontrado')+'</span><br>'+log.innerHTML;
-      }
-    } catch(e) {
-      cntErr++;
-      log.innerHTML = '<span class="err">⚠ '+p.endereco.substring(0,30)+' → erro: '+e.message+'</span><br>'+log.innerHTML;
-    }
-    await new Promise(function(res){ setTimeout(res,150); });
-    var done=i+1, pct=Math.round(done/total*100);
+  // processa VÁRIOS em paralelo (bem mais rápido). Um "índice compartilhado" (idx) e
+  // vários trabalhadores puxando o próximo pendente até acabar.
+  var idx=0, done=0, parou402=false;
+  function _atualizaProg(){
+    var pct=Math.round(done/total*100);
     document.getElementById('geo-prog').style.width=pct+'%';
     document.getElementById('geo-pct').textContent=pct+'%';
     document.getElementById('geo-status').textContent=done+'/'+total+' · cache:'+cntCache+' novo:'+cntOk+' erro:'+cntErr;
@@ -2172,6 +2141,49 @@ async function iniciarGeo(forcar, soLocalArg) {
     var _hs=document.getElementById('home-geo-sub'); if(_hs)_hs.textContent=done+'/'+total+' · '+pct+'%';
     var _hl=document.getElementById('home-geo-lb'); if(_hl)_hl.textContent='Geocodificando…';
   }
+  async function _trabalhador(){
+    while(true){
+      if (geoParar) return;
+      var i=idx++; if (i>=pendentes.length) return;
+      var p=pendentes[i];
+      try {
+        var r = await apiFetch(BACKEND+'/api/geocode', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:!!forcar,soLocal:soLocal})
+        });
+        if (r.status === 402) {
+          if (!parou402) {
+            parou402=true; geoParar=true;
+            var d402=null; try { d402=await r.clone().json(); } catch(e){}
+            var motivo=(d402 && d402.chaveGoogleRuim)?('Chave do Google recusada — '+(d402.error||'verifique a chave')):'sem créditos/plano';
+            log.innerHTML='<span class="err">⛔ Processamento pausado: '+motivo+'. Os pacotes já feitos foram mantidos.</span><br>'+log.innerHTML;
+          }
+          return;
+        }
+        var d = await r.json();
+        if (r.ok && d.lat) {
+          var j=(Math.random()-.5)*0.0003;
+          p.lat=d.lat+j; p.lng=d.lng+j; p.enderecoNorm=d.enderecoNormalizado; p.precisao=d.precisao;
+          if (d.bairro&&!p.bairro) p.bairro=d.bairro;
+          if (d.cidade) p.cidade=d.cidade;
+          var prec=d.precisao==='ROOFTOP'?'📍':d.precisao==='RANGE_INTERPOLATED'?'~':'≈';
+          var cls=d.fromCache?'cache':'ok';
+          if (d.fromCache) cntCache++; else cntOk++;
+          log.innerHTML='<span class="'+cls+'">'+(d.fromCache?'⚡':'✓')+prec+' '+p.endereco.substring(0,35)+' → '+(d.enderecoFormatado||d.enderecoNormalizado||'').substring(0,50)+'</span><br>'+log.innerHTML;
+        } else {
+          cntErr++;
+          log.innerHTML='<span class="err">✗ '+p.endereco.substring(0,40)+' → '+(d.error||'não encontrado')+'</span><br>'+log.innerHTML;
+        }
+      } catch(e) {
+        cntErr++;
+        log.innerHTML='<span class="err">⚠ '+p.endereco.substring(0,30)+' → erro: '+e.message+'</span><br>'+log.innerHTML;
+      }
+      done++; _atualizaProg();
+    }
+  }
+  var CONC=Math.min(8, pendentes.length); // 8 em paralelo
+  var _workers=[]; for (var w=0; w<CONC; w++) _workers.push(_trabalhador());
+  await Promise.all(_workers);
   var com=pacotes.filter(function(p){ return p.lat; }).length;
   var pctCob = pacotes.length ? Math.round(com/pacotes.length*100) : 0;
   document.getElementById('geo-status').textContent = (soLocal ? ('TESTE banco local — cobertura '+pctCob+'% ('+com+'/'+pacotes.length+' no CNEFE)') : ('concluído — '+com+'/'+pacotes.length+' com coordenadas'));
