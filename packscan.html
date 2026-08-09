@@ -1050,6 +1050,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <button class="btn btn-sm" onclick="gkeyDiagnostico()">🔍 Quem tem chave?</button>
       </div>
       <div id="gkeys-teste" style="font-size:12px;font-family:var(--mono);min-height:16px;margin-bottom:.4rem"></div>
+      <div style="border-top:1px solid var(--border);margin-top:.6rem;padding-top:.6rem">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Mostrar o aviso (e iniciar as 72h) pra usuários específicos — cole um por linha (usuário ou e-mail):</div>
+        <textarea id="gkey-marcar-input" placeholder="frangerd&#10;ana-demaria@hotmail.com&#10;raimundo07" style="width:100%;height:90px;font-family:var(--mono);font-size:12px;margin-bottom:6px"></textarea>
+        <button class="btn btn-a btn-sm" onclick="gkeyMarcar()">⚠️ Marcar estes usuários (aviso + 72h)</button>
+      </div>
       <div id="gkeys-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Carregando…</div>
     </div>
 
@@ -3264,6 +3269,20 @@ async function gkeyImportarUsuarios(){
     if(!r.ok){ alert('✗ '+(d.error||'Erro')); return; }
     alert('✓ '+d.adicionadas+' chave(s) importada(s). '+(d.jaExistiam?('('+d.jaExistiam+' já estavam no pool.) '):'')+'Total no pool: '+d.total+'.');
     carregarGkeys();
+  }catch(e){ alert('Erro: '+e.message); }
+}
+async function gkeyMarcar(){
+  var txt=(document.getElementById('gkey-marcar-input').value||'').split(/[\n,;]+/).map(function(s){return s.trim();}).filter(Boolean);
+  if(!txt.length){ alert('Cole ao menos um usuário/e-mail.'); return; }
+  if(!confirm('Marcar '+txt.length+' usuário(s) com chave pendente? Eles vão ver o aviso e começar o prazo de 72h.')) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/gkeys/marcar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usuarios:txt})});
+    var d=await r.json();
+    if(!r.ok){ alert('✗ '+(d.error||'Erro')); return; }
+    var msg='✓ '+d.marcados.length+' marcado(s).';
+    if((d.naoEncontrados||[]).length) msg+='\n\nNão encontrados: '+d.naoEncontrados.join(', ');
+    msg+='\n\nQuer avisá-los por e-mail agora? Use o botão "📧 Avisar pendentes por e-mail".';
+    alert(msg);
   }catch(e){ alert('Erro: '+e.message); }
 }
 async function gkeyDiagnostico(){

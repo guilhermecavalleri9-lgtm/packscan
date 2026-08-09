@@ -1098,7 +1098,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1818,6 +1818,27 @@ const server = http.createServer(async (req, res) => {
     }
     if (mudou) await setUsuarios(usuarios);
     return json(res, 200, { chaves: out, ativas: out.filter(x => x.ok).length, total: out.length });
+  }
+  // ─── POOL DE CHAVES GOOGLE: marcar usuários com chave pendente (inicia aviso+72h) (admin) ──
+  if (req.method === 'POST' && pathname === '/api/admin/gkeys/marcar') {
+    const body = await readBody(req);
+    const ids = (Array.isArray(body.usuarios) ? body.usuarios : []).map(s => String(s || '').trim().toLowerCase()).filter(Boolean);
+    if (!ids.length) return json(res, 400, { error: 'Nenhum usuário informado' });
+    const motivo = String(body.motivo || 'Sua chave do Google precisa de ajuste (billing/Geocoding API).').trim();
+    const usuarios = await getUsuarios();
+    const marcados = [], naoEncontrados = [];
+    for (const id of ids) {
+      const u = usuarios.find(x => x.usuario === id || (x.email && x.email.toLowerCase() === id));
+      if (!u) { naoEncontrados.push(id); continue; }
+      // não reinicia o prazo se já estava marcado
+      if (!(u.chaveStatus && u.chaveStatus.ok === false && u.chaveStatus.desde)) {
+        u.chaveStatus = { ok: false, motivo, desde: Date.now() };
+      }
+      marcados.push(u.usuario);
+    }
+    await setUsuarios(usuarios);
+    console.log(`[gkeys] marcados manualmente: ${marcados.length} (por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true, marcados, naoEncontrados });
   }
   // ─── POOL DE CHAVES GOOGLE: diagnóstico — quem tem chave e se entrou no pool (admin) ──
   if (req.method === 'GET' && pathname === '/api/admin/gkeys/diagnostico') {
