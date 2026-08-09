@@ -1098,7 +1098,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1818,6 +1818,34 @@ const server = http.createServer(async (req, res) => {
     }
     if (mudou) await setUsuarios(usuarios);
     return json(res, 200, { chaves: out, ativas: out.filter(x => x.ok).length, total: out.length });
+  }
+  // ─── POOL DE CHAVES GOOGLE: avisar por e-mail os usuários com chave pendente (admin) ──
+  if (req.method === 'POST' && pathname === '/api/admin/gkeys/avisar') {
+    if (!EMAIL_ATIVO) return json(res, 503, { error: 'E-mail (Brevo) não configurado.' });
+    const usuarios = await getUsuarios();
+    const pendentes = usuarios.filter(u => u.chaveStatus && u.chaveStatus.ok === false);
+    let enviados = 0; const semEmail = [];
+    for (const u of pendentes) {
+      if (!u.email || !emailValido(u.email)) { semEmail.push(u.usuario); continue; }
+      const st = statusChaveUsuario(u);
+      const prazoTxt = st.bloqueado ? 'O prazo já venceu e seu acesso foi bloqueado.' : `Você tem cerca de <strong>${st.horasRestantes}h</strong> (até ${new Date(st.prazoAte).toLocaleString('pt-BR')}) para resolver, senão o acesso será bloqueado.`;
+      const html = `
+        <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:22px;color:#1a2233">
+          <div style="font-size:20px;font-weight:800;margin-bottom:6px">PACK<span style="color:#4f8ef7">SCAN</span></div>
+          <h2 style="color:#c0392b;font-size:18px">⚠️ Sua chave do Google precisa de ajuste</h2>
+          <p>Olá, ${u.usuario}. A sua chave do Google usada no PackScan está sendo recusada${u.chaveStatus.motivo ? (' (' + String(u.chaveStatus.motivo).substring(0,120) + ')') : ''}.</p>
+          <p style="background:#fff4e5;border:1px solid #ffcc80;border-radius:8px;padding:10px;color:#a15c00">${prazoTxt}</p>
+          <h3 style="font-size:15px;margin-top:18px">Como resolver (5 min)</h3>
+          <p><strong>1. Ative o faturamento (billing)</strong><br>O Google exige um cartão, mas dentro da cota não cobra nada.<br>→ <a href="https://console.cloud.google.com/billing">console.cloud.google.com/billing</a> → Vincular conta de faturamento → adicione um cartão.</p>
+          <p><strong>2. Ative a Geocoding API</strong><br>→ <a href="https://console.cloud.google.com/apis/library/geocoding-backend.googleapis.com">Abrir a Geocoding API</a> → confira o projeto certo no topo → clique em ATIVAR.</p>
+          <p><strong>3. Se a chave tiver restrição de site</strong><br>APIs e Serviços → Credenciais → sua chave → Restrições de aplicativo → Nenhuma → Salvar.</p>
+          <p style="background:#e8f7ee;border:1px solid #34c97e;border-radius:8px;padding:10px;color:#1e7a4b">✅ Pronto isso, avise o administrador pra revalidar. O aviso e o bloqueio somem sozinhos quando a chave voltar a funcionar.</p>
+        </div>`;
+      const r = await enviarEmailBrevo(u.email, '⚠️ PackScan: ajuste sua chave do Google', html);
+      if (r && r.ok) enviados++; else semEmail.push(u.usuario + ' (falha no envio)');
+    }
+    console.log(`[gkeys] avisos enviados: ${enviados} (pendentes ${pendentes.length})`);
+    return json(res, 200, { ok: true, enviados, pendentes: pendentes.length, semEmail });
   }
   // ─── POOL DE CHAVES GOOGLE: remover (admin) ───────────────────────────────
   if (req.method === 'POST' && pathname === '/api/admin/gkeys/remover') {

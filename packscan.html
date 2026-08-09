@@ -1046,6 +1046,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="btn-row" style="margin-bottom:.6rem;gap:6px;flex-wrap:wrap">
         <button class="btn btn-g btn-sm" onclick="gkeyImportarUsuarios()">⬇ Importar chaves dos usuários</button>
         <button class="btn btn-p btn-sm" onclick="gkeyTestar()">🔎 Testar chaves ativas</button>
+        <button class="btn btn-a btn-sm" onclick="gkeyAvisar()">📧 Avisar pendentes por e-mail</button>
       </div>
       <div id="gkeys-teste" style="font-size:12px;font-family:var(--mono);min-height:16px;margin-bottom:.4rem"></div>
       <div id="gkeys-lista" style="font-size:12px;color:var(--text3);font-family:var(--mono)">Carregando…</div>
@@ -3262,6 +3263,17 @@ async function gkeyImportarUsuarios(){
     if(!r.ok){ alert('✗ '+(d.error||'Erro')); return; }
     alert('✓ '+d.adicionadas+' chave(s) importada(s). '+(d.jaExistiam?('('+d.jaExistiam+' já estavam no pool.) '):'')+'Total no pool: '+d.total+'.');
     carregarGkeys();
+  }catch(e){ alert('Erro: '+e.message); }
+}
+async function gkeyAvisar(){
+  if(!confirm('Enviar e-mail (tutorial + prazo de 72h) para todos os usuários com chave pendente?\n\nDica: rode antes o "Testar chaves ativas", que é o que marca quem está pendente.')) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/gkeys/avisar',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var d=await r.json();
+    if(!r.ok){ alert('✗ '+(d.error||'Erro')); return; }
+    var msg='✓ '+d.enviados+' e-mail(s) enviado(s) de '+d.pendentes+' pendente(s).';
+    if((d.semEmail||[]).length) msg+='\n\nSem e-mail / falha: '+d.semEmail.join(', ');
+    alert(msg);
   }catch(e){ alert('Erro: '+e.message); }
 }
 async function gkeyTestar(){
