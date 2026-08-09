@@ -1098,7 +1098,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1818,6 +1818,33 @@ const server = http.createServer(async (req, res) => {
     }
     if (mudou) await setUsuarios(usuarios);
     return json(res, 200, { chaves: out, ativas: out.filter(x => x.ok).length, total: out.length });
+  }
+  // ─── POOL DE CHAVES GOOGLE: diagnóstico — quem tem chave e se entrou no pool (admin) ──
+  if (req.method === 'GET' && pathname === '/api/admin/gkeys/diagnostico') {
+    const usuarios = await getUsuarios();
+    const lista = await gkCarregar();
+    const noPool = new Set(lista.map(k => k.key));
+    const out = usuarios.map(u => {
+      const k = (u.googleKey || '').trim();
+      return {
+        usuario: u.usuario,
+        email: u.email || null,
+        planoProprio: !!u.planoProprio,
+        planoAtivo: !!(u.planoProprio && u.planoAte && u.planoAte > Date.now()),
+        temChave: !!k,
+        tamanhoChave: k.length,
+        noPool: !!k && noPool.has(k)
+      };
+    });
+    // ordena: plano primeiro, depois quem tem chave
+    out.sort((a, b) => (b.planoProprio - a.planoProprio) || (b.temChave - a.temChave));
+    return json(res, 200, {
+      totalUsuarios: usuarios.length,
+      comChave: out.filter(u => u.temChave).length,
+      noPool: out.filter(u => u.noPool).length,
+      chavesNoPool: lista.length,
+      usuarios: out
+    });
   }
   // ─── POOL DE CHAVES GOOGLE: avisar por e-mail os usuários com chave pendente (admin) ──
   if (req.method === 'POST' && pathname === '/api/admin/gkeys/avisar') {
