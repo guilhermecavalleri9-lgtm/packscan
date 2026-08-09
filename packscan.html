@@ -356,6 +356,44 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <button class="hdr-icon" onclick="abrirMenu()" aria-label="Mais opções"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
 </div>
 
+<!-- faixa GRANDE de aviso: chave do Google com problema (72h até bloquear) -->
+<div id="chave-aviso" style="display:none;padding:14px 1rem;background:rgba(255,60,60,.14);border-bottom:2px solid var(--red)">
+  <div style="max-width:760px;margin:0 auto">
+    <div style="font-size:17px;font-weight:800;color:var(--red);margin-bottom:4px">⚠️ Sua chave do Google está com problema</div>
+    <div id="chave-aviso-texto" style="font-size:13px;color:var(--text);margin-bottom:8px"></div>
+    <div id="chave-aviso-prazo" style="font-size:20px;font-weight:800;margin-bottom:10px"></div>
+    <button class="btn btn-p" onclick="abrirTutorialChave()">📖 Como resolver (passo a passo)</button>
+  </div>
+</div>
+
+<!-- modal: tutorial de como arrumar a chave do Google -->
+<div id="chave-tuto-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:10003;align-items:flex-start;justify-content:center;overflow:auto;padding:20px">
+  <div class="auth-box" style="width:560px;max-width:96vw">
+    <div style="display:flex;align-items:center;margin-bottom:.6rem">
+      <div style="flex:1;font-size:17px;font-weight:700;color:var(--text)">Como resolver sua chave do Google</div>
+      <button class="btn btn-sm" onclick="document.getElementById('chave-tuto-bg').style.display='none'">✕</button>
+    </div>
+    <div id="chave-tuto-prazo" style="font-size:14px;font-weight:700;color:var(--amber);margin-bottom:12px"></div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.6">
+      <div style="font-weight:700;color:var(--text);margin:10px 0 4px">1. Ative o faturamento (billing)</div>
+      O Google exige um cartão cadastrado, mesmo pra usar de graça (dentro da cota não cobra nada).
+      <div style="margin:4px 0 10px">→ Acesse <a href="https://console.cloud.google.com/billing" target="_blank" rel="noopener" style="color:var(--accent)">console.cloud.google.com/billing</a> → <strong>Vincular conta de faturamento</strong> → adicione um cartão.</div>
+
+      <div style="font-weight:700;color:var(--text);margin:10px 0 4px">2. Ative a "Geocoding API"</div>
+      É a API que transforma endereço em coordenada.
+      <div style="margin:4px 0 10px">→ Acesse <a href="https://console.cloud.google.com/apis/library/geocoding-backend.googleapis.com" target="_blank" rel="noopener" style="color:var(--accent)">este link da Geocoding API</a> → confira que está o <strong>projeto certo</strong> no topo → clique em <strong>ATIVAR / ENABLE</strong>.</div>
+
+      <div style="font-weight:700;color:var(--text);margin:10px 0 4px">3. (Se necessário) libere a restrição da chave</div>
+      Se a chave tiver "restrição de site/referer", ela não funciona no servidor.
+      <div style="margin:4px 0 10px">→ APIs e Serviços → <strong>Credenciais</strong> → clique na sua chave → em <strong>Restrições de aplicativo</strong> escolha <strong>Nenhuma</strong> → Salvar.</div>
+
+      <div style="background:rgba(52,201,126,.12);border:1px solid rgba(52,201,126,.4);border-radius:8px;padding:10px;margin-top:12px;color:var(--green)">
+        ✅ Depois de fazer isso, avise o administrador pra revalidar sua chave. Assim que ela ficar ativa, o aviso e o bloqueio somem automaticamente.
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- faixa de aviso: plano perto de vencer -->
 <div id="plano-aviso" style="display:none;align-items:center;gap:10px;padding:8px 1rem;font-size:13px;flex-wrap:wrap">
   <span id="plano-aviso-texto" style="flex:1;min-width:200px"></span>
@@ -1139,8 +1177,37 @@ function guardarDadosConta(d) {
   AUTH_PLANO_ATIVO = !!d.planoAtivo;
   AUTH_PLANO_ATE = d.planoAte || null;
   if (typeof d.indicacaoDesconto !== 'undefined') AUTH_IND_DESCONTO = d.indicacaoDesconto || 0;
+  if (typeof d.chaveStatus !== 'undefined') AUTH_CHAVE_STATUS = d.chaveStatus || null;
 }
 var AUTH_IND_DESCONTO = 0; // 20 se o usuário tem desconto de indicação disponível
+var AUTH_CHAVE_STATUS = null; // {problema, motivo, prazoAte, bloqueado, horasRestantes}
+
+// mostra o aviso grande da chave do Google (72h até bloquear) — só pra quem tem problema
+function mostrarAvisoChave() {
+  var faixa = document.getElementById('chave-aviso'); if (!faixa) return;
+  var cs = AUTH_CHAVE_STATUS;
+  if (!cs || !cs.problema || AUTH_ADMIN) { faixa.style.display = 'none'; return; }
+  document.getElementById('chave-aviso-texto').innerHTML =
+    'O Google recusou sua chave' + (cs.motivo ? (': <em style="color:var(--text2)">' + esc(cs.motivo.substring(0,120)) + '</em>') : '') +
+    '. Enquanto não resolver, suas entregas dependem das chaves dos outros — e o seu acesso será <strong>bloqueado</strong> se passar do prazo.';
+  var prazoEl = document.getElementById('chave-aviso-prazo');
+  if (cs.bloqueado) {
+    prazoEl.innerHTML = '🚫 <span style="color:var(--red)">ACESSO BLOQUEADO</span> — resolva a chave para liberar.';
+  } else {
+    var h = cs.horasRestantes || 0;
+    prazoEl.innerHTML = '⏳ <span style="color:var(--amber)">Faltam ' + h + ' hora(s)</span> para o bloqueio (prazo: ' + new Date(cs.prazoAte).toLocaleString('pt-BR') + ').';
+  }
+  faixa.style.display = 'block';
+  // se já bloqueou, abre o tutorial na cara
+  if (cs.bloqueado) abrirTutorialChave();
+}
+function abrirTutorialChave() {
+  var cs = AUTH_CHAVE_STATUS || {};
+  var el = document.getElementById('chave-tuto-prazo');
+  if (cs.bloqueado) el.innerHTML = '🚫 Seu acesso está bloqueado até a chave voltar a funcionar.';
+  else el.innerHTML = '⏳ Você tem ' + (cs.horasRestantes||0) + ' hora(s) para resolver antes do bloqueio.';
+  document.getElementById('chave-tuto-bg').style.display = 'flex';
+}
 
 // texto curto de saldo/plano para o cabeçalho
 function saldoTexto() {
@@ -1159,6 +1226,9 @@ function apiFetch(url, opts) {
   opts.headers = Object.assign({}, opts.headers, AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {});
   return fetch(url, opts).then(function(r) {
     if (r.status === 401) { authLogout(); throw new Error('Sessão expirada, faça login novamente.'); }
+    if (r.status === 403) {
+      r.clone().json().then(function(d){ if (d && d.chaveBloqueada) { if(d.chaveStatus) AUTH_CHAVE_STATUS = d.chaveStatus; mostrarAvisoChave(); abrirTutorialChave(); } }).catch(function(){});
+    }
     if (r.status === 402) {
       // 402 pode ser: sem créditos | plano com chave faltando | plano expirado.
       // O guard de 5s evita abrir o aviso repetidamente quando várias requisições
@@ -1456,6 +1526,7 @@ async function authReenviarEmail() {
 function authAplicarPermissoes() {
   atualizarHeaderInfo();
   avisoPlanoVencendo();
+  mostrarAvisoChave();
   var els = document.querySelectorAll('.admin-only');
   for (var i=0;i<els.length;i++) els[i].style.display = AUTH_ADMIN ? '' : 'none';
 }

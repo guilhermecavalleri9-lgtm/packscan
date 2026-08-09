@@ -788,6 +788,34 @@ async function gkAtual() {
   return lista[_gkIdx];
 }
 function gkAvancar() { const n = _gkLista ? _gkLista.length : 0; if (n) { _gkIdx = (_gkIdx + 1) % n; _gkCount = 0; } }
+
+// prazo pro dono arrumar a chave antes de bloquear o acesso dele
+const PRAZO_CHAVE_MS = 72 * 60 * 60 * 1000; // 72 horas
+function statusChaveUsuario(u) {
+  const cs = u && u.chaveStatus;
+  if (!cs || cs.ok !== false || !cs.desde) return { problema: false };
+  const prazoAte = cs.desde + PRAZO_CHAVE_MS;
+  const agora = Date.now();
+  return {
+    problema: true,
+    motivo: cs.motivo || '',
+    desde: cs.desde,
+    prazoAte,
+    bloqueado: agora > prazoAte,
+    horasRestantes: Math.max(0, Math.ceil((prazoAte - agora) / 3600000))
+  };
+}
+// marca (sem duplicar o "desde") que a chave de um usuário está com problema
+async function gkFlagProblema(usuario, motivo) {
+  if (!usuario) return;
+  const usuarios = await getUsuarios();
+  const u = usuarios.find(x => x.usuario === usuario);
+  if (!u) return;
+  if (u.chaveStatus && u.chaveStatus.ok === false && u.chaveStatus.desde) return; // já marcado, mantém o prazo
+  u.chaveStatus = { ok: false, motivo: motivo || 'Chave recusada pelo Google', desde: Date.now() };
+  await setUsuarios(usuarios);
+  console.warn(`[gkeys] chave com problema: ${usuario} — ${motivo || ''}`);
+}
 async function gkRemover(keyStr) {
   if (!_gkLista) return;
   _gkLista = _gkLista.filter(k => k.key !== keyStr);
@@ -815,7 +843,12 @@ async function googleGeocodePool(reqPathSemKey, ctx) {
     let d;
     try { d = await httpsGet('maps.googleapis.com', reqPathSemKey + '&key=' + atual.key); }
     catch(e) { gkAvancar(); continue; } // erro de rede nessa chave → tenta a próxima
-    if (d.status === 'REQUEST_DENIED') { await gkRemover(atual.key); continue; }      // chave inválida → remove
+    if (d.status === 'REQUEST_DENIED') {
+      // chave de um usuário → avisa o dono e dá o prazo (não remove); manual sem dono → remove
+      if (atual.origem) { await gkFlagProblema(atual.origem, d.error_message || 'Chave recusada'); gkAvancar(); }
+      else { await gkRemover(atual.key); }
+      continue;
+    }
     if (d.status === 'OVER_QUERY_LIMIT' || d.status === 'OVER_DAILY_LIMIT') { gkAvancar(); continue; } // sem cota → pula
     _gkCount++; // requisição válida contou nesta chave (troca a cada GK_TROCA)
     return d;
@@ -1175,7 +1208,8 @@ const server = http.createServer(async (req, res) => {
       ok: true, token: gerarToken(u.usuario, u.admin), usuario: u.usuario, admin: !!u.admin,
       creditos: saldoLogin === Infinity ? null : Math.max(0, saldoLogin),
       planoAtivo: !!(u.planoProprio && u.planoAte && u.planoAte > Date.now()),
-      planoAte: u.planoAte || null
+      planoAte: u.planoAte || null,
+      chaveStatus: statusChaveUsuario(u)
     });
   }
 
@@ -1190,6 +1224,7 @@ const server = http.createServer(async (req, res) => {
       planoAte: (u && u.planoAte) || null,
       planoAtivo: !!(u && u.planoProprio && u.planoAte && u.planoAte > Date.now()),
       indicacaoDesconto: descontoIndicacao(u), // 20 se tem desconto de indicação disponível
+      chaveStatus: statusChaveUsuario(u),
       temGoogleKey: !!(u && u.googleKey),
       temAnthropicKey: !!(u && u.anthropicKey)
     });
@@ -1766,6 +1801,22 @@ const server = http.createServer(async (req, res) => {
       } catch(e) { status = 'ERRO'; motivo = e.message; }
       out.push({ mascara: '…' + String(k.key).slice(-6), origem: k.origem || null, status, ok: status === 'ATIVA', motivo });
     }
+    // atualiza o status por usuário: INVÁLIDA marca problema (inicia o prazo de 72h);
+    // ATIVA limpa. Assim o dono é avisado e tem 72h antes do bloqueio.
+    const usuarios = await getUsuarios(); let mudou = false;
+    for (const k of out) {
+      if (!k.origem) continue;
+      const u = usuarios.find(x => x.usuario === k.origem);
+      if (!u) continue;
+      if (k.status === 'INVÁLIDA') {
+        if (!(u.chaveStatus && u.chaveStatus.ok === false && u.chaveStatus.desde)) {
+          u.chaveStatus = { ok: false, motivo: k.motivo || 'Chave recusada pelo Google', desde: Date.now() }; mudou = true;
+        }
+      } else if (k.status === 'ATIVA') {
+        if (!u.chaveStatus || u.chaveStatus.ok !== true) { u.chaveStatus = { ok: true }; mudou = true; }
+      }
+    }
+    if (mudou) await setUsuarios(usuarios);
     return json(res, 200, { chaves: out, ativas: out.filter(x => x.ok).length, total: out.length });
   }
   // ─── POOL DE CHAVES GOOGLE: remover (admin) ───────────────────────────────
@@ -1998,6 +2049,10 @@ const server = http.createServer(async (req, res) => {
       const usuarios = await getUsuarios();
       const meuRec = usuarios.find(u => u.usuario === (req.usuarioAtual && req.usuarioAtual.usuario));
       const planoAtivo = meuRec && meuRec.planoProprio && meuRec.planoAte && meuRec.planoAte > Date.now();
+      const st = statusChaveUsuario(meuRec);
+      if (meuRec && !meuRec.admin && st.problema && st.bloqueado) {
+        return json(res, 403, { error: 'Sua chave do Google está com problema há mais de 72h e o acesso foi bloqueado. Corrija a chave para liberar.', chaveBloqueada: true, chaveStatus: st });
+      }
       if (meuRec && meuRec.admin) {
         // admin usa as chaves globais, sem limite
       } else if (meuRec && meuRec.planoProprio && !planoAtivo) {
