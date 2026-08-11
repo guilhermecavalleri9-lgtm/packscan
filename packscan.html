@@ -1189,9 +1189,11 @@ function guardarDadosConta(d) {
 var AUTH_IND_DESCONTO = 0; // 20 se o usuário tem desconto de indicação disponível
 var AUTH_CHAVE_STATUS = null; // {problema, motivo, prazoAte, bloqueado, horasRestantes}
 
-// mostra o aviso grande da chave do Google (72h até bloquear) — só pra quem tem problema
+// aviso da chave do Google desativado (não incomoda mais os usuários, sem bloqueio)
 function mostrarAvisoChave() {
-  var faixa = document.getElementById('chave-aviso'); if (!faixa) return;
+  var faixa = document.getElementById('chave-aviso'); if (faixa) faixa.style.display = 'none';
+  return;
+  // (código antigo mantido abaixo, mas nunca executa)
   var cs = AUTH_CHAVE_STATUS;
   if (!cs || !cs.problema || AUTH_ADMIN) { faixa.style.display = 'none'; return; }
   document.getElementById('chave-aviso-texto').innerHTML =
@@ -1233,9 +1235,6 @@ function apiFetch(url, opts) {
   opts.headers = Object.assign({}, opts.headers, AUTH_TOKEN ? { 'Authorization': 'Bearer ' + AUTH_TOKEN } : {});
   return fetch(url, opts).then(function(r) {
     if (r.status === 401) { authLogout(); throw new Error('Sessão expirada, faça login novamente.'); }
-    if (r.status === 403) {
-      r.clone().json().then(function(d){ if (d && d.chaveBloqueada) { if(d.chaveStatus) AUTH_CHAVE_STATUS = d.chaveStatus; mostrarAvisoChave(); abrirTutorialChave(); } }).catch(function(){});
-    }
     if (r.status === 402) {
       // 402 pode ser: sem créditos | plano com chave faltando | plano expirado.
       // O guard de 5s evita abrir o aviso repetidamente quando várias requisições

@@ -805,17 +805,8 @@ function statusChaveUsuario(u) {
     horasRestantes: Math.max(0, Math.ceil((prazoAte - agora) / 3600000))
   };
 }
-// marca (sem duplicar o "desde") que a chave de um usuário está com problema
-async function gkFlagProblema(usuario, motivo) {
-  if (!usuario) return;
-  const usuarios = await getUsuarios();
-  const u = usuarios.find(x => x.usuario === usuario);
-  if (!u) return;
-  if (u.chaveStatus && u.chaveStatus.ok === false && u.chaveStatus.desde) return; // já marcado, mantém o prazo
-  u.chaveStatus = { ok: false, motivo: motivo || 'Chave recusada pelo Google', desde: Date.now() };
-  await setUsuarios(usuarios);
-  console.warn(`[gkeys] chave com problema: ${usuario} — ${motivo || ''}`);
-}
+// (desativado) não marca mais os usuários — sem aviso e sem bloqueio.
+async function gkFlagProblema(usuario, motivo) { /* no-op */ }
 async function gkRemover(keyStr) {
   if (!_gkLista) return;
   _gkLista = _gkLista.filter(k => k.key !== keyStr);
@@ -2125,10 +2116,6 @@ const server = http.createServer(async (req, res) => {
       const usuarios = await getUsuarios();
       const meuRec = usuarios.find(u => u.usuario === (req.usuarioAtual && req.usuarioAtual.usuario));
       const planoAtivo = meuRec && meuRec.planoProprio && meuRec.planoAte && meuRec.planoAte > Date.now();
-      const st = statusChaveUsuario(meuRec);
-      if (meuRec && !meuRec.admin && st.problema && st.bloqueado) {
-        return json(res, 403, { error: 'Sua chave do Google está com problema há mais de 72h e o acesso foi bloqueado. Corrija a chave para liberar.', chaveBloqueada: true, chaveStatus: st });
-      }
       if (meuRec && meuRec.admin) {
         // admin usa as chaves globais, sem limite
       } else if (meuRec && meuRec.planoProprio && !planoAtivo) {
