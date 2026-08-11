@@ -1422,7 +1422,7 @@ function corrAbrir(){
   var el=document.getElementById('corr-lista'); el.innerHTML='Carregando…';
   apiFetch(BACKEND+'/api/admin/correcoes').then(function(r){ return r.json(); }).then(function(d){
     if(!(d.correcoes||[]).length){ el.innerHTML='Nenhuma correção manual salva.'; return; }
-    el.innerHTML='<div style="color:var(--text2);margin-bottom:8px">'+d.total+' correção(ões) manual(is):</div>'+d.correcoes.map(function(c){
+    el.innerHTML='<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span style="flex:1;color:var(--text2)">'+d.total+' correção(ões) manual(is):</span><button class="btn btn-r btn-sm" onclick="corrApagarTodas()">🗑 Apagar TODAS</button></div>'+d.correcoes.map(function(c){
       var ck=String(c.cacheKey).replace(/'/g,"\\'");
       var maps=(c.lat&&c.lng)?('https://www.google.com/maps?q='+c.lat+','+c.lng):'';
       return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">'
@@ -1433,6 +1433,16 @@ function corrAbrir(){
         +'<button class="btn btn-r btn-sm" onclick="corrExcluir(\''+ck+'\')">excluir</button></div>';
     }).join('');
   }).catch(function(e){ el.innerHTML='<span style="color:var(--red)">Erro: '+esc(e.message)+'</span>'; });
+}
+async function corrApagarTodas(){
+  if(!confirm('Apagar TODAS as correções manuais? Todos os endereços/CEPs ajustados à mão voltam a ser geocodificados automaticamente. Não dá pra desfazer.')) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/correcoes/apagar-todas',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    var d=await r.json();
+    if(!r.ok){ alert('✗ '+(d.error||'Erro')); return; }
+    alert('✓ '+(d.apagadas||0)+' correção(ões) apagada(s).');
+    corrAbrir();
+  }catch(e){ alert('Erro: '+e.message); }
 }
 async function corrExcluir(cacheKey){
   if(!confirm('Excluir esta correção manual? O endereço volta a ser geocodificado automaticamente.')) return;
