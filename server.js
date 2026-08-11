@@ -1089,7 +1089,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1984,6 +1984,37 @@ const server = http.createServer(async (req, res) => {
     };
     await supabaseSet('escala:dados', dados);
     return json(res, 200, { ok: true, atualizadoEm: dados.atualizadoEm });
+  }
+
+  // ─── LISTAR CORREÇÕES MANUAIS (admin) — endereços arrastados + CEPs corrigidos ──
+  if (req.method === 'GET' && pathname === '/api/admin/correcoes') {
+    const out = [];
+    try {
+      // endereços corrigidos à mão (end: com precisão MANUAL)
+      const rEnd = await supabaseRequest('GET',
+        `/rest/v1/geo_cache?cache_key=like.${encodeURIComponent('end:*')}&${encodeURIComponent('coord_data->>precisao')}=eq.MANUAL&select=cache_key,coord_data&limit=1000`);
+      if (Array.isArray(rEnd.body)) for (const row of rEnd.body) {
+        const c = row.coord_data || {};
+        out.push({ tipo: 'endereço', cacheKey: row.cache_key, chave: String(row.cache_key).replace(/^end:/, ''), lat: c.lat, lng: c.lng, endereco: c.enderecoNormalizado || c.enderecoFormatado || '' });
+      }
+      // CEPs corrigidos à mão (cep: com manual=true)
+      const rCep = await supabaseRequest('GET',
+        `/rest/v1/geo_cache?cache_key=like.${encodeURIComponent('cep:*')}&${encodeURIComponent('coord_data->>manual')}=eq.true&select=cache_key,coord_data&limit=1000`);
+      if (Array.isArray(rCep.body)) for (const row of rCep.body) {
+        const c = row.coord_data || {};
+        out.push({ tipo: 'CEP', cacheKey: row.cache_key, chave: String(row.cache_key).replace(/^cep:/, ''), lat: c.lat, lng: c.lng, endereco: (c.rua || '') + (c.cidade ? (', ' + c.cidade) : '') });
+      }
+    } catch(e) { console.error('[correcoes]', e.message); return json(res, 502, { error: 'Erro ao listar: ' + e.message }); }
+    return json(res, 200, { correcoes: out, total: out.length });
+  }
+  // ─── EXCLUIR UMA CORREÇÃO MANUAL (admin) ──────────────────────────────────
+  if (req.method === 'POST' && pathname === '/api/admin/correcoes/excluir') {
+    const body = await readBody(req);
+    const ck = String(body.cacheKey || '');
+    if (!/^(end:|cep:)/.test(ck)) return json(res, 400, { error: 'cacheKey inválido' });
+    await supabaseDelete(ck);
+    console.log(`[correcoes] excluída ${ck.substring(0,45)} (por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true });
   }
 
   // ─── SALVAR CORREÇÃO MANUAL ───────────────────────────────────────────────
