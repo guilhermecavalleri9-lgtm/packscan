@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#820ad1">
 <title>Financeiro — Minhas Contas</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Financeiro">
+<link rel="manifest" href="/financeiro/manifest.json">
+<link rel="apple-touch-icon" href="/icon-fin-180.png">
+<link rel="icon" type="image/png" href="/icon-fin-192.png">
 <style>
 :root{
   --roxo:#820ad1; --roxo2:#9c1ee0; --roxo-esc:#6a04ad; --roxo-fraco:#f3e8fc;
@@ -704,6 +711,11 @@ document.getElementById('f-valor-parc').addEventListener('input',atualizarHintPa
 render();
 carregarDoServidor(function(){ render(); });
 document.addEventListener('visibilitychange',function(){ if(!document.hidden) carregarDoServidor(function(){ render(); }); });
+
+/* PWA: registra service worker (permite instalar na tela inicial e abrir em tela cheia) */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',function(){ navigator.serviceWorker.register('/financeiro/sw.js',{scope:'/financeiro/'}).catch(function(){}); });
+}
 </script>
 </body>
 </html>
