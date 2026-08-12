@@ -1087,7 +1087,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -1983,6 +1983,35 @@ const server = http.createServer(async (req, res) => {
       atualizadoEm: new Date().toISOString()
     };
     await supabaseSet('escala:dados', dados);
+    return json(res, 200, { ok: true, atualizadoEm: dados.atualizadoEm });
+  }
+
+  // ─── FINANCEIRO (app separado, sem login, só por link direto) ─────────────
+  if (req.method === 'GET' && (pathname === '/financeiro' || pathname === '/financeiro/' || pathname === '/financeiro/index.html')) {
+    fs.readFile(path.join(__dirname, 'financeiro', 'index.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+
+  // ─── FINANCEIRO: dados compartilhados (sem login) ─────────────────────────
+  // Guarda contas + cartões + pagamentos numa chave central -> todo mundo vê o mesmo.
+  if (req.method === 'GET' && pathname === '/api/financeiro/dados') {
+    const dados = await supabaseGet('financeiro:dados');
+    return json(res, 200, { dados: dados || null });
+  }
+  if (req.method === 'POST' && pathname === '/api/financeiro/dados') {
+    const body = await readBody(req);
+    if (!body || typeof body !== 'object') return json(res, 400, { error: 'corpo inválido' });
+    const dados = {
+      contas:  Array.isArray(body.contas)  ? body.contas  : [],
+      cartoes: Array.isArray(body.cartoes) ? body.cartoes : [],
+      pagas:   (body.pagas && typeof body.pagas === 'object' && !Array.isArray(body.pagas)) ? body.pagas : {},
+      atualizadoEm: new Date().toISOString()
+    };
+    await supabaseSet('financeiro:dados', dados);
     return json(res, 200, { ok: true, atualizadoEm: dados.atualizadoEm });
   }
 
