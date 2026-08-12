@@ -1933,7 +1933,7 @@ const server = http.createServer(async (req, res) => {
       ]
     }));
   }
-  if (req.method === 'GET' && (pathname === '/icon-192.png' || pathname === '/icon-512.png' || pathname === '/icon-180.png')) {
+  if (req.method === 'GET' && (pathname === '/icon-192.png' || pathname === '/icon-512.png' || pathname === '/icon-180.png' || pathname === '/icon-fin-192.png' || pathname === '/icon-fin-512.png' || pathname === '/icon-fin-180.png')) {
     return fs.readFile(path.join(__dirname, pathname.slice(1)), (err, data) => {
       if (err) { res.writeHead(404); return res.end('Not found'); }
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=604800' });
@@ -2013,6 +2013,26 @@ const server = http.createServer(async (req, res) => {
     };
     await supabaseSet('financeiro:dados', dados);
     return json(res, 200, { ok: true, atualizadoEm: dados.atualizadoEm });
+  }
+
+  // ─── FINANCEIRO: PWA próprio (instalar na tela inicial, abrir em tela cheia) ──
+  if (req.method === 'GET' && pathname === '/financeiro/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify({
+      name: 'Financeiro', short_name: 'Financeiro',
+      description: 'Controle de contas e cartões',
+      start_url: '/financeiro/', scope: '/financeiro/', display: 'standalone',
+      background_color: '#820ad1', theme_color: '#820ad1', orientation: 'portrait',
+      icons: [
+        { src: '/icon-fin-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-fin-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+        { src: '/icon-fin-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+      ]
+    }));
+  }
+  if (req.method === 'GET' && pathname === '/financeiro/sw.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/financeiro/' });
+    return res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
   }
 
   // ─── LISTAR CORREÇÕES MANUAIS (admin) — endereços arrastados + CEPs corrigidos ──
