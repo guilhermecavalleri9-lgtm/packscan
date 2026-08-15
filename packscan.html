@@ -1164,8 +1164,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
     </div>
 
     <div class="card">
-      <div class="card-title">2. Voltar do Circuit (romaneio em ordem)</div>
-      <div style="font-size:12px;color:var(--text3)">Assim que você me mandar o formato do arquivo que o Circuit exporta, eu ligo aqui a importação do romaneio <strong>já numerando na ordem de entrega</strong>, pra você bipar/conferir pela câmera.</div>
+      <div class="card-title">2. Importar romaneio do Circuit (PDF)</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Suba o PDF que o Circuit exporta (ordem de entrega). Eu caso cada parada com seus pacotes por <strong>CEP + número</strong> e numero na ordem do Circuit. Depois é só usar <strong>Bipar pela câmera</strong>.</div>
+      <input type="file" id="circuit-pdf" accept="application/pdf,.pdf" style="display:none" onchange="circuitImportarPDF(this)">
+      <button class="btn btn-p" style="width:100%;justify-content:center" onclick="document.getElementById('circuit-pdf').click()">⬆ Importar PDF do Circuit</button>
+      <div id="circuit-pdf-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);min-height:18px;margin-top:.6rem"></div>
     </div>
   </div>
 </div>
@@ -1203,6 +1206,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <script>
 // ═══════════════════════════════════════════════════════════════════════════════
 // CONFIG
@@ -1499,6 +1504,63 @@ async function circuitGerar(){
     XLSX.writeFile(wb,'PackScan_Circuit_'+new Date().toISOString().slice(0,10)+'.xlsx');
     st.innerHTML='<span style="color:var(--green)">✓ Pronto! '+lista.length+' endereços ajustados. Baixou a planilha p/ Circuit.'+(erros?(' ('+erros+' ficaram como estavam)'):'')+'</span>';
   } finally { _geoRodando=false; }
+}
+// lê o texto de um PDF (pdf.js)
+async function lerPdfTexto(file){
+  if(!window.pdfjsLib) throw new Error('leitor de PDF não carregou (sem internet?)');
+  var buf=await file.arrayBuffer();
+  var pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  var full='';
+  for(var i=1;i<=pdf.numPages;i++){
+    var page=await pdf.getPage(i);
+    var tc=await page.getTextContent();
+    full+=tc.items.map(function(it){return it.str;}).join(' ')+' ';
+  }
+  return full;
+}
+// extrai as paradas do romaneio do Circuit: posição, CEP, número da casa
+function parseCircuit(txt){
+  var t=(txt||'').replace(/\s+/g,' ');
+  var re=/(\d{1,3})\s+(.*?)(\d{5}-?\d{3})\s+(\d{1,2}:\d{2})/g;
+  var m, stops=[], vistos={};
+  while((m=re.exec(t))){
+    var pos=parseInt(m[1],10);
+    if(!pos || vistos[pos]) continue;
+    var cep=m[3].replace(/\D/g,'');
+    var nm=m[2].match(/\d{1,6}/);
+    stops.push({pos:pos, cep:cep, num:nm?nm[0]:''});
+    vistos[pos]=1;
+  }
+  return stops;
+}
+async function circuitImportarPDF(inp){
+  var f=inp.files[0]; inp.value=''; if(!f) return;
+  if(!pacotes.length){ alert('Importe a planilha do dia primeiro (etapa 1).'); return; }
+  var st=document.getElementById('circuit-pdf-status');
+  st.textContent='⏳ lendo o PDF...'; st.style.color='var(--amber)';
+  try{
+    var txt=await lerPdfTexto(f);
+    var stops=parseCircuit(txt);
+    if(!stops.length){ st.textContent='✗ Não encontrei paradas no PDF. É o romaneio do Circuit?'; st.style.color='var(--red)'; return; }
+    // index dos pacotes por cep+numero (pode ter vários no mesmo)
+    function numDe(p){ var m=String(p.endereco||'').match(/\d{1,6}/); return m?m[0]:''; }
+    var porChave={};
+    pacotes.forEach(function(p){ p.rota=null; p.numNaRota=null; var k=(p.cep||'')+':'+numDe(p); (porChave[k]=porChave[k]||[]).push(p); });
+    var casados=0, usados={};
+    stops.forEach(function(s){
+      var k=s.cep+':'+s.num;
+      (porChave[k]||[]).forEach(function(p){ p.rota=1; p.numNaRota=s.pos; casados++; });
+    });
+    // monta uma rota "Circuit" com os pacotes casados, na ordem
+    var ordenados=pacotes.filter(function(p){return p.rota===1;}).sort(function(a,b){return a.numNaRota-b.numNaRota;});
+    rotas=[{id:1,motorista:'Circuit',cor:CORES[0],layer:null,pkgs:ordenados}];
+    var semCasar=pacotes.length-casados;
+    try{ persistirLocal(); }catch(e){}
+    try{ renderHome(); }catch(e){}
+    st.innerHTML='<span style="color:var(--green)">✓ '+stops.length+' paradas do Circuit · '+casados+' pacote(s) numerados.</span>'
+      +(semCasar>0?('<br><span style="color:var(--amber)">'+semCasar+' pacote(s) não casaram (CEP+número diferente). Confira na lista.</span>'):'')
+      +'<br><span style="color:var(--text3)">Agora use <strong>Bipar pela câmera</strong> — vai mostrar o número da parada.</span>';
+  }catch(e){ st.textContent='✗ erro: '+e.message; st.style.color='var(--red)'; }
 }
 // ── correções manuais (admin) ──
 function corrAbrir(){
