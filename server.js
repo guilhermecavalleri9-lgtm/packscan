@@ -1093,7 +1093,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -2139,6 +2139,33 @@ const server = http.createServer(async (req, res) => {
       console.error('[cep-autocompletar]', e.message);
       return json(res, 502, { error: 'Erro ao consultar ViaCEP' });
     }
+  }
+
+  // ─── AJEITAR ENDEREÇO SEM GEOCODIFICAR (admin — p/ jogar no Circuit) ──────
+  // puxa a rua (CNEFE → CEP/Correios → texto) + complemento, sem coordenada nem numeração.
+  if (req.method === 'POST' && pathname === '/api/endereco/ajeitar') {
+    const body = await readBody(req);
+    const endereco = aplicarCorrecoesNome(body.endereco, await getCorrecoesNome());
+    const cepD = (body.cep || '').replace(/\D/g, '');
+    const num = numeroDoTexto(endereco);
+    const ctx = { usuario: req.usuarioAtual.usuario, cep: cepD };
+    const cepInfo = cepD.length === 8 ? await ruaPeloCep(cepD, ctx) : { rua: '', cidade: '' };
+    let rua = '';
+    // 1) rua exata da casa no CNEFE (grátis), se tiver nome de verdade
+    if (cepD.length === 8 && num) {
+      const loc = await buscarCnefe(cepD, num);
+      if (loc && !ruaSemNome(loc.logradouro)) rua = loc.logradouro;
+    }
+    const info = await extrairInfoIA(endereco, cepInfo.rua || '', ctx);
+    if (!rua) rua = info.rua || cepInfo.rua || '';           // 2) rua do CEP  3) rua do texto
+    const complemento = info.complemento || 'S/N';
+    const cidadeValida = body.cidade && !/^\d+$/.test(body.cidade) ? body.cidade : '';
+    const cidadeFinal = cepInfo.cidade || cidadeValida || 'São José';
+    const cepFmt = cepD.length === 8 ? `${cepD.slice(0,5)}-${cepD.slice(5)}` : (body.cep || '');
+    const enderecoNormalizado = rua
+      ? `${rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`
+      : `${complemento}, ${cidadeFinal}, SC, Brasil`;
+    return json(res, 200, { enderecoNormalizado, rua, complemento, cidade: cidadeFinal, cep: cepFmt });
   }
 
   // ─── LOOKUP DE CEP (ponto de referência atual, p/ a aba Corrigir CEP) ─────
