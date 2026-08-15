@@ -696,6 +696,10 @@ function numeroDoTexto(t) {
   const m = String(t || '').match(/\d+/);
   return m ? m[0] : '';
 }
+// nome de rua "vazio" do IBGE (ex: "TRAVESSA SEM DENOMINACAO 7", "RUA SEM DENOMINACAO 2")
+function ruaSemNome(rua) {
+  return !rua || /sem\s*denomina/i.test(String(rua));
+}
 // busca instantânea no banco local por CEP + número. Se o número exato não existir,
 // pega o número MAIS PRÓXIMO na mesma CEP (CNEFE é denso → ótima aproximação).
 async function buscarCnefe(cepDigitos, numero) {
@@ -2196,17 +2200,24 @@ const server = http.createServer(async (req, res) => {
       }
 
       // ATALHO: banco local (CNEFE) por CEP + número — instantâneo, grátis, preciso.
-      // Se achar, nem toca no Google/IA. É a fonte de verdade pras cidades já importadas.
+      // Se achar com nome de rua DE VERDADE, nem toca no Google. Se o CNEFE só tem
+      // "SEM DENOMINAÇÃO" (rua/beco sem nome oficial no IBGE), guarda a coordenada como
+      // reserva e tenta o Google primeiro, pra pegar um nome melhor.
       const cepDig0 = (cep || '').replace(/\D/g, '');
       const num0 = numeroDoTexto(endereco);
+      let cnefeReserva = null;
       if (cepDig0.length === 8 && num0) {
         const local = await buscarCnefe(cepDig0, num0);
         if (local) {
-          const enderecoNormalizado = `${local.logradouro}, ${num0}, ${local.cidade}, SC, Brasil`;
-          const resultado = { lat: local.lat, lng: local.lng, enderecoFormatado: enderecoNormalizado, enderecoNormalizado, logradouro: local.logradouro, bairro: local.bairro, cidade: local.cidade, precisao: 'CNEFE', ruaCep: local.logradouro, complemento: num0, fromCache: false };
-          await supabaseSet(cacheKey, resultado);
-          console.log(`[geocode] ✓ CNEFE ${enderecoNormalizado.substring(0,50)}`);
-          return json(res, 200, resultado);
+          if (ruaSemNome(local.logradouro)) {
+            cnefeReserva = { ...local, numero: num0 }; // sem nome → tenta Google antes
+          } else {
+            const enderecoNormalizado = `${local.logradouro}, ${num0}, ${local.cidade}, SC, Brasil`;
+            const resultado = { lat: local.lat, lng: local.lng, enderecoFormatado: enderecoNormalizado, enderecoNormalizado, logradouro: local.logradouro, bairro: local.bairro, cidade: local.cidade, precisao: 'CNEFE', ruaCep: local.logradouro, complemento: num0, fromCache: false };
+            await supabaseSet(cacheKey, resultado);
+            console.log(`[geocode] ✓ CNEFE ${enderecoNormalizado.substring(0,50)}`);
+            return json(res, 200, resultado);
+          }
         }
       }
 
@@ -2304,6 +2315,15 @@ const server = http.createServer(async (req, res) => {
         const cepFmt = `${cep.substring(0,5)}-${cep.substring(5)}`;
         enderecoFinal = `${cepFmt}, ${complemento}, ${cidadeFinal}, SC, Brasil`;
         coord = await geocodificarValidado(enderecoFinal, cepInfo, ctx);
+      }
+
+      // fallback 4.5: o Google não achou nome melhor, mas o CNEFE tinha a coordenada exata
+      // da casa (só sem nome oficial da rua) — usa esse ponto, é bem mais preciso que o CEP.
+      if (!coord && cnefeReserva) {
+        const nomeRua = info.rua || cnefeReserva.logradouro;
+        const enderecoNormalizado = `${nomeRua}, ${cnefeReserva.numero}, ${cnefeReserva.cidade}, SC, Brasil`;
+        coord = { lat: cnefeReserva.lat, lng: cnefeReserva.lng, enderecoFormatado: enderecoNormalizado, enderecoNormalizado, logradouro: nomeRua, bairro: cnefeReserva.bairro, cidade: cnefeReserva.cidade, precisao: 'CNEFE', complemento: cnefeReserva.numero };
+        console.log(`[geocode] ✓ CNEFE (reserva, sem nome) ${enderecoNormalizado.substring(0,50)}`);
       }
 
       // fallback 5 (último recurso): coordenada aproximada do CEP — fica marcado pra corrigir
