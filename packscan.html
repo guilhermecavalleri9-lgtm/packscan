@@ -425,6 +425,19 @@ tr:hover td{background:rgba(255,255,255,.02)}
   </div>
 </div>
 
+<!-- modal: preparar planilha p/ Circuit (admin) -->
+<div id="circuit-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10002;align-items:flex-start;justify-content:center;overflow:auto;padding:20px">
+  <div class="auth-box" style="width:560px;max-width:96vw">
+    <div style="display:flex;align-items:center;margin-bottom:.6rem">
+      <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">📦 Preparar planilha p/ Circuit</div>
+      <button class="btn btn-sm" onclick="document.getElementById('circuit-bg').style.display='none'">✕</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:1rem">Importe a planilha do dia, que eu <strong>ajeito os endereços</strong> (rua pelo CEP + complemento) e te devolvo um Excel limpo com <strong>número do pedido, endereço, CEP e cidade</strong> — <strong>sem geocodificar nem numerar</strong>. Você joga no Circuit pra otimizar a rota.</div>
+    <div id="circuit-body"></div>
+    <div id="circuit-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);min-height:18px;margin-top:.6rem"></div>
+  </div>
+</div>
+
 <!-- modal: correções manuais (admin) -->
 <div id="corr-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:10002;align-items:flex-start;justify-content:center;overflow:auto;padding:20px">
   <div class="auth-box" style="width:640px;max-width:96vw">
@@ -1416,6 +1429,50 @@ function comprarFechar() {
   document.getElementById('comprar-bg').style.display = 'none';
 }
 
+// ── preparar planilha p/ Circuit (admin) ──
+function circuitAbrir(){
+  document.getElementById('circuit-bg').style.display='flex';
+  document.getElementById('circuit-status').textContent='';
+  var body=document.getElementById('circuit-body');
+  if(!pacotes.length){
+    body.innerHTML='<div class="alert alert-amber" style="margin-bottom:.6rem">Nenhuma planilha importada.</div>'
+      +'<button class="btn btn-p" style="width:100%;justify-content:center" onclick="document.getElementById(\'circuit-bg\').style.display=\'none\'; homeArquivoPick(false);">⬆ Importar planilha primeiro</button>';
+    return;
+  }
+  body.innerHTML='<div style="font-size:13px;color:var(--text);margin-bottom:.6rem"><strong>'+pacotes.length+'</strong> pacote(s) importado(s).</div>'
+    +'<button class="btn btn-p" style="width:100%;justify-content:center" onclick="circuitGerar()">✨ Ajeitar endereços e baixar p/ Circuit</button>';
+}
+async function circuitGerar(){
+  if(_geoRodando){ return; } _geoRodando=true;
+  var st=document.getElementById('circuit-status');
+  try{
+    var lista=pacotes.slice();
+    var idx=0, done=0, erros=0;
+    async function _w(){
+      while(true){
+        var i=idx++; if(i>=lista.length) return;
+        var p=lista[i];
+        try{
+          var r=await apiFetch(BACKEND+'/api/endereco/ajeitar',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endereco:p.endereco,cep:p.cep,cidade:p.cidade})});
+          var d=await r.json();
+          if(r.ok && d.enderecoNormalizado){ p._circuitEnd=d.enderecoNormalizado; p._circuitCep=d.cep; p._circuitCidade=d.cidade; }
+          else { p._circuitEnd=p.endereco; erros++; }
+        }catch(e){ p._circuitEnd=p.endereco; erros++; }
+        done++; st.textContent='Ajeitando… '+done+'/'+lista.length+(erros?(' · '+erros+' sem ajuste'):'');
+      }
+    }
+    var ws=[]; for(var w=0;w<8;w++) ws.push(_w());
+    await Promise.all(ws);
+    // monta o Excel: Número de pedido, Endereço, CEP, Cidade
+    var aoa=[['Número de pedido','Endereço','CEP','Cidade','Código 2']];
+    lista.forEach(function(p){ aoa.push([p.tracking||'', p._circuitEnd||p.endereco||'', p._circuitCep||p.cep||'', p._circuitCidade||p.cidade||'', p.tracking2||'']); });
+    var wb=XLSX.utils.book_new(); var sh=XLSX.utils.aoa_to_sheet(aoa);
+    sh['!cols']=[{wch:20},{wch:48},{wch:12},{wch:16},{wch:18}];
+    XLSX.utils.book_append_sheet(wb,sh,'Circuit');
+    XLSX.writeFile(wb,'PackScan_Circuit_'+new Date().toISOString().slice(0,10)+'.xlsx');
+    st.innerHTML='<span style="color:var(--green)">✓ Pronto! '+lista.length+' endereços ajustados. Baixou a planilha p/ Circuit.'+(erros?(' ('+erros+' ficaram como estavam)'):'')+'</span>';
+  } finally { _geoRodando=false; }
+}
 // ── correções manuais (admin) ──
 function corrAbrir(){
   document.getElementById('corr-bg').style.display='flex';
@@ -4830,6 +4887,7 @@ function abrirMenu(){
     {t:'Regiões CEP', s:'faixas de CEP por bairro', act:'goTab(4)', ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
     {t:'Corrigir CEP', s:'ajustar ponto no mapa', act:'goTab(6)', ic:'<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/>'},
     {t:'Correções manuais', s:'ver e excluir ajustes feitos à mão', act:'corrAbrir()', admin:true, ic:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" stroke-linecap="round" stroke-linejoin="round"/>'},
+    {t:'Preparar p/ Circuit', s:'ajeita endereços, sem geocodificar', act:'circuitAbrir()', admin:true, ic:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5" stroke-linecap="round"/>'},
     {t:'Corrigir nome de rua', s:'errado → certo, pra todos', act:'goTab(0)', ic:'<path d="M4 7V5h16v2M9 20h6M12 5v15" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Admin', s:'contas, créditos, cupons', act:'goTab(7)', admin:true, ic:'<circle cx="12" cy="8" r="3.4"/><path d="M5 20a7 7 0 0 1 14 0" stroke-linecap="round"/>'},
     {t:'Rota pela câmera', s:'separar por rota no galpão', act:'goTab(8)', admin:true, ic:'<path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.2"/>'},
