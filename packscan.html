@@ -1151,6 +1151,25 @@ tr:hover td{background:rgba(255,255,255,.02)}
   </div>
 </div>
 
+<!-- PÁGINA: Preparar p/ Circuit (admin) -->
+<div class="page" id="p-preparar">
+  <div style="max-width:640px;margin:0 auto">
+    <div class="alert alert-blue">ℹ <div><strong>Fluxo Circuit:</strong> 1) importe a planilha do dia → eu ajeito os endereços e te dou um Excel limpo (sem geocodificar nem numerar). 2) você otimiza no Circuit. 3) volte aqui, importe o romaneio do Circuit já em ordem, e numere pela câmera.</div></div>
+
+    <div class="card" style="margin-bottom:1rem">
+      <div class="card-title">1. Ajeitar endereços p/ Circuit</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:.75rem">Puxa a rua pelo CEP + complemento (grátis, pelo banco local/Correios). Não geocodifica nem numera. Devolve: número do pedido, endereço, CEP, cidade.</div>
+      <div id="preparar-body"></div>
+      <div id="preparar-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);min-height:18px;margin-top:.6rem"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">2. Voltar do Circuit (romaneio em ordem)</div>
+      <div style="font-size:12px;color:var(--text3)">Assim que você me mandar o formato do arquivo que o Circuit exporta, eu ligo aqui a importação do romaneio <strong>já numerando na ordem de entrega</strong>, pra você bipar/conferir pela câmera.</div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════════════════════════════════════════════════════════════════
      MODAL — CORREÇÃO MANUAL
      ═══════════════════════════════════════════════════════════════════════════ -->
@@ -1429,14 +1448,22 @@ function comprarFechar() {
   document.getElementById('comprar-bg').style.display = 'none';
 }
 
-// ── preparar planilha p/ Circuit (admin) ──
-function circuitAbrir(){
-  document.getElementById('circuit-bg').style.display='flex';
-  document.getElementById('circuit-status').textContent='';
-  var body=document.getElementById('circuit-body');
+// ── preparar planilha p/ Circuit (aba admin) ──
+function prepararAbrir(){
+  document.getElementById('home').style.display='none';
+  var bv=document.getElementById('btn-voltar'); if(bv) bv.style.display='inline-flex';
+  var pt=document.getElementById('pagetitle'); if(pt) pt.textContent='Preparar p/ Circuit';
+  document.querySelectorAll('.page').forEach(function(p){ p.classList.remove('active'); });
+  document.getElementById('p-preparar').classList.add('active');
+  try{ window.scrollTo(0,0); }catch(e){}
+  prepararRender();
+}
+function prepararRender(){
+  document.getElementById('preparar-status').textContent='';
+  var body=document.getElementById('preparar-body');
   if(!pacotes.length){
     body.innerHTML='<div class="alert alert-amber" style="margin-bottom:.6rem">Nenhuma planilha importada.</div>'
-      +'<button class="btn btn-p" style="width:100%;justify-content:center" onclick="document.getElementById(\'circuit-bg\').style.display=\'none\'; homeArquivoPick(false);">⬆ Importar planilha primeiro</button>';
+      +'<button class="btn btn-p" style="width:100%;justify-content:center" onclick="homeArquivoPick(false)">⬆ Importar planilha</button>';
     return;
   }
   body.innerHTML='<div style="font-size:13px;color:var(--text);margin-bottom:.6rem"><strong>'+pacotes.length+'</strong> pacote(s) importado(s).</div>'
@@ -1444,7 +1471,7 @@ function circuitAbrir(){
 }
 async function circuitGerar(){
   if(_geoRodando){ return; } _geoRodando=true;
-  var st=document.getElementById('circuit-status');
+  var st=document.getElementById('preparar-status');
   try{
     var lista=pacotes.slice();
     var idx=0, done=0, erros=0;
@@ -4887,7 +4914,7 @@ function abrirMenu(){
     {t:'Regiões CEP', s:'faixas de CEP por bairro', act:'goTab(4)', ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
     {t:'Corrigir CEP', s:'ajustar ponto no mapa', act:'goTab(6)', ic:'<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/>'},
     {t:'Correções manuais', s:'ver e excluir ajustes feitos à mão', act:'corrAbrir()', admin:true, ic:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" stroke-linecap="round" stroke-linejoin="round"/>'},
-    {t:'Preparar p/ Circuit', s:'ajeita endereços, sem geocodificar', act:'circuitAbrir()', admin:true, ic:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5" stroke-linecap="round"/>'},
+    {t:'Preparar p/ Circuit', s:'ajeita endereços, sem geocodificar', act:'prepararAbrir()', admin:true, ic:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v5" stroke-linecap="round"/>'},
     {t:'Corrigir nome de rua', s:'errado → certo, pra todos', act:'goTab(0)', ic:'<path d="M4 7V5h16v2M9 20h6M12 5v15" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Admin', s:'contas, créditos, cupons', act:'goTab(7)', admin:true, ic:'<circle cx="12" cy="8" r="3.4"/><path d="M5 20a7 7 0 0 1 14 0" stroke-linecap="round"/>'},
     {t:'Rota pela câmera', s:'separar por rota no galpão', act:'goTab(8)', admin:true, ic:'<path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.2"/>'},
