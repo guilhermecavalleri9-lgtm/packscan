@@ -1169,6 +1169,21 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <input type="file" id="circuit-pdf" accept="application/pdf,.pdf" style="display:none" onchange="circuitImportarPDF(this)">
       <button class="btn btn-p" style="width:100%;justify-content:center" onclick="document.getElementById('circuit-pdf').click()">⬆ Importar PDF do Circuit</button>
       <div id="circuit-pdf-status" style="font-size:12px;font-family:var(--mono);color:var(--text3);min-height:18px;margin-top:.6rem"></div>
+
+      <div style="border-top:1px solid var(--border);margin-top:1rem;padding-top:1rem">
+        <div style="font-size:13px;color:var(--text);font-weight:600;margin-bottom:.5rem">Bipar pela câmera (ordem do Circuit)</div>
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:22px 12px 16px;text-align:center;margin-bottom:.8rem">
+          <div id="cir-rota" style="font-family:var(--mono);font-size:24px;font-weight:800;color:var(--text2);letter-spacing:2px;margin-bottom:6px">&nbsp;</div>
+          <div id="cir-num" style="font-size:52px;font-weight:800;font-family:var(--mono);line-height:1;color:var(--text3)">aguardando</div>
+          <div id="cir-sub" style="font-size:12px;color:var(--text2);margin-top:10px;line-height:1.5">&nbsp;</div>
+        </div>
+        <div id="cir-cam-wrap" style="display:none;border-radius:var(--radius-lg);overflow:hidden;margin-bottom:.8rem;position:relative;background:#000">
+          <div id="cir-reader"></div>
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none"><div style="width:260px;height:110px;border:2px solid var(--accent);border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)"></div></div>
+        </div>
+        <button id="cir-btn" class="btn btn-p" style="width:100%;padding:14px;font-size:15px;font-weight:650;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;gap:9px" onclick="circuitCamera()"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px"><path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.4"/></svg><span class="scbtn-txt">Ativar câmera</span></button>
+        <div id="cir-lista" style="font-size:13px;color:var(--text3);font-family:var(--mono);margin-top:.8rem">Nenhum código lido ainda.</div>
+      </div>
     </div>
   </div>
 </div>
@@ -1562,6 +1577,8 @@ async function circuitImportarPDF(inp){
       +'<br><span style="color:var(--text3)">Agora use <strong>Bipar pela câmera</strong> — vai mostrar o número da parada.</span>';
   }catch(e){ st.textContent='✗ erro: '+e.message; st.style.color='var(--red)'; }
 }
+// câmera dentro da aba Preparar (mostra o número da parada do Circuit)
+function circuitCamera(){ scUsar('circuit'); scToggle(); }
 // ── correções manuais (admin) ──
 function corrAbrir(){
   document.getElementById('corr-bg').style.display='flex';
@@ -3952,8 +3969,9 @@ var _scH5q = null; // fallback html5-qrcode
 // 'rota' (aba 09, admin — só consulta e destaca a ROTA)
 var _scModo = 'pacote';
 var _SC_PAINEIS = {
-  pacote: { wrap:'sc-cam-wrap', btn:'sc-btn', reader:'sc-reader', rota:'sc-rota', num:'sc-num', sub:'sc-sub', lista:'sc-lista' },
-  rota:   { wrap:'rt-cam-wrap', btn:'rt-btn', reader:'rt-reader', rota:'rt-rota', num:'rt-num', sub:'rt-sub', lista:'rt-lista' }
+  pacote:  { wrap:'sc-cam-wrap', btn:'sc-btn', reader:'sc-reader', rota:'sc-rota', num:'sc-num', sub:'sc-sub', lista:'sc-lista' },
+  rota:    { wrap:'rt-cam-wrap', btn:'rt-btn', reader:'rt-reader', rota:'rt-rota', num:'rt-num', sub:'rt-sub', lista:'rt-lista' },
+  circuit: { wrap:'cir-cam-wrap', btn:'cir-btn', reader:'cir-reader', rota:'cir-rota', num:'cir-num', sub:'cir-sub', lista:'cir-lista' }
 };
 var _scIds = _SC_PAINEIS.pacote;
 function scUsar(modo) {
