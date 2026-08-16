@@ -2843,7 +2843,25 @@ function handleBip(e) {
   persistirLocal();
 }
 
+// beep ao bipar (Web Audio, offline). tipo: 'ok'|'warn'|'err'
+var _audioCtx=null;
+function bipSom(tipo){
+  try{
+    if(!_audioCtx) _audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    if(_audioCtx.state==='suspended') _audioCtx.resume();
+    var ctx=_audioCtx, o=ctx.createOscillator(), g=ctx.createGain();
+    o.connect(g); g.connect(ctx.destination);
+    o.type='square';
+    o.frequency.value = tipo==='err' ? 200 : (tipo==='warn' ? 520 : 900);
+    var t=ctx.currentTime;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.22,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+(tipo==='err'?0.32:0.14));
+    o.start(t); o.stop(t+(tipo==='err'?0.34:0.16));
+  }catch(e){}
+}
 function showFb(msg,tipo) {
+  bipSom(tipo);
   var el=document.getElementById('bip-fb');
   el.className='bip-fb bip-'+tipo; el.textContent=msg; el.style.display='block';
   clearTimeout(el._t); el._t=setTimeout(function(){ el.style.display='none'; },3500);
@@ -4136,6 +4154,7 @@ function scOnLeitura(codigo) {
   } else {
     r = scRegistrar(codigo);
   }
+  bipSom(r.tipo);
   scMostrarResultado(r);
   scAdicionarHistorico(r);
 }
