@@ -793,6 +793,15 @@ async function gkAtual() {
 }
 function gkAvancar() { const n = _gkLista ? _gkLista.length : 0; if (n) { _gkIdx = (_gkIdx + 1) % n; _gkCount = 0; } }
 
+// limite de rotas por tipo de conta: motorista até 2; empresa até o limite do plano
+// (guardado em u.limiteRotas, padrão 10); admin sem limite prático.
+function limiteRotasDe(u) {
+  if (!u) return 2;
+  if (u.admin) return 99;
+  if (u.tipoConta === 'empresa') return Number(u.limiteRotas) || 10;
+  return 2;
+}
+
 // prazo pro dono arrumar a chave antes de bloquear o acesso dele
 const PRAZO_CHAVE_MS = 72 * 60 * 60 * 1000; // 72 horas
 function statusChaveUsuario(u) {
@@ -1120,10 +1129,13 @@ const server = http.createServer(async (req, res) => {
     const refCode = String(body.ref || '').trim().toUpperCase();
     const padrinho = refCode ? acharPorRefCode(lista, refCode) : null;
     const indicadoPor = (padrinho && padrinho.usuario !== usuario) ? padrinho.refCode : null;
+    // tipo de conta: 'empresa' (frota, várias rotas) ou 'motorista' (individual, até 2 rotas)
+    const tipoConta = body.tipoConta === 'empresa' ? 'empresa' : 'motorista';
     // cadastro automático: aprovado na hora (sem admin). O e-mail confirmado é o gate.
     const novo = {
       usuario, senhaHash: hashSenha(senha),
       email: email || null,
+      tipoConta,
       emailVerificado: EMAIL_ATIVO ? ehPrimeiro : true, // se e-mail não configurado, não exige
       status: 'aprovado',
       admin: ehPrimeiro,
@@ -1204,6 +1216,8 @@ const server = http.createServer(async (req, res) => {
       creditos: saldoLogin === Infinity ? null : Math.max(0, saldoLogin),
       planoAtivo: !!(u.planoProprio && u.planoAte && u.planoAte > Date.now()),
       planoAte: u.planoAte || null,
+      tipoConta: u.tipoConta || 'motorista',
+      limiteRotas: limiteRotasDe(u),
       chaveStatus: statusChaveUsuario(u)
     });
   }
@@ -1218,6 +1232,8 @@ const server = http.createServer(async (req, res) => {
       planoProprio: !!(u && u.planoProprio),
       planoAte: (u && u.planoAte) || null,
       planoAtivo: !!(u && u.planoProprio && u.planoAte && u.planoAte > Date.now()),
+      tipoConta: (u && u.tipoConta) || 'motorista',
+      limiteRotas: limiteRotasDe(u),
       indicacaoDesconto: descontoIndicacao(u), // 20 se tem desconto de indicação disponível
       chaveStatus: statusChaveUsuario(u),
       temGoogleKey: !!(u && u.googleKey),

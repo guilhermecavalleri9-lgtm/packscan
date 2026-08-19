@@ -312,10 +312,20 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="auth-field"><label>Usuário</label><input type="text" id="auth-login-usuario" autocomplete="username"></div>
       <div class="auth-field"><label>Senha</label><input type="password" id="auth-login-senha" autocomplete="current-password" onkeydown="if(event.key==='Enter')authLogin()"></div>
       <button class="btn btn-p" style="width:100%" onclick="authLogin()">Entrar</button>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn btn-g" style="flex:1;justify-content:center;font-size:13px" onclick="abrirPlanos('motorista')">🛵 Planos motorista</button>
+        <button class="btn btn-g" style="flex:1;justify-content:center;font-size:13px" onclick="abrirPlanos('empresa')">🚚 Planos empresa</button>
+      </div>
     </div>
 
     <div id="auth-form-registro" style="display:none">
-      <div class="auth-field"><label>Usuário</label><input type="text" id="auth-reg-usuario" autocomplete="username"></div>
+      <div class="auth-field"><label>Tipo de conta</label>
+        <div id="auth-reg-tipo" style="display:flex;gap:8px">
+          <button type="button" data-tipo="motorista" class="on" onclick="setRegTipo('motorista')" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);cursor:pointer;font-weight:600;font-size:13px">🛵 Motorista</button>
+          <button type="button" data-tipo="empresa" onclick="setRegTipo('empresa')" style="flex:1;padding:9px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);cursor:pointer;font-weight:600;font-size:13px">🚚 Empresa</button>
+        </div>
+      </div>
+      <div class="auth-field"><label id="auth-reg-ulbl">Usuário</label><input type="text" id="auth-reg-usuario" autocomplete="username"></div>
       <div class="auth-field"><label>E-mail</label><input type="email" id="auth-reg-email" autocomplete="email" placeholder="para confirmar seu cadastro"></div>
       <div class="auth-field"><label>Senha (mín. 4 caracteres)</label><input type="password" id="auth-reg-senha" autocomplete="new-password"></div>
       <div class="auth-field"><label>Código de indicação (opcional)</label><input type="text" id="auth-reg-ref" placeholder="ganhe 20% de desconto" autocomplete="off" style="text-transform:uppercase"></div>
@@ -337,6 +347,16 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none" href="https://wa.me/5554981194621" target="_blank" rel="noopener">💬 Reativar plano no WhatsApp</a>
     </div>
   </div>
+</div>
+
+<!-- overlay: página de planos (motorista / empresa) — feito por JS -->
+<style>
+  #planos-content .pcols3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  #planos-content .pcols2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;max-width:640px;margin:0 auto}
+  @media(max-width:720px){#planos-content .pcols3,#planos-content .pcols2{grid-template-columns:1fr}}
+</style>
+<div id="planos-bg" style="display:none;position:fixed;inset:0;z-index:10005;overflow-y:auto;background:var(--bg)">
+  <div id="planos-content"></div>
 </div>
 
 <!-- overlay: créditos esgotados -->
@@ -598,6 +618,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <div class="sd">Divide os pacotes geocodificados por proximidade. Escolha em quantos motoristas dividir:</div>
   <div class="rlbl">motoristas</div>
   <div class="mot-sel" id="rot-motsel"></div>
+  <div id="rot-limite" style="display:none;font-size:11px;color:var(--text3);margin:-2px 0 8px"></div>
   <div class="rlbl" id="rot-plbl">pacotes</div>
   <div id="rot-preview"></div>
   <div class="tot" id="rot-tot"></div>
@@ -1254,7 +1275,11 @@ function guardarDadosConta(d) {
   AUTH_PLANO_ATE = d.planoAte || null;
   if (typeof d.indicacaoDesconto !== 'undefined') AUTH_IND_DESCONTO = d.indicacaoDesconto || 0;
   if (typeof d.chaveStatus !== 'undefined') AUTH_CHAVE_STATUS = d.chaveStatus || null;
+  if (typeof d.tipoConta !== 'undefined') AUTH_TIPO = d.tipoConta || 'motorista';
+  if (typeof d.limiteRotas !== 'undefined') AUTH_LIMITE_ROTAS = d.limiteRotas || (AUTH_TIPO==='empresa'?10:2);
 }
+var AUTH_TIPO = 'motorista';      // 'motorista' | 'empresa'
+var AUTH_LIMITE_ROTAS = 2;        // motorista=2, empresa=limite do plano
 var AUTH_IND_DESCONTO = 0; // 20 se o usuário tem desconto de indicação disponível
 var AUTH_CHAVE_STATUS = null; // {problema, motivo, prazoAte, bloqueado, horasRestantes}
 
@@ -1708,6 +1733,7 @@ function authMostrarAba(aba) {
   document.querySelector('.auth-tabs').style.display = aba==='verificar' ? 'none' : '';
   if (aba!=='verificar') document.getElementById('auth-msg').textContent = '';
   document.getElementById('auth-reativar').style.display = 'none';
+  if (aba==='registro' && typeof setRegTipo==='function') setRegTipo(_regTipo);
 }
 
 // usuário aguardando confirmar o e-mail (guarda pra tela de verificação)
@@ -1800,6 +1826,82 @@ async function authLogin() {
   } catch(e) { msg.textContent='Erro: '+e.message; msg.style.color='var(--red)'; }
 }
 
+// ── tipo de conta no cadastro ──
+var _regTipo='motorista';
+function setRegTipo(t){
+  _regTipo=(t==='empresa')?'empresa':'motorista';
+  var wrap=document.getElementById('auth-reg-tipo');
+  if(wrap) Array.prototype.forEach.call(wrap.querySelectorAll('button'),function(b){
+    var on=b.getAttribute('data-tipo')===_regTipo;
+    b.style.background=on?'var(--accent)':'var(--bg3)';
+    b.style.color=on?'#fff':'var(--text)';
+    b.style.borderColor=on?'var(--accent)':'var(--border2)';
+  });
+  var ul=document.getElementById('auth-reg-ulbl'); if(ul) ul.textContent=(_regTipo==='empresa'?'Nome da empresa':'Usuário');
+}
+
+// ── páginas de planos (motorista / empresa) ──
+function fecharPlanos(){ document.getElementById('planos-bg').style.display='none'; }
+function criarContaDosPlanos(tipo){
+  fecharPlanos();
+  if(typeof AUTH_TOKEN!=='undefined' && AUTH_TOKEN){ return; } // já logado
+  authMostrarAba('registro'); setRegTipo(tipo);
+  var u=document.getElementById('auth-reg-usuario'); if(u) setTimeout(function(){u.focus();},100);
+}
+function abrirPlanos(publico){
+  var emp = publico==='empresa';
+  var accent = emp ? 'var(--accent)' : 'var(--green)';
+  var pill=function(ic,t,d){ return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:18px"><div style="font-size:22px;margin-bottom:8px">'+ic+'</div><div style="font-weight:700;font-size:15px;color:var(--text);margin-bottom:4px">'+t+'</div><div style="font-size:13px;color:var(--text3);line-height:1.5">'+d+'</div></div>'; };
+  var plan=function(nome,preco,cap,itens,hot){
+    return '<div style="background:var(--bg2);border:1px solid '+(hot?accent:'var(--border)')+';'+(hot?'box-shadow:0 0 0 1px '+accent:'')+';border-radius:16px;padding:22px;position:relative">'
+      +(hot?'<div style="position:absolute;top:-11px;left:22px;background:'+accent+';color:#fff;font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;padding:4px 10px;border-radius:999px">Mais escolhido</div>':'')
+      +'<div style="font-weight:700;font-size:16px;color:var(--text)">'+nome+'</div>'
+      +'<div style="font-size:32px;font-weight:800;color:var(--text);margin:8px 0 2px;font-family:var(--sans)">'+preco+'</div>'
+      +'<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+cap+'</div>'
+      +'<div style="font-size:13.5px;color:var(--text2)">'+itens.map(function(i){return '<div style="padding:5px 0 5px 20px;position:relative"><span style="position:absolute;left:0;color:'+accent+';font-weight:700">✓</span>'+i+'</div>';}).join('')+'</div></div>';
+  };
+  var pillars = emp
+    ? '<div class="pcols3">'
+      + pill('📍','Endereço certo, de graça','Base do IBGE resolve rua e número na hora, sem custo de Google.')
+      + pill('🧭','Rota curta, automática','Otimização por ruas dividida por motorista — quantas rotas seu plano permitir.')
+      + pill('📷','Conferência sem erro','Bipagem por câmera com som; cada pacote na parada certa.')
+      + '</div>'
+    : '<div class="pcols3">'
+      + pill('📍','Endereço certo','Rua e número corrigidos pelo CEP, na hora.')
+      + pill('🧭','Sua rota otimizada','Roteirize suas entregas em até 2 rotas.')
+      + pill('📷','Bipe pela câmera','Confere cada pacote com som, sem trocar.')
+      + '</div>';
+  var planos = emp
+    ? '<div class="pcols3">'
+      + plan('Starter','R$ 390<span style="font-size:14px;color:var(--text3)">/mês</span>','até 10 motoristas',['Roteirização + endereço','Bipagem por câmera','Modo motorista','Suporte no WhatsApp'],false)
+      + plan('Frota','R$ 990<span style="font-size:14px;color:var(--text3)">/mês</span>','até 50 motoristas',['Tudo do Starter','Integração com Circuit','Aviso ao cliente no WhatsApp','Escala de motoristas'],true)
+      + plan('Enterprise','Sob consulta','20+ motoristas',['Tudo do Frota','API e integrações','SLA e suporte prioritário'],false)
+      + '</div>'
+    : '<div class="pcols2">'
+      + plan('Teste grátis','R$ 0','3 dias · 150 créditos',['Roteirize até 2 rotas','Endereço certo pelo CEP','Bipagem por câmera'],false)
+      + plan('Mensal','R$ 24,90<span style="font-size:14px;color:var(--text3)">/mês</span>','individual · até 2 rotas',['Tudo do teste, sem limite de dias','Modo motorista com GPS','Aviso ao cliente no WhatsApp'],true)
+      + '</div>';
+  var html=''
+    +'<div style="max-width:900px;margin:0 auto;padding:22px 22px 60px">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:26px">'
+      +'<div style="font-family:var(--mono);font-weight:800;font-size:18px;color:var(--text)">PACK<span style="color:var(--accent)">SCAN</span></div>'
+      +'<button class="btn btn-sm" onclick="fecharPlanos()">✕ Fechar</button></div>'
+    +'<div style="text-align:center;margin-bottom:34px">'
+      +'<div style="display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:'+accent+';border:1px solid var(--border2);border-radius:999px;padding:5px 12px;margin-bottom:14px">'+(emp?'Para transportadoras e frotas':'Para motoristas e autônomos')+'</div>'
+      +'<h1 style="font-size:clamp(28px,6vw,44px);font-weight:800;color:var(--text);margin:0 0 12px;line-height:1.1">'+(emp?'Roteirização para a sua frota':'Roteirize suas entregas em minutos')+'</h1>'
+      +'<p style="font-size:16px;color:var(--text2);max-width:52ch;margin:0 auto">'+(emp?'Divida em quantas rotas seu plano permitir, com endereço certo e conferência por câmera. Em português, pago em real.':'Sua rota pronta em minutos, endereço certo e bipagem sem erro. Grátis para testar por 3 dias.')+'</p></div>'
+    +pillars
+    +'<h2 style="text-align:center;font-size:22px;font-weight:800;color:var(--text);margin:44px 0 20px">Planos</h2>'
+    +planos
+    +'<div style="text-align:center;margin-top:36px">'
+      +'<button class="btn btn-p" style="min-width:260px;justify-content:center;font-size:16px;padding:14px 24px" onclick="criarContaDosPlanos(\''+(emp?'empresa':'motorista')+'\')">Criar conta '+(emp?'empresa':'motorista')+' →</button>'
+      +'<div style="margin-top:14px"><a onclick="fecharPlanos();authMostrarAba(\'login\')" style="color:var(--text3);cursor:pointer;font-size:13px">Já tenho conta · entrar</a></div>'
+      +'<div style="margin-top:8px"><a onclick="abrirPlanos(\''+(emp?'motorista':'empresa')+'\')" style="color:'+accent+';cursor:pointer;font-size:13px">'+(emp?'Ver planos de motorista':'Ver planos de empresa')+'</a></div>'
+    +'</div></div>';
+  var c=document.getElementById('planos-content'); c.innerHTML=html;
+  var bg=document.getElementById('planos-bg'); bg.style.display='block'; bg.scrollTop=0;
+}
+
 async function authRegistrar() {
   var usuario = document.getElementById('auth-reg-usuario').value.trim();
   var email = (document.getElementById('auth-reg-email').value || '').trim();
@@ -1810,7 +1912,7 @@ async function authRegistrar() {
   var ref = (document.getElementById('auth-reg-ref').value || '').trim().toUpperCase();
   msg.textContent='Registrando...'; msg.style.color='var(--amber)';
   try {
-    var r = await fetch(BACKEND+'/api/auth/registrar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,email:email,senha:senha,ref:ref}) });
+    var r = await fetch(BACKEND+'/api/auth/registrar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,email:email,senha:senha,ref:ref,tipoConta:_regTipo}) });
     var d = await r.json();
     if (!r.ok) { msg.textContent='✗ '+(d.error||'Erro ao registrar.'); msg.style.color='var(--red)'; return; }
     if (d.precisaEmail) {
@@ -5001,7 +5103,16 @@ function abrirRoteirizar(){
 function fecharRoteirizar(){ document.getElementById('rot-bg').classList.remove('show'); document.getElementById('rot-sheet').style.display='none'; }
 function renderMotBtns(){
   var el=document.getElementById('rot-motsel'); el.innerHTML='';
-  [1,2,3,4,5,6].forEach(function(n){ var b=document.createElement('button'); b.textContent=n; b.dataset.n=n; b.onclick=function(){selMot(n);}; el.appendChild(b); });
+  var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+  var opcoes=[]; for(var k=1;k<=Math.min(lim,12);k++) opcoes.push(k);
+  opcoes.forEach(function(n){ var b=document.createElement('button'); b.textContent=n; b.dataset.n=n; b.onclick=function(){selMot(n);}; el.appendChild(b); });
+  // aviso do limite
+  var aviso=document.getElementById('rot-limite');
+  if(aviso){
+    if(AUTH_TIPO==='motorista') aviso.innerHTML='Plano motorista: até <b>2 rotas</b>. Para mais rotas, use o plano empresa.';
+    else aviso.innerHTML='Seu plano permite até <b>'+lim+' rotas</b>.';
+    aviso.style.display='block';
+  }
 }
 function dividirIgual(n){ var t=geoTotal(), base=Math.floor(t/n), rem=t%n, a=[]; for(var i=0;i<n;i++) a.push(base+(i<rem?1:0)); return a; }
 function selMot(n){ _nMot=n; document.querySelectorAll('#rot-motsel button').forEach(function(b){ b.classList.toggle('on',+b.dataset.n===n); }); _qs=dividirIgual(n); renderRotPreview(); }
@@ -5032,6 +5143,13 @@ function atTotal(){
 async function confirmarRoteirizar(){
   var t=geoTotal();
   if(!t){ alert('Geocodifique os pacotes primeiro.'); return; }
+  var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+  if(_nMot>lim){
+    alert(AUTH_TIPO==='motorista'
+      ? 'O plano motorista permite no máximo 2 rotas. Para dividir em mais, conheça o plano empresa.'
+      : 'Seu plano permite até '+lim+' rotas.');
+    return;
+  }
   if(_nMot>1 && somaQ()!==t) return;
   if(_nMot===1) _arConfig=[{nome:'Rota 1', qtd:t, cor:CORES[0]}];
   else _arConfig=_qs.map(function(q,i){ return {nome:'Rota '+(i+1), qtd:q, cor:CORES[i%CORES.length]}; });
