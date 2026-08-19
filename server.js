@@ -17,7 +17,13 @@ const PACOTES_CREDITOS = [
 // plano mensal com chave própria: usa a própria chave do Google (obrigatória; a da IA é opcional) por 30 dias, sem gastar créditos
 const PLANO_MENSAL = { id: 'plano_mensal', preco: 24.90, dias: 30 };
 // créditos de boas-vindas pra testar o sistema ao se registrar
-const CREDITOS_BOAS_VINDAS = 150;
+const CREDITOS_BOAS_VINDAS = 0;   // sem créditos de teste — agora o teste é por tempo
+const TRIAL_DIAS = 3;             // período de teste grátis (dias)
+function trialStatus(u){
+  const ate = u && u.trialAte ? u.trialAte : 0;
+  const ativo = ate > Date.now();
+  return { ativo, ate: ate || null, diasRestantes: ativo ? Math.ceil((ate - Date.now())/86400000) : 0 };
+}
 // programa de indicação: quem assina por um link ganha 20% de desconto, e quem indicou
 // ganha 20% acumulativo por indicação confirmada — a cada 5 indicações, 1 mês grátis.
 const INDICACAO_PCT = 20;
@@ -1139,7 +1145,8 @@ const server = http.createServer(async (req, res) => {
       emailVerificado: EMAIL_ATIVO ? ehPrimeiro : true, // se e-mail não configurado, não exige
       status: 'aprovado',
       admin: ehPrimeiro,
-      creditos: CREDITOS_BOAS_VINDAS, // créditos grátis pra testar
+      creditos: 0,
+      trialAte: ehPrimeiro ? 0 : (Date.now() + TRIAL_DIAS * 86400000), // 3 dias de teste grátis
       indicadoPor, // refCode de quem indicou (ou null)
       criadoEm: new Date().toISOString()
     };
@@ -1151,8 +1158,8 @@ const server = http.createServer(async (req, res) => {
     }
     lista.push(novo);
     await setUsuarios(lista);
-    console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ` (auto-aprovado, +${CREDITOS_BOAS_VINDAS} créditos)`}${novo.emailVerificado ? '' : ' — aguardando confirmação de e-mail'}`);
-    return json(res, 200, { ok: true, pendente: false, creditosGratis: CREDITOS_BOAS_VINDAS, precisaEmail: EMAIL_ATIVO && !novo.emailVerificado, emailEnviado });
+    console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ` (auto-aprovado, teste ${TRIAL_DIAS} dias)`}${novo.emailVerificado ? '' : ' — aguardando confirmação de e-mail'}`);
+    return json(res, 200, { ok: true, pendente: false, trialDias: TRIAL_DIAS, precisaEmail: EMAIL_ATIVO && !novo.emailVerificado, emailEnviado });
   }
 
   // ─── AUTENTICAÇÃO: confirma o código de e-mail ─────────────────────────────
@@ -1218,6 +1225,7 @@ const server = http.createServer(async (req, res) => {
       planoAte: u.planoAte || null,
       tipoConta: u.tipoConta || 'motorista',
       limiteRotas: limiteRotasDe(u),
+      trial: trialStatus(u),
       chaveStatus: statusChaveUsuario(u)
     });
   }
@@ -1234,6 +1242,7 @@ const server = http.createServer(async (req, res) => {
       planoAtivo: !!(u && u.planoProprio && u.planoAte && u.planoAte > Date.now()),
       tipoConta: (u && u.tipoConta) || 'motorista',
       limiteRotas: limiteRotasDe(u),
+      trial: trialStatus(u),
       indicacaoDesconto: descontoIndicacao(u), // 20 se tem desconto de indicação disponível
       chaveStatus: statusChaveUsuario(u),
       temGoogleKey: !!(u && u.googleKey),
@@ -2225,9 +2234,10 @@ const server = http.createServer(async (req, res) => {
         return json(res, 402, { error: 'Seu plano mensal expirou. Renove por R$ 24,90 para continuar.', planoExpirado: true });
       } else if (planoAtivo) {
         // plano ativo: usa o POOL de chaves do admin (não pede mais chave do usuário)
+      } else if (trialStatus(meuRec).ativo) {
+        // período de teste grátis (3 dias) ainda válido — usa o pool normalmente
       } else {
-        const saldo = await saldoCreditos(meuRec);
-        if (saldo <= 0) return json(res, 402, { error: 'Seus créditos de teste acabaram. Assine o plano mensal para continuar.', semCreditos: true });
+        return json(res, 402, { error: 'Seu teste grátis acabou. Assine um plano para continuar.', trialAcabou: true });
       }
     }
 

@@ -330,7 +330,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="auth-field"><label>Senha (mín. 4 caracteres)</label><input type="password" id="auth-reg-senha" autocomplete="new-password"></div>
       <div class="auth-field"><label>Código de indicação (opcional)</label><input type="text" id="auth-reg-ref" placeholder="ganhe 20% de desconto" autocomplete="off" style="text-transform:uppercase"></div>
       <button class="btn btn-p" style="width:100%" onclick="authRegistrar()">Registrar</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:.6rem">Você recebe um <strong>código no e-mail</strong> para confirmar o cadastro e já entra na hora, com <strong style="color:var(--green)">150 créditos grátis</strong> para testar. Com um código de indicação, seu 1º plano sai com <strong style="color:var(--green)">20% de desconto</strong>.</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:.6rem">Você recebe um <strong>código no e-mail</strong> para confirmar o cadastro e já entra na hora, com <strong style="color:var(--green)">3 dias grátis</strong> para testar. Com um código de indicação, seu 1º plano sai com <strong style="color:var(--green)">20% de desconto</strong>.</div>
     </div>
 
     <div id="auth-form-verificar" style="display:none">
@@ -362,12 +362,12 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <!-- overlay: créditos esgotados -->
 <div id="creditos-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:10001;align-items:center;justify-content:center">
   <div class="auth-box" style="text-align:center">
-    <div style="font-size:34px;margin-bottom:.5rem">🔑</div>
-    <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:.5rem">Seus créditos de teste acabaram</div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:1.25rem">Assine o plano mensal (R$ 24,90) e use sua própria chave do Google para continuar.</div>
-    <button class="btn btn-p" style="width:100%;justify-content:center;margin-bottom:.5rem" onclick="document.getElementById('creditos-bg').style.display='none';comprarAbrir()">💳 Ver planos</button>
-    <a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-bottom:.5rem" href="https://wa.me/5554981194621" target="_blank" rel="noopener">💬 Comprar no WhatsApp</a>
-    <button class="btn" style="width:100%;justify-content:center" onclick="recarregarSaldo()">↻ Já comprei — atualizar saldo</button>
+    <div style="font-size:34px;margin-bottom:.5rem">⏳</div>
+    <div style="font-size:16px;font-weight:600;color:var(--text);margin-bottom:.5rem">Seu teste grátis acabou</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:1.25rem">Foram 3 dias de teste. Assine um plano para continuar roteirizando.</div>
+    <button class="btn btn-p" style="width:100%;justify-content:center;margin-bottom:.5rem" onclick="document.getElementById('creditos-bg').style.display='none';(AUTH_TIPO==='empresa'?abrirPlanos('empresa'):comprarAbrir())">💳 Ver planos</button>
+    <a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-bottom:.5rem" href="https://wa.me/5554981194621" target="_blank" rel="noopener">💬 Falar no WhatsApp</a>
+    <button class="btn" style="width:100%;justify-content:center" onclick="recarregarSaldo()">↻ Já assinei — atualizar</button>
   </div>
 </div>
 
@@ -1277,7 +1277,9 @@ function guardarDadosConta(d) {
   if (typeof d.chaveStatus !== 'undefined') AUTH_CHAVE_STATUS = d.chaveStatus || null;
   if (typeof d.tipoConta !== 'undefined') AUTH_TIPO = d.tipoConta || 'motorista';
   if (typeof d.limiteRotas !== 'undefined') AUTH_LIMITE_ROTAS = d.limiteRotas || (AUTH_TIPO==='empresa'?10:2);
+  if (typeof d.trial !== 'undefined') AUTH_TRIAL = d.trial || null;
 }
+var AUTH_TRIAL = null;            // {ativo, ate, diasRestantes}
 var AUTH_TIPO = 'motorista';      // 'motorista' | 'empresa'
 var AUTH_LIMITE_ROTAS = 2;        // motorista=2, empresa=limite do plano
 var AUTH_IND_DESCONTO = 0; // 20 se o usuário tem desconto de indicação disponível
@@ -1314,12 +1316,13 @@ function abrirTutorialChave() {
 
 // texto curto de saldo/plano para o cabeçalho
 function saldoTexto() {
-  if (AUTH_CREDITOS === null) return 'créditos ilimitados';
+  if (AUTH_CREDITOS === null) return 'acesso ilimitado';
   if (AUTH_PLANO_ATIVO) {
     var dias = AUTH_PLANO_ATE ? Math.ceil((AUTH_PLANO_ATE - Date.now()) / 86400000) : 0;
     return 'plano ativo (' + dias + 'd)';
   }
-  return AUTH_CREDITOS.toLocaleString('pt-BR') + ' créditos';
+  if (AUTH_TRIAL && AUTH_TRIAL.ativo) return 'teste: ' + AUTH_TRIAL.diasRestantes + ' dia' + (AUTH_TRIAL.diasRestantes>1?'s':'');
+  return 'teste encerrado';
 }
 
 // fetch com o header de autenticação embutido; se a sessão expirou/foi invalidada,
@@ -1339,8 +1342,8 @@ function apiFetch(url, opts) {
         r.clone().json().then(function(d){
           if (d && d.chaveGoogleRuim) { chavesAbrir(); alert('⚠ ' + (d.error || 'Sua chave do Google foi recusada.')); } // chave do Google com problema
           else if (d && d.semChaves) { chavesAbrir(); }        // pagou o plano mas não cadastrou a chave
-          else if (d && d.planoExpirado) { comprarAbrir(); alert('Seu plano mensal expirou. Renove por R$ 24,90 para continuar.'); }
-          else { mostrarSemCreditos(); }                        // créditos acabaram
+          else if (d && (d.planoExpirado || d.trialAcabou)) { mostrarSemCreditos(); } // teste/plano acabou
+          else { mostrarSemCreditos(); }
         }).catch(function(){ mostrarSemCreditos(); });
       }
     }
@@ -1878,7 +1881,7 @@ function abrirPlanos(publico){
       + plan('Enterprise','Sob consulta','20+ motoristas',['Tudo do Frota','API e integrações','SLA e suporte prioritário'],false)
       + '</div>'
     : '<div class="pcols2">'
-      + plan('Teste grátis','R$ 0','3 dias · 150 créditos',['Roteirize até 2 rotas','Endereço certo pelo CEP','Bipagem por câmera'],false)
+      + plan('Teste grátis','R$ 0','3 dias grátis',['Roteirize até 2 rotas','Endereço certo pelo CEP','Bipagem por câmera'],false)
       + plan('Mensal','R$ 24,90<span style="font-size:14px;color:var(--text3)">/mês</span>','individual · até 2 rotas',['Tudo do teste, sem limite de dias','Modo motorista com GPS','Aviso ao cliente no WhatsApp'],true)
       + '</div>';
   var html=''
@@ -2471,7 +2474,7 @@ async function iniciarGeo(forcar, soLocalArg) {
           if (!parou402) {
             parou402=true; geoParar=true;
             var d402=null; try { d402=await r.clone().json(); } catch(e){}
-            var motivo=(d402 && d402.chaveGoogleRuim)?('Chave do Google recusada — '+(d402.error||'verifique a chave')):'sem créditos/plano';
+            var motivo=(d402 && d402.chaveGoogleRuim)?('Chave do Google recusada — '+(d402.error||'verifique a chave')):(d402 && d402.trialAcabou?'teste grátis encerrado':'plano/teste encerrado');
             log.innerHTML='<span class="err">⛔ Processamento pausado: '+motivo+'. Os pacotes já feitos foram mantidos.</span><br>'+log.innerHTML;
           }
           return;
