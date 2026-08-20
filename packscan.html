@@ -567,7 +567,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <div id="comprar-bg" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:10002;align-items:center;justify-content:center;overflow:auto">
   <div class="auth-box" style="width:420px">
     <div style="display:flex;align-items:center;margin-bottom:1rem">
-      <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">Plano mensal PackScan</div>
+      <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">Planos PackScan</div>
       <button class="btn btn-sm" onclick="comprarFechar()">✕</button>
     </div>
     <div style="display:flex;gap:6px;margin-bottom:.75rem">
@@ -1561,7 +1561,6 @@ function comprarRenderLista() {
       + '<a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-top:.6rem" href="' + WHATSAPP_COMPRA + '" target="_blank" rel="noopener">💬 Comprar no WhatsApp</a>';
     return;
   }
-  var preco = d.plano ? d.plano.preco : 24.90;
   // desconto de indicação (aplicado pelo servidor); mostra o preço já com desconto quando não há cupom
   var temInd = AUTH_IND_DESCONTO > 0 && !_cupomAtivo;
   function _fmt(p){
@@ -1571,25 +1570,32 @@ function comprarRenderLista() {
     }
     return _fmtPreco(p);
   }
+  var planos = (d.planos && d.planos.length) ? d.planos : [d.plano || {id:'plano_mensal',nome:'Mensal',preco:24.90,rotas:2,itens:[]}];
+  var emp = (d.tipoConta === 'empresa');
   var html = ''
     + (temInd ? '<div style="background:rgba(52,201,126,.12);border:1px solid rgba(52,201,126,.4);border-radius:8px;padding:.5rem .7rem;font-size:12px;color:var(--green);margin-bottom:.7rem">🎁 Desconto de indicação de '+AUTH_IND_DESCONTO+'% aplicado no seu 1º plano!</div>' : '')
-    + '<div style="font-size:13px;color:var(--text2);margin-bottom:.7rem">Plano mensal PackScan — você usa <strong>sua própria chave</strong> do Google (10 mil buscas grátis/mês).</div>'
-    // opção 1: assinatura recorrente no cartão
-    + '<button class="btn btn-g" style="width:100%;justify-content:space-between" onclick="assinarCartao()">'
-    + '<span>💳 Assinar no cartão · renova sozinho</span><strong>' + _fmt(preco) + '/mês</strong></button>'
-    + '<div style="font-size:11px;color:var(--text3);margin:.35rem 0 .9rem">Cobrança automática todo mês no cartão. Cancele quando quiser.</div>'
-    // opção 2: PIX avulso (1 mês)
-    + '<button class="btn" style="width:100%;justify-content:space-between" onclick="comprarPacote(\'' + (d.plano ? d.plano.id : 'plano_mensal') + '\')">'
-    + '<span>🔑 Pagar 1 mês no PIX</span><strong>' + _fmt(preco) + '</strong></button>'
-    + '<div style="font-size:11px;color:var(--text3);margin-top:.35rem">Pagamento único, vale 30 dias (não renova sozinho).</div>'
-    + '<div style="font-size:11px;color:var(--text3);margin-top:.6rem">Depois de pagar, cadastre sua chave em "🔑 Minhas chaves".</div>';
+    + '<div style="font-size:13px;color:var(--text2);margin-bottom:.8rem">'+(emp?'Planos para empresas — escolha pelo número de rotas por dia.':'Plano mensal PackScan — roteirize até 2 rotas por dia.')+'</div>';
+  planos.forEach(function(pl){
+    var idEsc=String(pl.id).replace(/'/g,"\\'");
+    html += '<div style="border:1px solid '+(pl.destaque?'var(--accent)':'var(--border)')+';border-radius:12px;padding:14px;margin-bottom:10px;background:var(--bg3)">'
+      + '<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">'
+        + '<strong style="font-size:15px;color:var(--text)">'+esc(pl.nome)+'</strong>'
+        + (pl.destaque?'<span style="font-size:10px;color:var(--accent);border:1px solid var(--accent);border-radius:999px;padding:1px 7px">popular</span>':'')
+        + '<span style="flex:1"></span><strong style="font-size:15px;color:var(--text)">'+_fmt(pl.preco)+'<span style="font-size:11px;color:var(--text3)">/mês</span></strong></div>'
+      + '<div style="font-size:11.5px;color:var(--text3);margin-bottom:10px">'+(pl.rotas?('até <b style="color:var(--text2)">'+pl.rotas+' rotas</b> por dia'):'')+(pl.itens&&pl.itens.length?(' · '+esc(pl.itens.slice(0,2).join(' · '))):'')+'</div>'
+      + '<div style="display:flex;gap:6px;flex-wrap:wrap">'
+        + '<button class="btn btn-g btn-sm" style="flex:1;justify-content:center;min-width:150px" onclick="assinarCartao(\''+idEsc+'\')">💳 Assinar no cartão</button>'
+        + '<button class="btn btn-sm" style="flex:1;justify-content:center;min-width:130px" onclick="comprarPacote(\''+idEsc+'\')">🔑 Pagar 1 mês no PIX</button>'
+      + '</div></div>';
+  });
+  html += '<div style="font-size:11px;color:var(--text3);margin-top:.5rem">No cartão a cobrança é automática todo mês (cancele quando quiser). No PIX é pagamento único, vale 30 dias.</div>';
   lista.innerHTML = html;
 }
 // assinatura recorrente: cria no servidor e manda pro checkout do Mercado Pago
-function assinarCartao() {
+function assinarCartao(planoId) {
   var lista = document.getElementById('comprar-lista');
   lista.innerHTML = 'Abrindo o checkout do cartão...';
-  apiFetch(BACKEND + '/api/pagamento/assinar', { method:'POST', headers:{'Content-Type':'application/json'}, body:'{}' })
+  apiFetch(BACKEND + '/api/pagamento/assinar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({planoId:planoId||null}) })
     .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
     .then(function(res){
       if (!res.ok || !res.d.init_point) { lista.innerHTML = '<div style="color:var(--red)">' + esc((res.d && res.d.error) || 'Erro ao iniciar a assinatura') + '</div><button class="btn btn-sm" style="margin-top:.6rem" onclick="comprarRenderLista()">← Voltar</button>'; return; }
@@ -1598,7 +1604,7 @@ function assinarCartao() {
 }
 var _comprarEhPlano = false;
 function comprarPacote(pacoteId) {
-  _comprarEhPlano = (pacoteId === 'plano_mensal');
+  _comprarEhPlano = true; // todo pagamento agora é plano
   var lista = document.getElementById('comprar-lista');
   lista.innerHTML = 'Gerando PIX...';
   apiFetch(BACKEND + '/api/pagamento/criar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({pacoteId:pacoteId, cupom:_cupomAtivo ? _cupomAtivo.codigo : null}) })
@@ -1993,7 +1999,8 @@ function setRegTipo(t){
 function fecharPlanos(){ document.getElementById('planos-bg').style.display='none'; }
 function criarContaDosPlanos(tipo){
   fecharPlanos();
-  if(typeof AUTH_TOKEN!=='undefined' && AUTH_TOKEN){ return; } // já logado
+  // já logado → abre direto a tela de pagamento dos planos
+  if(typeof AUTH_TOKEN!=='undefined' && AUTH_TOKEN){ try{ comprarAbrir(); }catch(e){} return; }
   authMostrarAba('registro'); setRegTipo(tipo);
   var u=document.getElementById('auth-reg-usuario'); if(u) setTimeout(function(){u.focus();},100);
 }
@@ -2151,6 +2158,31 @@ async function authRejeitar(usuario) {
   carregarPendentes(); carregarUsuarios();
 }
 
+// ── admin: tipo de conta / limite de rotas / dias de plano ──
+async function _contaPatch(usuario, dados){
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/conta',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({usuario:usuario},dados))});
+    var d=await r.json();
+    if(!r.ok){ alert('✗ '+(d.error||'Erro')); return; }
+    carregarUsuarios();
+  }catch(e){ alert('Erro: '+e.message); }
+}
+function contaDefinir(usuario, tipo){
+  if(!confirm('Mudar '+usuario+' para conta de '+tipo+'?')) return;
+  _contaPatch(usuario,{tipoConta:tipo, limiteRotas:(tipo==='empresa'?10:2)});
+}
+function contaLimite(usuario){
+  var v=prompt('Limite de rotas por dia para '+usuario+':','10');
+  if(v===null) return;
+  var n=parseInt(v,10); if(!n||n<1){ alert('Número inválido.'); return; }
+  _contaPatch(usuario,{limiteRotas:n});
+}
+function contaPlanoDias(usuario){
+  var v=prompt('Liberar plano para '+usuario+' por quantos dias?','30');
+  if(v===null) return;
+  var n=parseInt(v,10); if(!n||n<1){ alert('Número inválido.'); return; }
+  _contaPatch(usuario,{diasPlano:n});
+}
 async function carregarUsuarios() {
   if (!AUTH_ADMIN) return;
   var el = document.getElementById('auth-usuarios-lista');
@@ -2187,12 +2219,11 @@ async function carregarUsuarios() {
           + (u.planoAtivo && u.planoAte ? ' · plano até '+new Date(u.planoAte).toLocaleDateString('pt-BR') : '')
           + (u.indicadoPor ? ' · indicado por '+esc(u.indicadoPor) : '')+'</div>'
         + '<div style="display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap">'
-        +   '<span style="font-size:11px;color:var(--text3)">recarregar:</span>'
-        +   '<button class="btn btn-sm" onclick="authAddCreditos(\''+nome+'\',1000)">+1.000</button>'
-        +   '<button class="btn btn-sm" onclick="authAddCreditos(\''+nome+'\',2000)">+2.000</button>'
-        +   '<button class="btn btn-sm" onclick="authAddCreditos(\''+nome+'\',5000)">+5.000</button>'
-        +   '<button class="btn btn-sm" onclick="authAddCreditosCustom(\''+nome+'\')">outro…</button>'
-        +   '<button class="btn btn-r btn-sm" onclick="authZerarCreditos(\''+nome+'\')">zerar</button>'
+        +   '<span style="font-size:11px;color:var(--text3)">conta:</span>'
+        +   '<span style="font-size:11px;color:'+(u.tipoConta==='empresa'?'var(--accent)':'var(--text2)')+';font-weight:600">'+(u.tipoConta==='empresa'?'🚚 empresa':'🛵 motorista')+' · '+(u.limiteRotas||2)+' rotas</span>'
+        +   '<button class="btn btn-sm" onclick="contaDefinir(\''+nome+'\',\''+(u.tipoConta==='empresa'?'motorista':'empresa')+'\')">→ '+(u.tipoConta==='empresa'?'motorista':'empresa')+'</button>'
+        +   '<button class="btn btn-sm" onclick="contaLimite(\''+nome+'\')">limite…</button>'
+        +   '<button class="btn btn-sm" onclick="contaPlanoDias(\''+nome+'\')">+dias plano</button>'
         + '</div>';
       }
       return linha + '</div>';
