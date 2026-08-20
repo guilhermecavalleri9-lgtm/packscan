@@ -274,6 +274,28 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .home-head .t{flex:1}.home-head .t b{font-size:19px;letter-spacing:-.02em;display:block}.home-head .t span{font-size:12.5px;color:var(--text2)}
 .home-chip{font-size:11.5px;font-weight:600;color:var(--accent);background:var(--accent-soft,rgba(79,142,247,.14));border:1px solid rgba(79,142,247,.3);padding:5px 11px;border-radius:999px}
 .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+/* ── DESKTOP: aproveita a largura da tela em vez de ficar igual ao celular ── */
+@media(min-width:1024px){
+  #home{max-width:1180px;padding:22px 28px 40px}
+  .home-hero{height:380px;margin-bottom:22px}
+  .home-grid{grid-template-columns:repeat(4,1fr);gap:14px}
+  .hact{padding:20px 18px;border-radius:18px}
+  .hact svg{width:28px;height:28px}
+  .hact .lb{font-size:16px}
+  .hact .sub{font-size:12.5px}
+  /* os botões largos deixam de ocupar a linha inteira: 2 por linha */
+  .hact.wide{grid-column:span 2}
+  .home-head .t b{font-size:23px}
+  /* lista de pacotes em duas colunas, com o mapa maior acima */
+  #home-lista{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .page{padding:1.8rem 2.4rem;max-width:1180px;margin:0 auto}
+  .auth-box{width:420px}
+}
+@media(min-width:1400px){
+  #home{max-width:1320px}
+  #home-lista{grid-template-columns:repeat(3,1fr)}
+  .page{max-width:1320px}
+}
 .hact{position:relative;overflow:hidden;background:var(--accent2);border:1px solid var(--accent);color:#fff;border-radius:16px;padding:15px 14px;cursor:pointer;
   display:flex;flex-direction:column;gap:9px;align-items:flex-start;text-align:left;font-family:var(--sans);transition:transform .1s,filter .1s;box-shadow:0 10px 22px -16px var(--accent)}
 .hact:hover{filter:brightness(1.08)} .hact:active{transform:scale(.975)}
