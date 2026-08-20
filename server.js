@@ -487,7 +487,9 @@ async function confirmarIndicacao(usuarioPagante) {
   u.indicacaoUsada = true;       // já aproveitou o desconto de 20%
   u.indicacaoCreditada = true;   // não credita o padrinho duas vezes
   const padrinho = acharPorRefCode(lista, u.indicadoPor) || lista.find(x => x.usuario === u.indicadoPor);
-  if (padrinho && padrinho.usuario !== u.usuario) {
+  // só credita se for do MESMO tipo de conta (motorista↔motorista, empresa↔empresa)
+  const mesmoTipo = padrinho && ((padrinho.tipoConta || 'motorista') === (u.tipoConta || 'motorista'));
+  if (padrinho && padrinho.usuario !== u.usuario && mesmoTipo) {
     padrinho.refTotal = (padrinho.refTotal || 0) + 1;         // histórico total
     padrinho.refPendentes = (padrinho.refPendentes || 0) + 1; // rumo ao próximo mês grátis
     while (padrinho.refPendentes >= INDICACOES_POR_MES_GRATIS) {
@@ -1134,9 +1136,12 @@ const server = http.createServer(async (req, res) => {
     // código de indicação (opcional): guarda quem indicou pra aplicar os 20% no 1º pagamento
     const refCode = String(body.ref || '').trim().toUpperCase();
     const padrinho = refCode ? acharPorRefCode(lista, refCode) : null;
-    const indicadoPor = (padrinho && padrinho.usuario !== usuario) ? padrinho.refCode : null;
     // tipo de conta: 'empresa' (frota, várias rotas) ou 'motorista' (individual, até 2 rotas)
     const tipoConta = body.tipoConta === 'empresa' ? 'empresa' : 'motorista';
+    // indicação só vale entre contas DO MESMO TIPO (motorista indica motorista, empresa indica empresa)
+    const mesmoTipo = padrinho && ((padrinho.tipoConta || 'motorista') === tipoConta);
+    const indicadoPor = (padrinho && padrinho.usuario !== usuario && mesmoTipo) ? padrinho.refCode : null;
+    const refIgnorado = !!(padrinho && !mesmoTipo);
     // cadastro automático: aprovado na hora (sem admin). O e-mail confirmado é o gate.
     const novo = {
       usuario, senhaHash: hashSenha(senha),
@@ -1159,7 +1164,7 @@ const server = http.createServer(async (req, res) => {
     lista.push(novo);
     await setUsuarios(lista);
     console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ` (auto-aprovado, teste ${TRIAL_DIAS} dias)`}${novo.emailVerificado ? '' : ' — aguardando confirmação de e-mail'}`);
-    return json(res, 200, { ok: true, pendente: false, trialDias: TRIAL_DIAS, precisaEmail: EMAIL_ATIVO && !novo.emailVerificado, emailEnviado });
+    return json(res, 200, { ok: true, pendente: false, trialDias: TRIAL_DIAS, refIgnorado, precisaEmail: EMAIL_ATIVO && !novo.emailVerificado, emailEnviado });
   }
 
   // ─── AUTENTICAÇÃO: confirma o código de e-mail ─────────────────────────────

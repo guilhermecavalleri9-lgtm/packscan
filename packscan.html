@@ -597,7 +597,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">Indique e ganhe 🎁</div>
       <button class="btn btn-sm" onclick="indicarFechar()">✕</button>
     </div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Compartilhe seu link. Quem assinar por ele ganha <strong style="color:var(--green)">20% de desconto</strong>, e você ganha <strong style="color:var(--green)">20% acumulativo</strong> — a cada <strong>5 assinantes</strong>, <strong>1 mês grátis</strong>.</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:.6rem">Compartilhe seu link. Quem assinar por ele ganha <strong style="color:var(--green)">20% de desconto</strong>, e você ganha <strong style="color:var(--green)">20% acumulativo</strong> — a cada <strong>5 assinantes</strong>, <strong>1 mês grátis</strong>.</div>
+    <div id="indicar-tipo" style="font-size:12px;color:var(--amber);margin-bottom:1rem"></div>
     <label style="font-size:11px;color:var(--text3)">Seu link de indicação</label>
     <div style="display:flex;gap:6px;margin:4px 0 .8rem">
       <input type="text" id="indicar-link" readonly style="flex:1;font-size:12px;font-family:var(--mono)">
@@ -1767,6 +1768,10 @@ async function corrExcluir(cacheKey){
 var _indicarLink = '';
 function indicarAbrir() {
   document.getElementById('indicar-bg').style.display = 'flex';
+  var tel=document.getElementById('indicar-tipo');
+  if(tel) tel.innerHTML = (AUTH_TIPO==='empresa')
+    ? '⚠ Seu código vale para indicar <strong>outras empresas</strong> (contas de empresa).'
+    : '⚠ Seu código vale para indicar <strong>outros motoristas</strong> (contas de motorista).';
   document.getElementById('indicar-stats').innerHTML = 'Carregando...';
   document.getElementById('indicar-link').value = '';
   apiFetch(BACKEND + '/api/referral').then(function(r){ return r.json(); }).then(function(d){
@@ -2054,6 +2059,9 @@ async function authRegistrar() {
     var r = await fetch(BACKEND+'/api/auth/registrar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,email:email,senha:senha,ref:ref,tipoConta:_regTipo}) });
     var d = await r.json();
     if (!r.ok) { msg.textContent='✗ '+(d.error||'Erro ao registrar.'); msg.style.color='var(--red)'; return; }
+    if (d.refIgnorado) {
+      alert('O código de indicação usado é de outro tipo de conta, então não foi aplicado.\n\nCódigo de motorista só vale para conta de motorista, e de empresa só para conta de empresa. Sua conta foi criada normalmente.');
+    }
     if (d.precisaEmail) {
       // manda pra tela de código
       authAbrirVerificacao(usuario, email);
