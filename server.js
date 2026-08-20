@@ -16,6 +16,16 @@ const PACOTES_CREDITOS = [
 ];
 // plano mensal com chave própria: usa a própria chave do Google (obrigatória; a da IA é opcional) por 30 dias, sem gastar créditos
 const PLANO_MENSAL = { id: 'plano_mensal', preco: 24.90, dias: 30 };
+// catálogo de planos por tipo de conta. rotas = limite de rotas liberado ao pagar.
+const PLANOS = [
+  { id: 'plano_mensal',    tipo: 'motorista', nome: 'Mensal',  preco: 24.90, dias: 30, rotas: 2,
+    itens: ['Roteirize até 2 rotas', 'Modo motorista com GPS', 'Aviso ao cliente no WhatsApp'] },
+  { id: 'empresa_starter', tipo: 'empresa',   nome: 'Starter', preco: 390.00, dias: 30, rotas: 10,
+    itens: ['Até 10 rotas por dia', 'Roteirização + endereço', 'Bipagem por câmera e por código', 'Áreas de rota salvas'] },
+  { id: 'empresa_frota',   tipo: 'empresa',   nome: 'Frota',   preco: 990.00, dias: 30, rotas: 50, destaque: true,
+    itens: ['Até 50 rotas por dia', 'Tudo do Starter', 'Integração com Circuit', 'Aviso ao cliente no WhatsApp', 'Escala de motoristas'] }
+];
+function acharPlano(id) { return PLANOS.find(p => p.id === String(id || '')) || null; }
 // créditos de boas-vindas pra testar o sistema ao se registrar
 const CREDITOS_BOAS_VINDAS = 0;   // sem créditos de teste — agora o teste é por tempo
 const TRIAL_DIAS = 3;             // período de teste grátis (dias)
@@ -441,13 +451,20 @@ function precoComCupom(preco, cupom) {
 // frontend confirmam o mesmo pagamento ao mesmo tempo.
 // estende (ou ativa) o plano mensal de um usuário por N dias. Acumula se ainda
 // estiver vigente. Usado tanto pelo PIX avulso quanto pela assinatura recorrente.
-async function ativarPlano(usuario, dias) {
+async function ativarPlano(usuario, dias, planoId) {
   const lista = await getUsuarios();
   const u = lista.find(x => x.usuario === usuario);
   if (!u) return false;
   const base = (u.planoAte && u.planoAte > Date.now()) ? u.planoAte : Date.now();
   u.planoProprio = true;
   u.planoAte = base + (dias || 30) * 24 * 60 * 60 * 1000;
+  // plano pago define o limite de rotas e o tipo de conta (empresa/motorista)
+  const pl = acharPlano(planoId);
+  if (pl) {
+    u.planoId = pl.id;
+    u.limiteRotas = pl.rotas;
+    if (pl.tipo === 'empresa') u.tipoConta = 'empresa';
+  }
   await setUsuarios(lista);
   return true;
 }
@@ -516,7 +533,7 @@ async function _creditarPagamentoInterno(mpId) {
   const rec = await supabaseGet('pay:' + mpId);
   if (!rec || rec.status === 'creditado') return rec; // já aplicado ou inexistente
   if (rec.tipo === 'plano') {
-    await ativarPlano(rec.usuario, rec.dias || 30);
+    await ativarPlano(rec.usuario, rec.dias || 30, rec.planoId);
     await confirmarIndicacao(rec.usuario); // credita quem indicou (1ª vez só)
   } else {
     // compatibilidade: pagamentos de crédito antigos ainda são creditados
@@ -1110,7 +1127,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/admin/conta', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1376,9 +1393,18 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true, codigo: c.codigo, pct: c.pct });
   }
 
-  // ─── PAGAMENTO: o que está à venda (só o plano mensal — créditos são só de teste) ──
+  // ─── PAGAMENTO: o que está à venda — planos do tipo da conta (motorista/empresa) ──
   if (req.method === 'GET' && pathname === '/api/pagamento/pacotes') {
-    return json(res, 200, { pacotes: [], plano: PLANO_MENSAL, ativo: !!MERCADOPAGO_TOKEN });
+    const lista = await getUsuarios();
+    const eu = lista.find(x => x.usuario === req.usuarioAtual.usuario);
+    const tipo = (eu && eu.tipoConta) || 'motorista';
+    const doTipo = PLANOS.filter(p => p.tipo === tipo);
+    return json(res, 200, {
+      pacotes: [], tipoConta: tipo,
+      planos: doTipo,
+      plano: doTipo[0] || PLANO_MENSAL, // compatibilidade
+      ativo: !!MERCADOPAGO_TOKEN
+    });
   }
 
   // ─── PAGAMENTO: cria um PIX avulso (paga 1 mês do plano) no Mercado Pago ────
@@ -1386,11 +1412,11 @@ const server = http.createServer(async (req, res) => {
     if (!MERCADOPAGO_TOKEN) return json(res, 503, { error: 'Pagamento ainda não configurado pelo administrador.' });
     const body = await readBody(req);
     const usuario = req.usuarioAtual.usuario;
-    // só o plano mensal é vendável por PIX (não vendemos mais pacotes de crédito)
-    const ehPlano = body.pacoteId === PLANO_MENSAL.id;
-    const pacote = ehPlano ? PLANO_MENSAL : null;
-    if (!pacote) return json(res, 400, { error: 'Pacote inválido' });
-    let descricao = 'PackScan — plano mensal (chave própria)';
+    // qualquer plano do catálogo (motorista ou empresa) pode ser pago por PIX
+    const pacote = acharPlano(body.pacoteId);
+    if (!pacote) return json(res, 400, { error: 'Plano inválido' });
+    const ehPlano = true;
+    let descricao = `PackScan — plano ${pacote.nome}`;
     // cupom de desconto (validado de novo aqui, nunca confia só no frontend)
     const cupom = await validarCupom(body.cupom);
     let precoFinal = precoComCupom(pacote.preco, cupom);
@@ -1400,7 +1426,7 @@ const server = http.createServer(async (req, res) => {
     const pctInd = descontoIndicacao(meRec);
     if (pctInd && (!cupom || cupom.pct < pctInd)) {
       precoFinal = Math.max(0.01, Math.round(pacote.preco * (1 - pctInd/100) * 100) / 100);
-      descricao = `PackScan — plano mensal (indicação -${pctInd}%)`;
+      descricao = `PackScan — plano ${pacote.nome} (indicação -${pctInd}%)`;
     }
     try {
       const idemKey = crypto.randomBytes(16).toString('hex'); // MP exige X-Idempotency-Key
@@ -1418,9 +1444,7 @@ const server = http.createServer(async (req, res) => {
         return json(res, 502, { error: 'Mercado Pago recusou: ' + detalhe });
       }
       const id = String(mp.body.id);
-      const rec = ehPlano
-        ? { usuario, tipo: 'plano', dias: PLANO_MENSAL.dias, preco: precoFinal, cupom: cupom ? cupom.codigo : null, status: 'pendente' }
-        : { usuario, tipo: 'creditos', creditos: pacote.creditos, preco: precoFinal, cupom: cupom ? cupom.codigo : null, status: 'pendente' };
+      const rec = { usuario, tipo: 'plano', planoId: pacote.id, dias: pacote.dias, preco: precoFinal, cupom: cupom ? cupom.codigo : null, status: 'pendente' };
       await supabaseSet('pay:' + id, rec);
       const td = (mp.body.point_of_interaction && mp.body.point_of_interaction.transaction_data) || {};
       return json(res, 200, { id, qrBase64: td.qr_code_base64 || '', copiaECola: td.qr_code || '' });
@@ -1452,14 +1476,18 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/pagamento/assinar') {
     if (!MERCADOPAGO_TOKEN) return json(res, 503, { error: 'Pagamento ainda não configurado pelo administrador.' });
     const usuario = req.usuarioAtual.usuario;
+    const bodyAss = await readBody(req);
     const base = process.env.APP_URL || ('https://' + (req.headers.host || 'packscan-noma.onrender.com'));
     // desconto de indicação (20%) aplicado à mensalidade enquanto assinar pelo link
     const meRec = (await getUsuarios()).find(x => x.usuario === usuario);
+    // plano escolhido (motorista ou empresa); se não vier, usa o 1º do tipo da conta
+    const tipoMe = (meRec && meRec.tipoConta) || 'motorista';
+    const planoEsc = acharPlano(bodyAss && bodyAss.planoId) || PLANOS.find(p => p.tipo === tipoMe) || PLANO_MENSAL;
     const pctInd = descontoIndicacao(meRec);
-    const valorMensal = pctInd ? Math.round(PLANO_MENSAL.preco * (1 - pctInd/100) * 100) / 100 : PLANO_MENSAL.preco;
+    const valorMensal = pctInd ? Math.round(planoEsc.preco * (1 - pctInd/100) * 100) / 100 : planoEsc.preco;
     try {
       const mp = await mpRequest('POST', '/preapproval', {
-        reason: pctInd ? `PackScan — plano mensal (indicação -${pctInd}%)` : 'PackScan — plano mensal',
+        reason: `PackScan — plano ${planoEsc.nome}` + (pctInd ? ` (indicação -${pctInd}%)` : ''),
         external_reference: usuario,
         payer_email: emailPagador(usuario),
         back_url: base + '/?assinatura=ok',
@@ -1472,7 +1500,7 @@ const server = http.createServer(async (req, res) => {
         const detalhe = b.message || (b.cause && b.cause[0] && (b.cause[0].description || b.cause[0].code)) || ('HTTP ' + mp.status);
         return json(res, 502, { error: 'Mercado Pago recusou: ' + detalhe });
       }
-      await supabaseSet('sub:' + mp.body.id, { usuario, status: 'pendente', criadoEm: Date.now() });
+      await supabaseSet('sub:' + mp.body.id, { usuario, status: 'pendente', planoId: planoEsc.id, criadoEm: Date.now() });
       await supabaseSet('usub:' + usuario, { id: String(mp.body.id) });
       return json(res, 200, { id: String(mp.body.id), init_point: mp.body.init_point || mp.body.sandbox_init_point || '' });
     } catch(e) {
@@ -1492,7 +1520,7 @@ const server = http.createServer(async (req, res) => {
       try {
         const mp = await mpRequest('GET', '/preapproval/' + ref.id);
         if (mp.body && mp.body.status) {
-          if (mp.body.status === 'authorized' && sub.status !== 'authorized') { await ativarPlano(usuario, 30); await confirmarIndicacao(usuario); }
+          if (mp.body.status === 'authorized' && sub.status !== 'authorized') { await ativarPlano(usuario, 30, sub.planoId); await confirmarIndicacao(usuario); }
           sub = { ...sub, status: mp.body.status };
           await supabaseSet('sub:' + ref.id, sub);
         }
@@ -1554,7 +1582,7 @@ const server = http.createServer(async (req, res) => {
         if (usuario) {
           const rec = (await supabaseGet('sub:' + idRaw)) || { usuario };
           if (p.status === 'authorized') {
-            if (rec.status !== 'authorized') { await ativarPlano(usuario, 30); await confirmarIndicacao(usuario); console.log(`[assinatura] autorizada: ${usuario}`); }
+            if (rec.status !== 'authorized') { await ativarPlano(usuario, 30, rec.planoId); await confirmarIndicacao(usuario); console.log(`[assinatura] autorizada: ${usuario}`); }
             await supabaseSet('sub:' + idRaw, { ...rec, usuario, status: 'authorized' });
           } else if (p.status === 'cancelled' || p.status === 'paused') {
             await supabaseSet('sub:' + idRaw, { ...rec, usuario, status: p.status });
@@ -1570,7 +1598,7 @@ const server = http.createServer(async (req, res) => {
           if (rec && rec.usuario) {
             const key = 'apay:' + idRaw;
             if (!(await supabaseGet(key))) {
-              await ativarPlano(rec.usuario, 30);
+              await ativarPlano(rec.usuario, 30, rec.planoId);
               await supabaseSet(key, { done: true });
               console.log(`[assinatura] cobrança recorrente: ${rec.usuario} +30 dias`);
             }
@@ -1697,6 +1725,9 @@ const server = http.createServer(async (req, res) => {
         temGoogleKey: !!u.googleKey,
         indicacoes: u.refTotal || 0,          // quantos indicados dele já pagaram
         indicacoesMesesGratis: u.refMesesGratis || 0, // meses grátis ganhos
+        tipoConta: u.tipoConta || 'motorista',
+        limiteRotas: limiteRotasDe(u),
+        planoId: u.planoId || null,
         indicadoPor: u.indicadoPor ? ((lista.find(x => x.refCode === u.indicadoPor) || {}).usuario || u.indicadoPor) : null
       });
     }
@@ -2151,6 +2182,27 @@ const server = http.createServer(async (req, res) => {
       ? `${rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`
       : `${complemento}, ${cidadeFinal}, SC, Brasil`;
     return json(res, 200, { enderecoNormalizado, rua, complemento, cidade: cidadeFinal, cep: cepFmt });
+  }
+
+  // ─── ADMIN: definir tipo de conta e limite de rotas de um usuário ─────────
+  if (req.method === 'POST' && pathname === '/api/admin/conta') {
+    const body = await readBody(req);
+    const alvo = String(body.usuario || '').trim().toLowerCase();
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === alvo);
+    if (!u) return json(res, 404, { error: 'Usuário não encontrado' });
+    if (body.tipoConta === 'empresa' || body.tipoConta === 'motorista') u.tipoConta = body.tipoConta;
+    if (body.limiteRotas != null) {
+      const n = parseInt(body.limiteRotas, 10);
+      if (isFinite(n) && n >= 1 && n <= 99) u.limiteRotas = n;
+    }
+    if (body.diasPlano != null) {
+      const d = parseInt(body.diasPlano, 10);
+      if (isFinite(d) && d > 0) { u.planoProprio = true; u.planoAte = Date.now() + d * 86400000; }
+    }
+    await setUsuarios(lista);
+    console.log(`[admin-conta] ${alvo}: tipo=${u.tipoConta} limite=${u.limiteRotas || '-'} (por ${req.usuarioAtual.usuario})`);
+    return json(res, 200, { ok: true, tipoConta: u.tipoConta, limiteRotas: limiteRotasDe(u) });
   }
 
   // ─── ZONAS SALVAS (polígonos de rota reutilizáveis) — por usuário ─────────
