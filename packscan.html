@@ -717,6 +717,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <button class="hact" onclick="abrirRoteirizar()"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="5" r="2.4"/><path d="M8 18.5C13 17 6 8 16 6.2" stroke-linecap="round"/></svg><span class="lb">Roteirizar</span><span class="sub" id="home-rot-sub">automático</span></button>
     <button class="hact wide ghost" onclick="homeBaixar()"><svg viewBox="0 0 24 24"><path d="M12 3v12M12 15l-4-4M12 15l4-4M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="txt"><span class="lb">Baixar planilha do motorista</span><span class="sub">Excel por rota, na ordem</span></span></button>
     <button class="hact wide scan" onclick="goTab(5)"><svg viewBox="0 0 24 24"><path d="M4 7V6a2 2 0 0 1 2-2h1M17 4h1a2 2 0 0 1 2 2v1M20 17v1a2 2 0 0 1-2 2h-1M7 20H6a2 2 0 0 1-2-2v-1" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8" stroke-linecap="round"/></svg><span class="txt"><span class="lb">Bipar pela câmera</span><span class="sub">separar pacotes por rota</span></span></button>
+    <button class="hact wide ghost empresa-only" id="btn-bipar-codigo" style="display:none" onclick="goTab(2)"><svg viewBox="0 0 24 24"><path d="M4 7v10M7 7v10M10.5 7v10M14 7v10M17.5 7v10M20 7v10" stroke-linecap="round"/></svg><span class="txt"><span class="lb">Bipar pelo código</span><span class="sub">leitor/teclado · imprime etiqueta automática</span></span></button>
   </div>
 
   <!-- lista de todos os pacotes (editável) -->
@@ -1898,6 +1899,8 @@ function authAplicarPermissoes() {
   atualizarHeaderInfo();
   avisoPlanoVencendo();
   mostrarAvisoChave();
+  var emps = document.querySelectorAll('.empresa-only');
+  for (var j=0;j<emps.length;j++) emps[j].style.display = (AUTH_TIPO==='empresa'||AUTH_ADMIN) ? '' : 'none';
   var els = document.querySelectorAll('.admin-only');
   for (var i=0;i<els.length;i++) els[i].style.display = AUTH_ADMIN ? '' : 'none';
 }
