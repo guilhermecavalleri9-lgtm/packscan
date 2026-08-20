@@ -373,6 +373,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="auth-field"><label>Usuário</label><input type="text" id="auth-login-usuario" autocomplete="username"></div>
       <div class="auth-field"><label>Senha</label><input type="password" id="auth-login-senha" autocomplete="current-password" onkeydown="if(event.key==='Enter')authLogin()"></div>
       <button class="btn btn-p" style="width:100%" onclick="authLogin()">Entrar</button>
+      <div style="text-align:center;margin-top:10px"><a onclick="authAbrirEsqueci()" style="color:var(--text3);cursor:pointer;font-size:12.5px">Esqueci minha senha</a></div>
       <div style="display:flex;gap:8px;margin-top:12px">
         <button class="btn btn-g" style="flex:1;justify-content:center;font-size:13px" onclick="abrirPlanos('motorista')">🛵 Planos motorista</button>
         <button class="btn btn-g" style="flex:1;justify-content:center;font-size:13px" onclick="abrirPlanos('empresa')">🚚 Planos empresa</button>
@@ -399,6 +400,24 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div class="auth-field"><label>Código</label><input type="text" id="auth-ver-codigo" inputmode="numeric" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center;font-size:20px;font-family:var(--mono)" onkeydown="if(event.key==='Enter')authVerificarEmail()"></div>
       <button class="btn btn-p" style="width:100%" onclick="authVerificarEmail()">Confirmar e-mail</button>
       <button class="btn" style="width:100%;justify-content:center;margin-top:.5rem" onclick="authReenviarEmail()">Reenviar código</button>
+    </div>
+
+    <!-- esqueci minha senha: pede o usuário/e-mail -->
+    <div id="auth-form-esqueci" style="display:none">
+      <div style="font-size:14px;color:var(--text2);margin-bottom:.8rem">Digite seu <strong>usuário ou e-mail</strong>. Vamos enviar um código para redefinir sua senha.</div>
+      <div class="auth-field"><label>Usuário ou e-mail</label><input type="text" id="auth-esq-usuario" autocomplete="username" onkeydown="if(event.key==='Enter')authEnviarReset()"></div>
+      <button class="btn btn-p" style="width:100%" onclick="authEnviarReset()">Enviar código</button>
+      <button class="btn" style="width:100%;justify-content:center;margin-top:.5rem" onclick="authMostrarAba('login')">← Voltar ao login</button>
+    </div>
+
+    <!-- esqueci minha senha: código + nova senha -->
+    <div id="auth-form-nova" style="display:none">
+      <div style="font-size:14px;color:var(--text2);margin-bottom:.8rem">Enviamos um código para o e-mail da conta <strong id="auth-nova-quem"></strong>. Digite o código e escolha a nova senha.</div>
+      <div class="auth-field"><label>Código</label><input type="text" id="auth-nova-codigo" inputmode="numeric" maxlength="6" placeholder="000000" style="letter-spacing:6px;text-align:center;font-size:20px;font-family:var(--mono)"></div>
+      <div class="auth-field"><label>Nova senha (mín. 4 caracteres)</label><input type="password" id="auth-nova-senha" autocomplete="new-password" onkeydown="if(event.key==='Enter')authRedefinirSenha()"></div>
+      <button class="btn btn-p" style="width:100%" onclick="authRedefinirSenha()">Salvar nova senha</button>
+      <button class="btn" style="width:100%;justify-content:center;margin-top:.5rem" onclick="authEnviarReset(true)">Reenviar código</button>
+      <button class="btn" style="width:100%;justify-content:center;margin-top:.5rem" onclick="authMostrarAba('login')">← Voltar ao login</button>
     </div>
 
     <div id="auth-msg"></div>
@@ -1882,9 +1901,15 @@ function authMostrarAba(aba) {
   document.getElementById('auth-form-registro').style.display = aba==='registro' ? '' : 'none';
   var ver = document.getElementById('auth-form-verificar');
   if (ver) ver.style.display = aba==='verificar' ? '' : 'none';
-  // esconde as abas quando está na tela de verificação
-  document.querySelector('.auth-tabs').style.display = aba==='verificar' ? 'none' : '';
-  if (aba!=='verificar') document.getElementById('auth-msg').textContent = '';
+  var esq = document.getElementById('auth-form-esqueci');
+  if (esq) esq.style.display = aba==='esqueci' ? '' : 'none';
+  var nova = document.getElementById('auth-form-nova');
+  if (nova) nova.style.display = aba==='nova' ? '' : 'none';
+  // esconde as abas quando está numa tela de fluxo (verificação/redefinição)
+  var fluxo = (aba==='verificar' || aba==='esqueci' || aba==='nova');
+  document.querySelector('.auth-tabs').style.display = fluxo ? 'none' : '';
+  if (fluxo) { document.getElementById('auth-form-login').style.display='none'; document.getElementById('auth-form-registro').style.display='none'; }
+  if (aba!=='verificar' && aba!=='nova') document.getElementById('auth-msg').textContent = '';
   document.getElementById('auth-reativar').style.display = 'none';
   if (aba==='registro' && typeof setRegTipo==='function') setRegTipo(_regTipo);
 }
@@ -1911,6 +1936,51 @@ async function authVerificarEmail() {
     var u=_verUsuario;
     setTimeout(function(){ authMostrarAba('login'); var lu=document.getElementById('auth-login-usuario'); if(lu) lu.value=u; document.getElementById('auth-login-senha').focus(); }, 1200);
   } catch(e) { msg.textContent='Erro: '+e.message; msg.style.color='var(--red)'; }
+}
+// ── esqueci minha senha ──
+var _resetQuem = '';
+function authAbrirEsqueci(){
+  authMostrarAba('esqueci');
+  // já leva o que a pessoa digitou no login
+  var lu=document.getElementById('auth-login-usuario'), eu=document.getElementById('auth-esq-usuario');
+  if(eu){ eu.value=(lu&&lu.value)?lu.value.trim():''; setTimeout(function(){eu.focus();},100); }
+}
+async function authEnviarReset(reenviando){
+  var alvo = reenviando ? _resetQuem : (document.getElementById('auth-esq-usuario').value||'').trim();
+  var msg = document.getElementById('auth-msg');
+  if(!alvo){ msg.textContent='Digite seu usuário ou e-mail.'; msg.style.color='var(--red)'; return; }
+  msg.textContent='Enviando...'; msg.style.color='var(--amber)';
+  try{
+    var r=await fetch(BACKEND+'/api/auth/esqueci',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usuario:alvo})});
+    var d=await r.json();
+    if(!r.ok){ msg.textContent='✗ '+(d.error||'Não foi possível enviar.'); msg.style.color='var(--red)'; return; }
+    _resetQuem = alvo;
+    var q=document.getElementById('auth-nova-quem'); if(q) q.textContent=(d.usuario||alvo);
+    authMostrarAba('nova');
+    var m2=document.getElementById('auth-msg');
+    m2.textContent='✓ Se existir uma conta com esse dado, o código foi enviado por e-mail (confira o spam).';
+    m2.style.color='var(--green)';
+    setTimeout(function(){ var c=document.getElementById('auth-nova-codigo'); if(c) c.focus(); },120);
+  }catch(e){ msg.textContent='Erro: '+e.message; msg.style.color='var(--red)'; }
+}
+async function authRedefinirSenha(){
+  var codigo=(document.getElementById('auth-nova-codigo').value||'').trim();
+  var senha=document.getElementById('auth-nova-senha').value||'';
+  var msg=document.getElementById('auth-msg');
+  if(codigo.length!==6){ msg.textContent='Digite os 6 dígitos do código.'; msg.style.color='var(--red)'; return; }
+  if(senha.length<4){ msg.textContent='A nova senha precisa ter pelo menos 4 caracteres.'; msg.style.color='var(--red)'; return; }
+  msg.textContent='Salvando...'; msg.style.color='var(--amber)';
+  try{
+    var r=await fetch(BACKEND+'/api/auth/redefinir',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({usuario:_resetQuem,codigo:codigo,senha:senha})});
+    var d=await r.json();
+    if(!r.ok){ msg.textContent='✗ '+(d.error||'Não foi possível redefinir.'); msg.style.color='var(--red)'; return; }
+    var user=d.usuario||_resetQuem;
+    authMostrarAba('login');
+    var lu=document.getElementById('auth-login-usuario'); if(lu) lu.value=user;
+    var m2=document.getElementById('auth-msg');
+    m2.textContent='✓ Senha alterada! Entre com a nova senha.'; m2.style.color='var(--green)';
+    setTimeout(function(){ var s=document.getElementById('auth-login-senha'); if(s) s.focus(); },120);
+  }catch(e){ msg.textContent='Erro: '+e.message; msg.style.color='var(--red)'; }
 }
 async function authReenviarEmail() {
   var msg = document.getElementById('auth-msg');

@@ -1125,7 +1125,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/pagamento/webhook', '/api/escala/dados']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/pacotes/apagar', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/admin/conta', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -1217,6 +1217,74 @@ const server = http.createServer(async (req, res) => {
     await setUsuarios(lista);
     if (!(r && r.ok)) return json(res, 502, { error: 'Não foi possível reenviar o e-mail agora.' });
     return json(res, 200, { ok: true });
+  }
+
+  // ─── AUTENTICAÇÃO: esqueci minha senha — envia código por e-mail ───────────
+  if (req.method === 'POST' && pathname === '/api/auth/esqueci') {
+    const body = await readBody(req);
+    const busca = String(body.usuario || '').trim().toLowerCase();
+    if (!busca) return json(res, 400, { error: 'Informe seu usuário ou e-mail' });
+    if (!EMAIL_ATIVO) return json(res, 503, { error: 'Redefinição por e-mail não está configurada. Fale com o suporte.' });
+    const lista = await getUsuarios();
+    // aceita usuário OU e-mail
+    const u = lista.find(x => x.usuario === busca || (x.email && x.email.toLowerCase() === busca));
+    // resposta sempre igual (não revela se a conta existe)
+    const respostaGenerica = { ok: true, enviado: true };
+    if (!u || !u.email || !emailValido(u.email)) {
+      console.log(`[senha] pedido de reset sem conta/e-mail válido: ${busca.substring(0,40)}`);
+      return json(res, 200, respostaGenerica);
+    }
+    // limite simples: 1 pedido por minuto por conta
+    if (u.senhaCodigoExp && (u.senhaCodigoExp - EMAIL_CODIGO_VALIDADE_MS) > Date.now() - 60000) {
+      return json(res, 200, { ...respostaGenerica, jaEnviado: true });
+    }
+    const codigo = gerarCodigo6();
+    u.senhaCodigoHash = hashCodigo(codigo);
+    u.senhaCodigoExp = Date.now() + EMAIL_CODIGO_VALIDADE_MS;
+    u.senhaCodigoTentativas = 0;
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:460px;margin:0 auto;padding:24px;background:#0e1424;color:#e8ecf3;border-radius:12px">
+        <div style="font-size:20px;font-weight:700;letter-spacing:1px;margin-bottom:8px">PACK<span style="color:#4f8ef7">SCAN</span></div>
+        <p style="color:#aab3c5">Recebemos um pedido para <strong>redefinir a senha</strong> da conta <strong>${u.usuario}</strong>. Use o código abaixo:</p>
+        <div style="font-size:34px;font-weight:800;letter-spacing:8px;color:#4f8ef7;text-align:center;margin:18px 0">${codigo}</div>
+        <p style="color:#7b869c;font-size:13px">O código vale por 15 minutos. Se não foi você que pediu, ignore este e-mail — sua senha continua a mesma.</p>
+      </div>`;
+    const envio = await enviarEmailBrevo(u.email, 'Redefinir senha PackScan: ' + codigo, html);
+    await setUsuarios(lista);
+    if (!(envio && envio.ok)) console.error('[senha] falha ao enviar e-mail de reset:', envio && (envio.body || envio.motivo));
+    console.log(`[senha] código de reset enviado para ${u.usuario}`);
+    return json(res, 200, { ...respostaGenerica, usuario: u.usuario });
+  }
+
+  // ─── AUTENTICAÇÃO: redefinir a senha com o código ──────────────────────────
+  if (req.method === 'POST' && pathname === '/api/auth/redefinir') {
+    const body = await readBody(req);
+    const busca = String(body.usuario || '').trim().toLowerCase();
+    const codigo = String(body.codigo || '').trim();
+    const senhaNova = String(body.senha || '');
+    if (senhaNova.length < 4) return json(res, 400, { error: 'A nova senha precisa ter pelo menos 4 caracteres' });
+    const lista = await getUsuarios();
+    const u = lista.find(x => x.usuario === busca || (x.email && x.email.toLowerCase() === busca));
+    if (!u || !u.senhaCodigoHash || !u.senhaCodigoExp) return json(res, 400, { error: 'Código inválido ou expirado. Peça um novo.' });
+    if (Date.now() > u.senhaCodigoExp) {
+      delete u.senhaCodigoHash; delete u.senhaCodigoExp; await setUsuarios(lista);
+      return json(res, 400, { error: 'Código expirado. Peça um novo.' });
+    }
+    u.senhaCodigoTentativas = (u.senhaCodigoTentativas || 0) + 1;
+    if (u.senhaCodigoTentativas > 6) {
+      delete u.senhaCodigoHash; delete u.senhaCodigoExp; await setUsuarios(lista);
+      return json(res, 429, { error: 'Muitas tentativas erradas. Peça um novo código.' });
+    }
+    if (hashCodigo(codigo) !== u.senhaCodigoHash) {
+      await setUsuarios(lista);
+      return json(res, 400, { error: 'Código incorreto.' });
+    }
+    u.senhaHash = hashSenha(senhaNova);
+    delete u.senhaCodigoHash; delete u.senhaCodigoExp; delete u.senhaCodigoTentativas;
+    u.emailVerificado = true; // quem recebeu o código no e-mail comprova que o e-mail é dele
+    await setUsuarios(lista);
+    console.log(`[senha] redefinida: ${u.usuario}`);
+    return json(res, 200, { ok: true, usuario: u.usuario });
   }
 
   if (req.method === 'POST' && pathname === '/api/auth/login') {
