@@ -108,10 +108,26 @@ tr:hover td{background:rgba(255,255,255,.02)}
 #auth-bg .authroute circle{fill:#5c9bff}
 @keyframes authdash{to{stroke-dashoffset:-72}}
 @media(prefers-reduced-motion:reduce){#auth-bg .authroute .live{animation:none}}
-#auth-bg .brandmark{position:absolute;top:26px;left:28px;z-index:1;font-family:'IBM Plex Mono',monospace;font-weight:800;font-size:19px;letter-spacing:.02em;color:#eef3fa}
+#auth-bg .brandmark{position:absolute;top:26px;left:28px;z-index:1;font-family:'IBM Plex Mono',monospace;font-weight:800;font-size:28px;letter-spacing:.02em;color:#eef3fa}
 #auth-bg .brandmark span{color:#5c9bff}
+/* rodapé com os números (igual à apresentação) */
+#auth-bg .authstrip{position:absolute;left:0;right:0;bottom:0;z-index:1;background:rgba(17,29,43,.82);backdrop-filter:blur(4px);
+  border-top:1px solid #1b2a3b;display:grid;grid-template-columns:repeat(4,1fr);gap:1px}
+#auth-bg .authstrip .st{padding:18px 20px;position:relative}
+#auth-bg .authstrip .st + .st::before{content:"";position:absolute;left:0;top:18px;bottom:18px;width:1px;background:#1e2e40}
+#auth-bg .authstrip .n{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:24px;color:#fff;line-height:1}
+#auth-bg .authstrip .n small{color:#38d08c;font-size:17px}
+#auth-bg .authstrip .l{font-size:11.5px;color:#8fa0b3;margin-top:5px;line-height:1.35;max-width:24ch}
+@media(max-width:820px){
+  #auth-bg .authstrip{grid-template-columns:1fr 1fr}
+  #auth-bg .authstrip .st{padding:12px 14px}
+  #auth-bg .authstrip .n{font-size:19px}
+  #auth-bg .authstrip .l{font-size:10.5px}
+  #auth-bg .brandmark{font-size:22px;top:18px;left:18px}
+}
+@media(max-height:700px){#auth-bg .authstrip{display:none}}
 .auth-box{position:relative;z-index:1;background:rgba(24,28,39,.92);backdrop-filter:blur(6px);border:1px solid #2c4059;border-radius:var(--radius-lg);padding:2rem;width:380px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.5)}
-.auth-box .logo{text-align:center;margin-bottom:1.5rem;font-size:18px}
+.auth-box .logo{text-align:center;margin-bottom:1.5rem;font-size:30px;font-weight:800;letter-spacing:.02em}
 .auth-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:var(--bg3);border-radius:var(--radius);padding:3px}
 .auth-tabs button{flex:1;background:none;border:none;color:var(--text2);padding:7px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:13px}
 .auth-tabs button.active{background:var(--accent2);color:#fff}
@@ -258,6 +274,28 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .home-head .t{flex:1}.home-head .t b{font-size:19px;letter-spacing:-.02em;display:block}.home-head .t span{font-size:12.5px;color:var(--text2)}
 .home-chip{font-size:11.5px;font-weight:600;color:var(--accent);background:var(--accent-soft,rgba(79,142,247,.14));border:1px solid rgba(79,142,247,.3);padding:5px 11px;border-radius:999px}
 .home-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+/* ── DESKTOP: aproveita a largura da tela em vez de ficar igual ao celular ── */
+@media(min-width:1024px){
+  #home{max-width:1180px;padding:22px 28px 40px}
+  .home-hero{height:380px;margin-bottom:22px}
+  .home-grid{grid-template-columns:repeat(4,1fr);gap:14px}
+  .hact{padding:20px 18px;border-radius:18px}
+  .hact svg{width:28px;height:28px}
+  .hact .lb{font-size:16px}
+  .hact .sub{font-size:12.5px}
+  /* os botões largos deixam de ocupar a linha inteira: 2 por linha */
+  .hact.wide{grid-column:span 2}
+  .home-head .t b{font-size:23px}
+  /* lista de pacotes em duas colunas, com o mapa maior acima */
+  #home-lista{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .page{padding:1.8rem 2.4rem;max-width:1180px;margin:0 auto}
+  .auth-box{width:420px}
+}
+@media(min-width:1400px){
+  #home{max-width:1320px}
+  #home-lista{grid-template-columns:repeat(3,1fr)}
+  .page{max-width:1320px}
+}
 .hact{position:relative;overflow:hidden;background:var(--accent2);border:1px solid var(--accent);color:#fff;border-radius:16px;padding:15px 14px;cursor:pointer;
   display:flex;flex-direction:column;gap:9px;align-items:flex-start;text-align:left;font-family:var(--sans);transition:transform .1s,filter .1s;box-shadow:0 10px 22px -16px var(--accent)}
 .hact:hover{filter:brightness(1.08)} .hact:active{transform:scale(.975)}
@@ -318,6 +356,12 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <circle cx="470" cy="350" r="5"/><circle cx="900" cy="190" r="5"/><circle cx="240" cy="300" r="4"/>
   </svg>
   <div class="brandmark">PACK<span>SCAN</span></div>
+  <div class="authstrip">
+    <div class="st"><div class="n">99<small>%</small></div><div class="l">dos endereços resolvidos na hora, sem custo</div></div>
+    <div class="st"><div class="n">3 dias</div><div class="l">de teste grátis, sem cartão</div></div>
+    <div class="st"><div class="n">R$ 0</div><div class="l">de app: roda direto no navegador</div></div>
+    <div class="st"><div class="n">100%</div><div class="l">em português e pago em real</div></div>
+  </div>
   <div class="auth-box">
     <div class="logo">PACK<span style="color:var(--text2)">SCAN</span></div>
     <div class="auth-tabs">
@@ -575,7 +619,8 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <div style="flex:1;font-size:16px;font-weight:600;color:var(--text)">Indique e ganhe 🎁</div>
       <button class="btn btn-sm" onclick="indicarFechar()">✕</button>
     </div>
-    <div style="font-size:13px;color:var(--text2);margin-bottom:1rem">Compartilhe seu link. Quem assinar por ele ganha <strong style="color:var(--green)">20% de desconto</strong>, e você ganha <strong style="color:var(--green)">20% acumulativo</strong> — a cada <strong>5 assinantes</strong>, <strong>1 mês grátis</strong>.</div>
+    <div style="font-size:13px;color:var(--text2);margin-bottom:.6rem">Compartilhe seu link. Quem assinar por ele ganha <strong style="color:var(--green)">20% de desconto</strong>, e você ganha <strong style="color:var(--green)">20% acumulativo</strong> — a cada <strong>5 assinantes</strong>, <strong>1 mês grátis</strong>.</div>
+    <div id="indicar-tipo" style="font-size:12px;color:var(--amber);margin-bottom:1rem"></div>
     <label style="font-size:11px;color:var(--text3)">Seu link de indicação</label>
     <div style="display:flex;gap:6px;margin:4px 0 .8rem">
       <input type="text" id="indicar-link" readonly style="flex:1;font-size:12px;font-family:var(--mono)">
@@ -694,6 +739,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <button class="hact" onclick="abrirRoteirizar()"><svg viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.4"/><circle cx="18" cy="5" r="2.4"/><path d="M8 18.5C13 17 6 8 16 6.2" stroke-linecap="round"/></svg><span class="lb">Roteirizar</span><span class="sub" id="home-rot-sub">automático</span></button>
     <button class="hact wide ghost" onclick="homeBaixar()"><svg viewBox="0 0 24 24"><path d="M12 3v12M12 15l-4-4M12 15l4-4M5 19h14" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="txt"><span class="lb">Baixar planilha do motorista</span><span class="sub">Excel por rota, na ordem</span></span></button>
     <button class="hact wide scan" onclick="goTab(5)"><svg viewBox="0 0 24 24"><path d="M4 7V6a2 2 0 0 1 2-2h1M17 4h1a2 2 0 0 1 2 2v1M20 17v1a2 2 0 0 1-2 2h-1M7 20H6a2 2 0 0 1-2-2v-1" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 8v8M10 8v8M13 8v8M16.5 8v8" stroke-linecap="round"/></svg><span class="txt"><span class="lb">Bipar pela câmera</span><span class="sub">separar pacotes por rota</span></span></button>
+    <button class="hact wide ghost empresa-only" id="btn-bipar-codigo" style="display:none" onclick="goTab(2)"><svg viewBox="0 0 24 24"><path d="M4 7v10M7 7v10M10.5 7v10M14 7v10M17.5 7v10M20 7v10" stroke-linecap="round"/></svg><span class="txt"><span class="lb">Bipar pelo código</span><span class="sub">leitor/teclado · imprime etiqueta automática</span></span></button>
   </div>
 
   <!-- lista de todos os pacotes (editável) -->
@@ -1745,6 +1791,10 @@ async function corrExcluir(cacheKey){
 var _indicarLink = '';
 function indicarAbrir() {
   document.getElementById('indicar-bg').style.display = 'flex';
+  var tel=document.getElementById('indicar-tipo');
+  if(tel) tel.innerHTML = (AUTH_TIPO==='empresa')
+    ? '⚠ Seu código vale para indicar <strong>outras empresas</strong> (contas de empresa).'
+    : '⚠ Seu código vale para indicar <strong>outros motoristas</strong> (contas de motorista).';
   document.getElementById('indicar-stats').innerHTML = 'Carregando...';
   document.getElementById('indicar-link').value = '';
   apiFetch(BACKEND + '/api/referral').then(function(r){ return r.json(); }).then(function(d){
@@ -1871,6 +1921,8 @@ function authAplicarPermissoes() {
   atualizarHeaderInfo();
   avisoPlanoVencendo();
   mostrarAvisoChave();
+  var emps = document.querySelectorAll('.empresa-only');
+  for (var j=0;j<emps.length;j++) emps[j].style.display = (AUTH_TIPO==='empresa'||AUTH_ADMIN) ? '' : 'none';
   var els = document.querySelectorAll('.admin-only');
   for (var i=0;i<els.length;i++) els[i].style.display = AUTH_ADMIN ? '' : 'none';
 }
@@ -2032,6 +2084,9 @@ async function authRegistrar() {
     var r = await fetch(BACKEND+'/api/auth/registrar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({usuario:usuario,email:email,senha:senha,ref:ref,tipoConta:_regTipo}) });
     var d = await r.json();
     if (!r.ok) { msg.textContent='✗ '+(d.error||'Erro ao registrar.'); msg.style.color='var(--red)'; return; }
+    if (d.refIgnorado) {
+      alert('O código de indicação usado é de outro tipo de conta, então não foi aplicado.\n\nCódigo de motorista só vale para conta de motorista, e de empresa só para conta de empresa. Sua conta foi criada normalmente.');
+    }
     if (d.precisaEmail) {
       // manda pra tela de código
       authAbrirVerificacao(usuario, email);
@@ -4570,10 +4625,60 @@ function homeMapPlot(preservarVista){
 }
 function homeEditar(tracking){ try{ if(hmap) hmap.closePopup(); }catch(e){} abrirModal(tracking); }
 
+// ── ZONAS SALVAS (empresa): guarda os polígonos e reaplica em outro dia ──
+function empresaPodeZonas(){ return AUTH_TIPO==='empresa' || AUTH_ADMIN; }
+async function zonasSalvar(){
+  if(!(typeof rotas!=='undefined' && rotas.length)){ alert('Desenhe ou gere as rotas primeiro.'); return; }
+  var zonas=rotas.map(function(r){
+    var ll=(r.layer&&r.layer.getLatLngs)?r.layer.getLatLngs()[0].map(function(x){return [x.lat,x.lng];}):(r.latlngs||[]);
+    return { nome:r.motorista||('Rota '+r.id), cor:r.cor, latlngs:ll };
+  }).filter(function(z){ return z.latlngs.length>=3; });
+  if(!zonas.length){ alert('Nenhuma rota tem área desenhada no mapa pra salvar.'); return; }
+  if(!confirm('Salvar '+zonas.length+' área(s) de rota? Elas ficam guardadas pra você reaplicar em outros dias.')) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/zonas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({zonas:zonas})});
+    var d=await r.json();
+    if(r.ok) alert('✓ '+(d.total||zonas.length)+' área(s) salva(s). Use "Aplicar áreas salvas" nos próximos dias.');
+    else alert('✗ '+(d.error||'Erro ao salvar.'));
+  }catch(e){ alert('Erro: '+e.message); }
+}
+async function zonasAplicar(){
+  if(!pacotes.filter(function(p){return p.lat&&p.lng;}).length){ alert('Geocodifique os pacotes primeiro.'); return; }
+  try{
+    var r=await apiFetch(BACKEND+'/api/zonas'); var d=await r.json();
+    var zonas=d.zonas||[];
+    if(!zonas.length){ alert('Você ainda não salvou nenhuma área. Desenhe as rotas e use "Salvar áreas das rotas".'); return; }
+    var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+    if(zonas.length>lim){ alert('Você salvou '+zonas.length+' áreas, mas seu plano permite '+lim+'. Vou aplicar as '+lim+' primeiras.'); zonas=zonas.slice(0,lim); }
+    if(!confirm('Aplicar '+zonas.length+' área(s) salva(s)? Os pacotes serão redistribuídos pelas áreas.')) return;
+    pacotes.forEach(function(p){ p.rota=null; p.numNaRota=null; });
+    rotas=zonas.map(function(z,i){ return {id:i+1, motorista:z.nome, cor:z.cor||CORES[i%CORES.length], layer:null, latlngs:z.latlngs, pkgs:[]}; });
+    pacotes.forEach(function(p){
+      if(!(p.lat&&p.lng)) return;
+      for(var i=0;i<rotas.length;i++){ if(pontoDentro(rotas[i].latlngs,p.lat,p.lng)){ p.rota=rotas[i].id; break; } }
+    });
+    rotas.forEach(function(r2){ r2.pkgs=pacotes.filter(function(p){return p.rota===r2.id;}); r2.pkgs.forEach(function(p,i){ p.numNaRota=i+1; }); });
+    var fora=pacotes.filter(function(p){ return p.lat&&!p.rota; }).length;
+    try{ persistirLocal(); }catch(e){}
+    renderHome(); homeMapPlot(true);
+    try{ if(typeof renderListaPacotes==='function') renderListaPacotes(); }catch(e){}
+    alert('✓ Áreas aplicadas.'+(fora?(' '+fora+' pacote(s) ficaram fora das áreas — ajuste no mapa.'):''));
+  }catch(e){ alert('Erro: '+e.message); }
+}
+
 // ── DESENHAR ROTA MANUAL no mapa da home (+✏️) ──
 var _hdrawing=false;
 function homeDesenharRota(){
   if(!pacotes.filter(function(p){return p.lat&&p.lng;}).length){ alert('Geocodifique os pacotes primeiro pra desenhar rotas.'); return; }
+  // respeita o limite de rotas do plano também no desenho manual
+  var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+  var jaTem=(typeof rotas!=='undefined'&&rotas)?rotas.length:0;
+  if(jaTem>=lim){
+    alert(AUTH_TIPO==='motorista'
+      ? 'O plano motorista permite no máximo 2 rotas. Para desenhar mais, conheça o plano empresa.'
+      : 'Seu plano permite até '+lim+' rotas. Remova uma rota antes de criar outra.');
+    return;
+  }
   if(_hdrawing) return;
   homeMapInit(); if(!hmap){ homeMapPlot(); }
   var h=document.querySelector('.home-hero'); if(h && !h.classList.contains('hero-full')) heroFull();
@@ -5221,18 +5326,42 @@ function fecharRoteirizar(){ document.getElementById('rot-bg').classList.remove(
 function renderMotBtns(){
   var el=document.getElementById('rot-motsel'); el.innerHTML='';
   var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
-  var opcoes=[]; for(var k=1;k<=Math.min(lim,12);k++) opcoes.push(k);
-  opcoes.forEach(function(n){ var b=document.createElement('button'); b.textContent=n; b.dataset.n=n; b.onclick=function(){selMot(n);}; el.appendChild(b); });
+  var emp=(AUTH_TIPO==='empresa'||AUTH_ADMIN);
+  // empresa: botões 1..3 + campo pra digitar quantas quiser (até o limite do plano)
+  var maxBtn = emp ? Math.min(3,lim) : Math.min(lim,12);
+  for(var k=1;k<=maxBtn;k++){ (function(n){
+    var b=document.createElement('button'); b.textContent=n; b.dataset.n=n; b.onclick=function(){selMot(n);}; el.appendChild(b);
+  })(k); }
+  if(emp && lim>3){
+    var w=document.createElement('span');
+    w.style.cssText='display:inline-flex;align-items:center;gap:6px;margin-left:6px';
+    w.innerHTML='<input id="rot-nqtd" type="text" inputmode="numeric" placeholder="+" title="digite quantas rotas" '
+      +'style="width:62px;text-align:center;padding:8px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-family:var(--mono)">';
+    el.appendChild(w);
+    var inp=w.querySelector('input');
+    var aplica=function(){ var v=parseInt(inp.value,10); if(!v||v<1) return;
+      if(v>lim){ alert('Seu plano permite até '+lim+' rotas.'); inp.value=lim; v=lim; }
+      selMot(v); };
+    inp.addEventListener('change',aplica);
+    inp.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); aplica(); } });
+  }
   // aviso do limite
   var aviso=document.getElementById('rot-limite');
   if(aviso){
     if(AUTH_TIPO==='motorista') aviso.innerHTML='Plano motorista: até <b>2 rotas</b>. Para mais rotas, use o plano empresa.';
-    else aviso.innerHTML='Seu plano permite até <b>'+lim+' rotas</b>.';
+    else aviso.innerHTML='Seu plano permite até <b>'+lim+' rotas</b>'+(lim>3?' — use o campo pra digitar quantas quiser.':'.');
     aviso.style.display='block';
   }
 }
 function dividirIgual(n){ var t=geoTotal(), base=Math.floor(t/n), rem=t%n, a=[]; for(var i=0;i<n;i++) a.push(base+(i<rem?1:0)); return a; }
-function selMot(n){ _nMot=n; document.querySelectorAll('#rot-motsel button').forEach(function(b){ b.classList.toggle('on',+b.dataset.n===n); }); _qs=dividirIgual(n); renderRotPreview(); }
+function selMot(n){
+  var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+  if(n>lim){ alert(AUTH_TIPO==='motorista'?'O plano motorista permite até 2 rotas.':'Seu plano permite até '+lim+' rotas.'); n=lim; }
+  _nMot=n;
+  document.querySelectorAll('#rot-motsel button').forEach(function(b){ b.classList.toggle('on',+b.dataset.n===n); });
+  var inp=document.getElementById('rot-nqtd'); if(inp) inp.value = (n>3? n : '');
+  _qs=dividirIgual(n); renderRotPreview();
+}
 function renderRotPreview(){
   var n=_nMot, t=geoTotal(), html='';
   document.getElementById('rot-plbl').textContent = n===1?'pacotes':'pacotes por rota · ajuste quanto cada um leva';
@@ -5284,6 +5413,8 @@ async function confirmarRoteirizar(){
 function abrirMenu(){
   var itens=[
     {t:'Início e fim da rota', s:'ponto de partida e chegada', act:'abrirPontos()', ic:'<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/>'},
+    {t:'Salvar áreas das rotas', s:'guarda os polígonos do mapa', act:'zonasSalvar()', empresa:true, ic:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8" stroke-linecap="round"/>'},
+    {t:'Aplicar áreas salvas', s:'redistribui os pacotes pelas áreas', act:'zonasAplicar()', empresa:true, ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
     {t:'Reprocessar geocodificação', s:'refaz tudo ignorando o cache', act:'homeForcarGeo()', ic:'<path d="M20 11A8 8 0 1 0 6.3 6.3M20 4v4h-4" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Testar cobertura (banco local)', s:'só CNEFE, sem Google', act:'testarCoberturaLocal()', admin:true, ic:'<path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Regiões CEP', s:'faixas de CEP por bairro', act:'goTab(4)', ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
@@ -5304,6 +5435,7 @@ function abrirMenu(){
   itens.forEach(function(m){
     if(m.sep){ html+='<div style="height:8px"></div>'; return; }
     if(m.admin && !AUTH_ADMIN) return;
+    if(m.empresa && !empresaPodeZonas()) return;
     html+='<div class="mitem'+(m.danger?' danger':'')+'" onclick="fecharMenu(); '+m.act+'">'
       +'<span class="mi"><svg viewBox="0 0 24 24">'+m.ic+'</svg></span>'
       +'<span class="mt"><b>'+m.t+'</b>'+(m.s?'<span>'+m.s+'</span>':'')+'</span>'
@@ -5333,6 +5465,14 @@ if ('serviceWorker' in navigator) {
     // já mostra a aba de cadastro pra quem veio pelo link
     if (m && typeof authMostrarAba === 'function') { try { authMostrarAba('registrar'); } catch(e){} }
   }
+})();
+// links diretos: /motoristas e /empresas abrem a página de planos correspondente
+(function(){
+  var p = (location.pathname||'').toLowerCase().replace(/\/+$/,'');
+  var alvo = /^\/(motoristas?)$/.test(p) ? 'motorista' : (/^\/(empresas?)$/.test(p) ? 'empresa' : null);
+  if (!alvo) return;
+  try { history.replaceState(null,'','/'); } catch(e){}
+  setTimeout(function(){ if (typeof abrirPlanos==='function') abrirPlanos(alvo); }, 60);
 })();
 authBootstrap();
 </script>

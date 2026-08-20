@@ -487,7 +487,9 @@ async function confirmarIndicacao(usuarioPagante) {
   u.indicacaoUsada = true;       // já aproveitou o desconto de 20%
   u.indicacaoCreditada = true;   // não credita o padrinho duas vezes
   const padrinho = acharPorRefCode(lista, u.indicadoPor) || lista.find(x => x.usuario === u.indicadoPor);
-  if (padrinho && padrinho.usuario !== u.usuario) {
+  // só credita se for do MESMO tipo de conta (motorista↔motorista, empresa↔empresa)
+  const mesmoTipo = padrinho && ((padrinho.tipoConta || 'motorista') === (u.tipoConta || 'motorista'));
+  if (padrinho && padrinho.usuario !== u.usuario && mesmoTipo) {
     padrinho.refTotal = (padrinho.refTotal || 0) + 1;         // histórico total
     padrinho.refPendentes = (padrinho.refPendentes || 0) + 1; // rumo ao próximo mês grátis
     while (padrinho.refPendentes >= INDICACOES_POR_MES_GRATIS) {
@@ -1134,9 +1136,12 @@ const server = http.createServer(async (req, res) => {
     // código de indicação (opcional): guarda quem indicou pra aplicar os 20% no 1º pagamento
     const refCode = String(body.ref || '').trim().toUpperCase();
     const padrinho = refCode ? acharPorRefCode(lista, refCode) : null;
-    const indicadoPor = (padrinho && padrinho.usuario !== usuario) ? padrinho.refCode : null;
     // tipo de conta: 'empresa' (frota, várias rotas) ou 'motorista' (individual, até 2 rotas)
     const tipoConta = body.tipoConta === 'empresa' ? 'empresa' : 'motorista';
+    // indicação só vale entre contas DO MESMO TIPO (motorista indica motorista, empresa indica empresa)
+    const mesmoTipo = padrinho && ((padrinho.tipoConta || 'motorista') === tipoConta);
+    const indicadoPor = (padrinho && padrinho.usuario !== usuario && mesmoTipo) ? padrinho.refCode : null;
+    const refIgnorado = !!(padrinho && !mesmoTipo);
     // cadastro automático: aprovado na hora (sem admin). O e-mail confirmado é o gate.
     const novo = {
       usuario, senhaHash: hashSenha(senha),
@@ -1159,7 +1164,7 @@ const server = http.createServer(async (req, res) => {
     lista.push(novo);
     await setUsuarios(lista);
     console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ` (auto-aprovado, teste ${TRIAL_DIAS} dias)`}${novo.emailVerificado ? '' : ' — aguardando confirmação de e-mail'}`);
-    return json(res, 200, { ok: true, pendente: false, trialDias: TRIAL_DIAS, precisaEmail: EMAIL_ATIVO && !novo.emailVerificado, emailEnviado });
+    return json(res, 200, { ok: true, pendente: false, trialDias: TRIAL_DIAS, refIgnorado, precisaEmail: EMAIL_ATIVO && !novo.emailVerificado, emailEnviado });
   }
 
   // ─── AUTENTICAÇÃO: confirma o código de e-mail ─────────────────────────────
@@ -1939,7 +1944,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // página principal
-  if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
+  // links diretos pras páginas de planos: /motoristas e /empresas (servem o mesmo app,
+  // que abre a página de planos correspondente ao carregar)
+  if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html'
+      || pathname === '/motoristas' || pathname === '/motorista'
+      || pathname === '/empresas' || pathname === '/empresa')) {
     fs.readFile(path.join(__dirname, 'packscan.html'), (err, data) => {
       if (err) { res.writeHead(404); res.end('Not found'); return; }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
@@ -2191,6 +2200,25 @@ const server = http.createServer(async (req, res) => {
       ? `${rua}, ${complemento}, ${cidadeFinal}, SC, Brasil`
       : `${complemento}, ${cidadeFinal}, SC, Brasil`;
     return json(res, 200, { enderecoNormalizado, rua, complemento, cidade: cidadeFinal, cep: cepFmt });
+  }
+
+  // ─── ZONAS SALVAS (polígonos de rota reutilizáveis) — por usuário ─────────
+  // empresa desenha as áreas uma vez e reaproveita todo dia.
+  if (req.method === 'GET' && pathname === '/api/zonas') {
+    const z = await supabaseGet('zonas:' + req.usuarioAtual.usuario);
+    return json(res, 200, { zonas: Array.isArray(z) ? z : [] });
+  }
+  if (req.method === 'POST' && pathname === '/api/zonas') {
+    const body = await readBody(req);
+    const zonas = (Array.isArray(body.zonas) ? body.zonas : []).slice(0, 60).map(z => ({
+      nome: String(z.nome || 'Rota').substring(0, 40),
+      cor: String(z.cor || '#4f8ef7').substring(0, 12),
+      latlngs: (Array.isArray(z.latlngs) ? z.latlngs : []).slice(0, 400)
+        .map(p => [Number(p[0]), Number(p[1])]).filter(p => isFinite(p[0]) && isFinite(p[1]))
+    })).filter(z => z.latlngs.length >= 3);
+    await supabaseSet('zonas:' + req.usuarioAtual.usuario, zonas);
+    console.log(`[zonas] ${req.usuarioAtual.usuario}: ${zonas.length} zona(s) salva(s)`);
+    return json(res, 200, { ok: true, total: zonas.length });
   }
 
   // ─── LOOKUP DE CEP (ponto de referência atual, p/ a aba Corrigir CEP) ─────
