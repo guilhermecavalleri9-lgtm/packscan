@@ -2153,6 +2153,25 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { enderecoNormalizado, rua, complemento, cidade: cidadeFinal, cep: cepFmt });
   }
 
+  // ─── ZONAS SALVAS (polígonos de rota reutilizáveis) — por usuário ─────────
+  // empresa desenha as áreas uma vez e reaproveita todo dia.
+  if (req.method === 'GET' && pathname === '/api/zonas') {
+    const z = await supabaseGet('zonas:' + req.usuarioAtual.usuario);
+    return json(res, 200, { zonas: Array.isArray(z) ? z : [] });
+  }
+  if (req.method === 'POST' && pathname === '/api/zonas') {
+    const body = await readBody(req);
+    const zonas = (Array.isArray(body.zonas) ? body.zonas : []).slice(0, 60).map(z => ({
+      nome: String(z.nome || 'Rota').substring(0, 40),
+      cor: String(z.cor || '#4f8ef7').substring(0, 12),
+      latlngs: (Array.isArray(z.latlngs) ? z.latlngs : []).slice(0, 400)
+        .map(p => [Number(p[0]), Number(p[1])]).filter(p => isFinite(p[0]) && isFinite(p[1]))
+    })).filter(z => z.latlngs.length >= 3);
+    await supabaseSet('zonas:' + req.usuarioAtual.usuario, zonas);
+    console.log(`[zonas] ${req.usuarioAtual.usuario}: ${zonas.length} zona(s) salva(s)`);
+    return json(res, 200, { ok: true, total: zonas.length });
+  }
+
   // ─── LOOKUP DE CEP (ponto de referência atual, p/ a aba Corrigir CEP) ─────
   // leve: só resolve o CEP (cache → manual → Google), sem passar pela IA de endereço
   if (req.method === 'POST' && pathname === '/api/cep/lookup') {

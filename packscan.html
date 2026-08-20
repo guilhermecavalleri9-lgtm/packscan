@@ -4600,6 +4600,47 @@ function homeMapPlot(preservarVista){
 }
 function homeEditar(tracking){ try{ if(hmap) hmap.closePopup(); }catch(e){} abrirModal(tracking); }
 
+// ── ZONAS SALVAS (empresa): guarda os polígonos e reaplica em outro dia ──
+function empresaPodeZonas(){ return AUTH_TIPO==='empresa' || AUTH_ADMIN; }
+async function zonasSalvar(){
+  if(!(typeof rotas!=='undefined' && rotas.length)){ alert('Desenhe ou gere as rotas primeiro.'); return; }
+  var zonas=rotas.map(function(r){
+    var ll=(r.layer&&r.layer.getLatLngs)?r.layer.getLatLngs()[0].map(function(x){return [x.lat,x.lng];}):(r.latlngs||[]);
+    return { nome:r.motorista||('Rota '+r.id), cor:r.cor, latlngs:ll };
+  }).filter(function(z){ return z.latlngs.length>=3; });
+  if(!zonas.length){ alert('Nenhuma rota tem área desenhada no mapa pra salvar.'); return; }
+  if(!confirm('Salvar '+zonas.length+' área(s) de rota? Elas ficam guardadas pra você reaplicar em outros dias.')) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/zonas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({zonas:zonas})});
+    var d=await r.json();
+    if(r.ok) alert('✓ '+(d.total||zonas.length)+' área(s) salva(s). Use "Aplicar áreas salvas" nos próximos dias.');
+    else alert('✗ '+(d.error||'Erro ao salvar.'));
+  }catch(e){ alert('Erro: '+e.message); }
+}
+async function zonasAplicar(){
+  if(!pacotes.filter(function(p){return p.lat&&p.lng;}).length){ alert('Geocodifique os pacotes primeiro.'); return; }
+  try{
+    var r=await apiFetch(BACKEND+'/api/zonas'); var d=await r.json();
+    var zonas=d.zonas||[];
+    if(!zonas.length){ alert('Você ainda não salvou nenhuma área. Desenhe as rotas e use "Salvar áreas das rotas".'); return; }
+    var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+    if(zonas.length>lim){ alert('Você salvou '+zonas.length+' áreas, mas seu plano permite '+lim+'. Vou aplicar as '+lim+' primeiras.'); zonas=zonas.slice(0,lim); }
+    if(!confirm('Aplicar '+zonas.length+' área(s) salva(s)? Os pacotes serão redistribuídos pelas áreas.')) return;
+    pacotes.forEach(function(p){ p.rota=null; p.numNaRota=null; });
+    rotas=zonas.map(function(z,i){ return {id:i+1, motorista:z.nome, cor:z.cor||CORES[i%CORES.length], layer:null, latlngs:z.latlngs, pkgs:[]}; });
+    pacotes.forEach(function(p){
+      if(!(p.lat&&p.lng)) return;
+      for(var i=0;i<rotas.length;i++){ if(pontoDentro(rotas[i].latlngs,p.lat,p.lng)){ p.rota=rotas[i].id; break; } }
+    });
+    rotas.forEach(function(r2){ r2.pkgs=pacotes.filter(function(p){return p.rota===r2.id;}); r2.pkgs.forEach(function(p,i){ p.numNaRota=i+1; }); });
+    var fora=pacotes.filter(function(p){ return p.lat&&!p.rota; }).length;
+    try{ persistirLocal(); }catch(e){}
+    renderHome(); homeMapPlot(true);
+    try{ if(typeof renderListaPacotes==='function') renderListaPacotes(); }catch(e){}
+    alert('✓ Áreas aplicadas.'+(fora?(' '+fora+' pacote(s) ficaram fora das áreas — ajuste no mapa.'):''));
+  }catch(e){ alert('Erro: '+e.message); }
+}
+
 // ── DESENHAR ROTA MANUAL no mapa da home (+✏️) ──
 var _hdrawing=false;
 function homeDesenharRota(){
@@ -5347,6 +5388,8 @@ async function confirmarRoteirizar(){
 function abrirMenu(){
   var itens=[
     {t:'Início e fim da rota', s:'ponto de partida e chegada', act:'abrirPontos()', ic:'<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/>'},
+    {t:'Salvar áreas das rotas', s:'guarda os polígonos do mapa', act:'zonasSalvar()', empresa:true, ic:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8" stroke-linecap="round"/>'},
+    {t:'Aplicar áreas salvas', s:'redistribui os pacotes pelas áreas', act:'zonasAplicar()', empresa:true, ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
     {t:'Reprocessar geocodificação', s:'refaz tudo ignorando o cache', act:'homeForcarGeo()', ic:'<path d="M20 11A8 8 0 1 0 6.3 6.3M20 4v4h-4" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Testar cobertura (banco local)', s:'só CNEFE, sem Google', act:'testarCoberturaLocal()', admin:true, ic:'<path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Regiões CEP', s:'faixas de CEP por bairro', act:'goTab(4)', ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
@@ -5367,6 +5410,7 @@ function abrirMenu(){
   itens.forEach(function(m){
     if(m.sep){ html+='<div style="height:8px"></div>'; return; }
     if(m.admin && !AUTH_ADMIN) return;
+    if(m.empresa && !empresaPodeZonas()) return;
     html+='<div class="mitem'+(m.danger?' danger':'')+'" onclick="fecharMenu(); '+m.act+'">'
       +'<span class="mi"><svg viewBox="0 0 24 24">'+m.ic+'</svg></span>'
       +'<span class="mt"><b>'+m.t+'</b>'+(m.s?'<span>'+m.s+'</span>':'')+'</span>'
