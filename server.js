@@ -1939,7 +1939,11 @@ const server = http.createServer(async (req, res) => {
   }
 
   // página principal
-  if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
+  // links diretos pras páginas de planos: /motoristas e /empresas (servem o mesmo app,
+  // que abre a página de planos correspondente ao carregar)
+  if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html'
+      || pathname === '/motoristas' || pathname === '/motorista'
+      || pathname === '/empresas' || pathname === '/empresa')) {
     fs.readFile(path.join(__dirname, 'packscan.html'), (err, data) => {
       if (err) { res.writeHead(404); res.end('Not found'); return; }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
