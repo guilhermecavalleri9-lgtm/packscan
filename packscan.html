@@ -97,9 +97,20 @@ tr:hover td{background:rgba(255,255,255,.02)}
 #modal-bg.show{display:flex}
 .modal-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;width:560px;max-width:95vw;max-height:92vh;overflow-y:auto}
 /* LOGIN */
-#auth-bg{position:fixed;inset:0;background:var(--bg);z-index:10000;display:flex;align-items:center;justify-content:center}
+#auth-bg{position:fixed;inset:0;background:#0a1119;z-index:10000;display:flex;align-items:center;justify-content:center;overflow:hidden}
 #auth-bg.hide{display:none}
-.auth-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-lg);padding:2rem;width:380px;max-width:92vw}
+#auth-bg::before{content:"";position:absolute;inset:0;
+  background:radial-gradient(60% 90% at 88% 8%,rgba(47,109,240,.28),transparent 60%),
+             radial-gradient(50% 70% at 6% 100%,rgba(18,182,115,.14),transparent 60%)}
+#auth-bg .authroute{position:absolute;inset:0;width:100%;height:100%;opacity:.5;pointer-events:none}
+#auth-bg .authroute path{stroke:#3a5a86;stroke-width:1.5;fill:none;stroke-dasharray:5 7}
+#auth-bg .authroute .live{stroke:#5c9bff;stroke-width:2.4;stroke-dasharray:8 10;animation:authdash 3.2s linear infinite}
+#auth-bg .authroute circle{fill:#5c9bff}
+@keyframes authdash{to{stroke-dashoffset:-72}}
+@media(prefers-reduced-motion:reduce){#auth-bg .authroute .live{animation:none}}
+#auth-bg .brandmark{position:absolute;top:26px;left:28px;z-index:1;font-family:'IBM Plex Mono',monospace;font-weight:800;font-size:19px;letter-spacing:.02em;color:#eef3fa}
+#auth-bg .brandmark span{color:#5c9bff}
+.auth-box{position:relative;z-index:1;background:rgba(24,28,39,.92);backdrop-filter:blur(6px);border:1px solid #2c4059;border-radius:var(--radius-lg);padding:2rem;width:380px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.5)}
 .auth-box .logo{text-align:center;margin-bottom:1.5rem;font-size:18px}
 .auth-tabs{display:flex;gap:4px;margin-bottom:1.25rem;background:var(--bg3);border-radius:var(--radius);padding:3px}
 .auth-tabs button{flex:1;background:none;border:none;color:var(--text2);padding:7px;border-radius:6px;cursor:pointer;font-family:var(--sans);font-size:13px}
@@ -301,6 +312,12 @@ tr:hover td{background:rgba(255,255,255,.02)}
 <body>
 
 <div id="auth-bg">
+  <svg class="authroute" viewBox="0 0 1000 520" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+    <path d="M-20 430 C 180 430, 240 300, 420 300 S 700 150, 900 190"/>
+    <path class="live" d="M-20 470 C 200 470, 300 360, 470 350 S 760 240, 1020 250"/>
+    <circle cx="470" cy="350" r="5"/><circle cx="900" cy="190" r="5"/><circle cx="240" cy="300" r="4"/>
+  </svg>
+  <div class="brandmark">PACK<span>SCAN</span></div>
   <div class="auth-box">
     <div class="logo">PACK<span style="color:var(--text2)">SCAN</span></div>
     <div class="auth-tabs">
