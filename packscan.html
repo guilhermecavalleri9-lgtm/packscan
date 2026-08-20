@@ -4596,6 +4596,15 @@ function homeEditar(tracking){ try{ if(hmap) hmap.closePopup(); }catch(e){} abri
 var _hdrawing=false;
 function homeDesenharRota(){
   if(!pacotes.filter(function(p){return p.lat&&p.lng;}).length){ alert('Geocodifique os pacotes primeiro pra desenhar rotas.'); return; }
+  // respeita o limite de rotas do plano também no desenho manual
+  var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+  var jaTem=(typeof rotas!=='undefined'&&rotas)?rotas.length:0;
+  if(jaTem>=lim){
+    alert(AUTH_TIPO==='motorista'
+      ? 'O plano motorista permite no máximo 2 rotas. Para desenhar mais, conheça o plano empresa.'
+      : 'Seu plano permite até '+lim+' rotas. Remova uma rota antes de criar outra.');
+    return;
+  }
   if(_hdrawing) return;
   homeMapInit(); if(!hmap){ homeMapPlot(); }
   var h=document.querySelector('.home-hero'); if(h && !h.classList.contains('hero-full')) heroFull();
@@ -5243,18 +5252,42 @@ function fecharRoteirizar(){ document.getElementById('rot-bg').classList.remove(
 function renderMotBtns(){
   var el=document.getElementById('rot-motsel'); el.innerHTML='';
   var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
-  var opcoes=[]; for(var k=1;k<=Math.min(lim,12);k++) opcoes.push(k);
-  opcoes.forEach(function(n){ var b=document.createElement('button'); b.textContent=n; b.dataset.n=n; b.onclick=function(){selMot(n);}; el.appendChild(b); });
+  var emp=(AUTH_TIPO==='empresa'||AUTH_ADMIN);
+  // empresa: botões 1..3 + campo pra digitar quantas quiser (até o limite do plano)
+  var maxBtn = emp ? Math.min(3,lim) : Math.min(lim,12);
+  for(var k=1;k<=maxBtn;k++){ (function(n){
+    var b=document.createElement('button'); b.textContent=n; b.dataset.n=n; b.onclick=function(){selMot(n);}; el.appendChild(b);
+  })(k); }
+  if(emp && lim>3){
+    var w=document.createElement('span');
+    w.style.cssText='display:inline-flex;align-items:center;gap:6px;margin-left:6px';
+    w.innerHTML='<input id="rot-nqtd" type="text" inputmode="numeric" placeholder="+" title="digite quantas rotas" '
+      +'style="width:62px;text-align:center;padding:8px;border-radius:9px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);font-family:var(--mono)">';
+    el.appendChild(w);
+    var inp=w.querySelector('input');
+    var aplica=function(){ var v=parseInt(inp.value,10); if(!v||v<1) return;
+      if(v>lim){ alert('Seu plano permite até '+lim+' rotas.'); inp.value=lim; v=lim; }
+      selMot(v); };
+    inp.addEventListener('change',aplica);
+    inp.addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); aplica(); } });
+  }
   // aviso do limite
   var aviso=document.getElementById('rot-limite');
   if(aviso){
     if(AUTH_TIPO==='motorista') aviso.innerHTML='Plano motorista: até <b>2 rotas</b>. Para mais rotas, use o plano empresa.';
-    else aviso.innerHTML='Seu plano permite até <b>'+lim+' rotas</b>.';
+    else aviso.innerHTML='Seu plano permite até <b>'+lim+' rotas</b>'+(lim>3?' — use o campo pra digitar quantas quiser.':'.');
     aviso.style.display='block';
   }
 }
 function dividirIgual(n){ var t=geoTotal(), base=Math.floor(t/n), rem=t%n, a=[]; for(var i=0;i<n;i++) a.push(base+(i<rem?1:0)); return a; }
-function selMot(n){ _nMot=n; document.querySelectorAll('#rot-motsel button').forEach(function(b){ b.classList.toggle('on',+b.dataset.n===n); }); _qs=dividirIgual(n); renderRotPreview(); }
+function selMot(n){
+  var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+  if(n>lim){ alert(AUTH_TIPO==='motorista'?'O plano motorista permite até 2 rotas.':'Seu plano permite até '+lim+' rotas.'); n=lim; }
+  _nMot=n;
+  document.querySelectorAll('#rot-motsel button').forEach(function(b){ b.classList.toggle('on',+b.dataset.n===n); });
+  var inp=document.getElementById('rot-nqtd'); if(inp) inp.value = (n>3? n : '');
+  _qs=dividirIgual(n); renderRotPreview();
+}
 function renderRotPreview(){
   var n=_nMot, t=geoTotal(), html='';
   document.getElementById('rot-plbl').textContent = n===1?'pacotes':'pacotes por rota · ajuste quanto cada um leva';
