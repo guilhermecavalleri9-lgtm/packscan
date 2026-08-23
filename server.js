@@ -5,7 +5,8 @@ const path = require('path');
 const url = require('url');
 
 const PORT = process.env.PORT || 3000;
-const GOOGLE_KEY = process.env.GOOGLE_MAPS_KEY || 'AIzaSyCHRl5eRHAfw0-WVEBj0wC5tpbJ81265gk';
+// NUNCA deixe chave fixa no código (o repositório pode vazar). Só variável de ambiente.
+const GOOGLE_KEY = process.env.GOOGLE_MAPS_KEY || '';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY || '';
 const MERCADOPAGO_TOKEN = process.env.MERCADOPAGO_TOKEN || '';
 // pacotes de créditos à venda (1 crédito = 1 requisição). Preço = custo de API × 1,3 (~30% de margem), arredondado.
@@ -577,9 +578,12 @@ function supabaseRequest(method, path, body, extraHeaders) {
 
 // ─── AUTENTICAÇÃO ───────────────────────────────────────────────────────────
 const crypto = require('crypto');
+// Segredo que assina os tokens de login. Se ficasse um valor fixo no código, qualquer
+// pessoa com acesso ao repositório poderia forjar um token de admin. Sem a variável de
+// ambiente, gera um segredo aleatório a cada boot (seguro, mas desloga todo mundo a cada deploy).
 const AUTH_SECRET = process.env.AUTH_SECRET || (() => {
-  console.warn('[auth] AUTH_SECRET não definido — usando segredo de desenvolvimento (tokens somem a cada deploy)');
-  return 'packscan-dev-secret-troque-em-producao';
+  console.warn('[auth] AUTH_SECRET não definido — gerando segredo aleatório (todos serão deslogados a cada deploy). Defina AUTH_SECRET no ambiente!');
+  return crypto.randomBytes(48).toString('hex');
 })();
 const AUTH_USUARIOS_KEY = 'auth:usuarios';
 const TOKEN_VALIDADE_MS = 24 * 60 * 60 * 1000; // 1 dia — login diário obrigatório

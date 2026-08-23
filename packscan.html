@@ -2758,14 +2758,14 @@ async function iniciarGeo(forcar, soLocalArg) {
           var prec=d.precisao==='ROOFTOP'?'📍':d.precisao==='RANGE_INTERPOLATED'?'~':'≈';
           var cls=d.fromCache?'cache':'ok';
           if (d.fromCache) cntCache++; else cntOk++;
-          log.innerHTML='<span class="'+cls+'">'+(d.fromCache?'⚡':'✓')+prec+' '+p.endereco.substring(0,35)+' → '+(d.enderecoFormatado||d.enderecoNormalizado||'').substring(0,50)+'</span><br>'+log.innerHTML;
+          log.innerHTML='<span class="'+cls+'">'+(d.fromCache?'⚡':'✓')+prec+' '+esc(p.endereco.substring(0,35))+' → '+esc((d.enderecoFormatado||d.enderecoNormalizado||'').substring(0,50))+'</span><br>'+log.innerHTML;
         } else {
           cntErr++;
-          log.innerHTML='<span class="err">✗ '+p.endereco.substring(0,40)+' → '+(d.error||'não encontrado')+'</span><br>'+log.innerHTML;
+          log.innerHTML='<span class="err">✗ '+esc(p.endereco.substring(0,40))+' → '+esc(d.error||'não encontrado')+'</span><br>'+log.innerHTML;
         }
       } catch(e) {
         cntErr++;
-        log.innerHTML='<span class="err">⚠ '+p.endereco.substring(0,30)+' → erro: '+e.message+'</span><br>'+log.innerHTML;
+        log.innerHTML='<span class="err">⚠ '+esc(p.endereco.substring(0,30))+' → erro: '+esc(e.message)+'</span><br>'+log.innerHTML;
       }
       done++; _atualizaProg();
     }
