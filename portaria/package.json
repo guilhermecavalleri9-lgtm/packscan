@@ -1,0 +1,12 @@
+{
+  "name": "portaria",
+  "version": "1.0.0",
+  "description": "App de portaria para condominios: recebimento de encomendas com bipagem, aviso no WhatsApp, foto e assinatura na entrega",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "icones": "node tools/gerar-icones.js"
+  },
+  "engines": { "node": ">=18" },
+  "private": true
+}

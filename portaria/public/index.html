@@ -1,0 +1,1488 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/icon-192.png">
+<title>Portaria · Encomendas</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0f1117;--bg2:#171a24;--bg3:#212536;--linha:#2a2f45;
+  --text:#e8eaf0;--text2:#9ba3c0;--text3:#5b6480;
+  --accent:#6c8ef5;--accent2:#8aa5ff;--green:#25d366;--green2:#1ea952;
+  --red:#f87171;--amber:#fbbf24;--r:14px;
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+html,body{height:100%}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  font-size:15px;line-height:1.45;overscroll-behavior-y:none;
+}
+input,select,textarea,button{font-family:inherit;font-size:16px;color:inherit}
+
+/* ── topo ── */
+.topo{
+  position:sticky;top:0;z-index:30;background:var(--bg2);border-bottom:1px solid var(--linha);
+  padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;display:flex;align-items:center;gap:10px;
+}
+.topo h1{font-size:16px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.topo .sub{font-size:11.5px;color:var(--text3);font-weight:500}
+.voltar{
+  background:var(--bg3);border:1px solid var(--linha);border-radius:10px;
+  width:36px;height:36px;display:flex;align-items:center;justify-content:center;
+  font-size:18px;cursor:pointer;flex-shrink:0
+}
+.pill{font-size:11px;padding:3px 9px;border-radius:20px;background:var(--bg3);color:var(--text2);white-space:nowrap}
+.pill.on{background:rgba(37,211,102,.15);color:var(--green)}
+.pill.off{background:rgba(251,191,36,.14);color:var(--amber)}
+
+/* ── conteúdo ── */
+main{padding:14px 14px calc(88px + var(--safe-b));max-width:900px;margin:0 auto}
+.tela{display:none}
+.tela.ativa{display:block;animation:entra .18s ease}
+@keyframes entra{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.8px;color:var(--text3);margin:18px 0 8px;font-weight:700}
+h2:first-child{margin-top:2px}
+
+/* ── cartões ── */
+.card{
+  background:var(--bg2);border:1px solid var(--linha);border-radius:var(--r);
+  padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px;
+  cursor:pointer;transition:border-color .15s,background .15s
+}
+.card:active{background:var(--bg3)}
+.card.plano{cursor:default}
+.card .ic{
+  width:42px;height:42px;border-radius:11px;background:var(--bg3);
+  display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0
+}
+.card .txt{flex:1;min-width:0}
+.card .nome{font-weight:600;font-size:16px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card .det{font-size:12.5px;color:var(--text3);margin-top:2px}
+.card .seta{color:var(--text3);font-size:18px;flex-shrink:0}
+.badge{
+  background:var(--accent);color:#fff;font-size:12px;font-weight:700;
+  min-width:24px;height:24px;border-radius:12px;padding:0 7px;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0
+}
+.badge.zero{background:var(--bg3);color:var(--text3)}
+
+/* grade de apartamentos */
+.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:9px}
+.apto{
+  background:var(--bg2);border:1px solid var(--linha);border-radius:12px;
+  padding:12px 8px;text-align:center;cursor:pointer;position:relative;transition:.15s
+}
+.apto:active{background:var(--bg3)}
+.apto.tem{border-color:var(--accent);background:rgba(108,142,245,.08)}
+.apto .n{font-size:19px;font-weight:700;letter-spacing:.5px}
+.apto .m{font-size:11px;color:var(--text3);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.apto .bg{position:absolute;top:-7px;right:-7px}
+
+/* ── botões ── */
+.btn{
+  border:none;border-radius:12px;padding:14px 16px;font-size:15px;font-weight:600;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;
+  width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--linha);
+  transition:filter .15s
+}
+.btn:active{filter:brightness(1.25)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-a{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-w{background:var(--green);border-color:var(--green);color:#08240f}
+.btn-r{background:rgba(248,113,113,.12);border-color:rgba(248,113,113,.35);color:var(--red)}
+.btn-p{padding:10px 12px;font-size:13.5px;border-radius:10px}
+.linha-btn{display:flex;gap:9px;margin-bottom:10px}
+.linha-btn .btn{margin:0}
+
+/* ── formulários ── */
+label{display:block;font-size:12.5px;color:var(--text2);margin:12px 0 5px;font-weight:600}
+input[type=text],input[type=tel],input[type=password],input[type=search],textarea,select{
+  width:100%;background:var(--bg);border:1px solid var(--linha);border-radius:11px;
+  padding:13px 14px;color:var(--text);outline:none;transition:border-color .15s
+}
+input:focus,textarea:focus,select:focus{border-color:var(--accent)}
+textarea{min-height:118px;resize:vertical;font-size:14px;line-height:1.5}
+.ajuda{font-size:11.5px;color:var(--text3);margin-top:5px;line-height:1.5}
+
+/* ── bipagem ── */
+.bipar-box{background:var(--bg2);border:1px solid var(--linha);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.bipar-input{
+  font-size:19px!important;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+  letter-spacing:1.5px;text-align:center;padding:15px 14px!important
+}
+.cam-wrap{display:none;position:relative;background:#000;border-radius:12px;overflow:hidden;margin-top:10px}
+.cam-wrap video,.cam-wrap #leitor{width:100%;display:block}
+.cam-mira{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none
+}
+.cam-mira i{display:block;width:76%;max-width:280px;height:110px;border:2px solid var(--accent);border-radius:10px;box-shadow:0 0 0 9999px rgba(0,0,0,.45)}
+.aviso-bip{
+  text-align:center;font-weight:700;padding:10px;border-radius:10px;margin-top:10px;font-size:14px;display:none
+}
+.aviso-bip.ok{display:block;background:rgba(37,211,102,.14);color:var(--green)}
+.aviso-bip.rep{display:block;background:rgba(251,191,36,.14);color:var(--amber)}
+.aviso-bip.err{display:block;background:rgba(248,113,113,.14);color:var(--red)}
+
+/* ── lista de encomendas ── */
+.pac{
+  background:var(--bg2);border:1px solid var(--linha);border-radius:12px;
+  padding:12px;margin-bottom:9px;display:flex;align-items:center;gap:11px
+}
+.pac.sel{border-color:var(--accent);background:rgba(108,142,245,.08)}
+.check{
+  width:24px;height:24px;border-radius:7px;border:2px solid var(--text3);flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:14px;color:#fff;cursor:pointer
+}
+.check.on{background:var(--accent);border-color:var(--accent)}
+.pac .cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:15px;font-weight:700;letter-spacing:.5px;word-break:break-all}
+.pac .meta{font-size:11.5px;color:var(--text3);margin-top:3px}
+.pac .lixo{background:none;border:none;color:var(--text3);font-size:17px;padding:6px;cursor:pointer;flex-shrink:0}
+.tag{font-size:10.5px;padding:2px 7px;border-radius:6px;margin-left:6px;vertical-align:middle;white-space:nowrap}
+.tag.avisado{background:rgba(37,211,102,.14);color:var(--green)}
+.tag.pendente{background:rgba(251,191,36,.14);color:var(--amber)}
+
+/* ── moradores ── */
+.morador{display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--linha);border-radius:12px;padding:11px 12px;margin-bottom:8px}
+.morador .txt{flex:1;min-width:0}
+.morador .nome{font-weight:600;font-size:14.5px}
+.morador .tel{font-size:12.5px;color:var(--text3);font-family:ui-monospace,Menlo,monospace}
+.sw{width:44px;height:26px;border-radius:13px;background:var(--bg3);position:relative;cursor:pointer;flex-shrink:0;transition:background .15s}
+.sw i{position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--text3);transition:.15s}
+.sw.on{background:rgba(37,211,102,.3)}
+.sw.on i{left:21px;background:var(--green)}
+
+/* ── modal ── */
+.modal{
+  display:none;position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.65);
+  align-items:flex-end;justify-content:center;backdrop-filter:blur(2px)
+}
+.modal.ativa{display:flex}
+.modal-cx{
+  background:var(--bg2);border:1px solid var(--linha);border-radius:20px 20px 0 0;
+  width:100%;max-width:560px;max-height:92vh;overflow-y:auto;
+  padding:8px 16px calc(20px + var(--safe-b));animation:sobe .22s ease
+}
+@keyframes sobe{from{transform:translateY(30px);opacity:.4}to{transform:none;opacity:1}}
+.puxador{width:38px;height:4px;background:var(--linha);border-radius:2px;margin:6px auto 12px}
+.modal h3{font-size:17px;margin-bottom:4px}
+.modal .sub{font-size:12.5px;color:var(--text3);margin-bottom:12px}
+
+/* assinatura e foto */
+.assina{background:#fff;border-radius:12px;width:100%;height:190px;touch-action:none;display:block}
+.foto-prev{width:100%;max-height:230px;object-fit:contain;border-radius:12px;background:#000;margin-top:8px;display:none}
+.mini{width:52px;height:52px;border-radius:9px;object-fit:cover;background:#000;border:1px solid var(--linha);cursor:pointer}
+
+/* ── rodapé ── */
+nav{
+  position:fixed;bottom:0;left:0;right:0;z-index:40;background:var(--bg2);
+  border-top:1px solid var(--linha);display:flex;padding-bottom:var(--safe-b)
+}
+nav button{
+  flex:1;background:none;border:none;padding:9px 4px 8px;color:var(--text3);
+  font-size:10.5px;font-weight:600;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px
+}
+nav button b{font-size:20px;font-weight:400;line-height:1}
+nav button.on{color:var(--accent)}
+
+.vazio{text-align:center;color:var(--text3);padding:36px 16px;font-size:14px;line-height:1.6}
+.toast{
+  position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + var(--safe-b));z-index:70;
+  background:var(--bg3);border:1px solid var(--linha);border-radius:11px;padding:11px 17px;
+  font-size:13.5px;font-weight:600;max-width:88vw;text-align:center;opacity:0;pointer-events:none;transition:opacity .2s
+}
+.toast.ver{opacity:1}
+.toast.ok{border-color:var(--green);color:var(--green)}
+.toast.err{border-color:var(--red);color:var(--red)}
+.contagem{font-variant-numeric:tabular-nums}
+@media(min-width:760px){
+  main{padding-top:20px}
+  .grade{grid-template-columns:repeat(auto-fill,minmax(112px,1fr))}
+}
+</style>
+</head>
+<body>
+
+<!-- ════════ TELA DE PIN ════════ -->
+<div id="tela-pin" style="display:none;position:fixed;inset:0;z-index:90;background:var(--bg);padding:24px;display:none;flex-direction:column;justify-content:center;max-width:420px;margin:0 auto">
+  <div style="text-align:center;margin-bottom:22px">
+    <div style="font-size:52px">🏢</div>
+    <h1 style="font-size:22px;margin-top:8px">Portaria</h1>
+    <p style="color:var(--text3);font-size:13.5px;margin-top:4px">Digite o PIN de acesso</p>
+  </div>
+  <input type="password" id="pin-campo" inputmode="numeric" placeholder="••••" style="text-align:center;font-size:24px;letter-spacing:8px">
+  <div id="pin-erro" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;display:none">PIN incorreto</div>
+  <button class="btn btn-a" style="margin-top:16px" onclick="entrarComPin()">Entrar</button>
+</div>
+
+<!-- ════════ TOPO ════════ -->
+<header class="topo">
+  <button class="voltar" id="btn-voltar" onclick="voltar()" style="display:none">←</button>
+  <div style="flex:1;min-width:0">
+    <h1 id="topo-titulo">Portaria</h1>
+    <div class="sub" id="topo-sub">Encomendas do condomínio</div>
+  </div>
+  <span class="pill" id="pill-wa">…</span>
+</header>
+
+<main>
+
+  <!-- ════════ INÍCIO: BLOCOS ════════ -->
+  <section class="tela ativa" id="tela-home">
+    <div class="linha-btn">
+      <button class="btn btn-a btn-p" onclick="abrirBloco()">➕ Adicionar bloco</button>
+      <button class="btn btn-p" onclick="irPara('pendentes')">📦 Pendentes <span id="ct-pend2" class="contagem"></span></button>
+    </div>
+    <h2>Blocos cadastrados</h2>
+    <div id="lista-blocos"></div>
+  </section>
+
+  <!-- ════════ BLOCO: APARTAMENTOS ════════ -->
+  <section class="tela" id="tela-bloco">
+    <div class="linha-btn">
+      <button class="btn btn-a btn-p" onclick="abrirApto()">➕ Adicionar apartamento</button>
+      <button class="btn btn-p" onclick="abrirBloco(estado.blocoId)">✏️ Editar bloco</button>
+    </div>
+    <input type="search" id="busca-apto" placeholder="Buscar apartamento ou morador…" oninput="renderAptos()" style="margin-bottom:12px">
+    <div class="grade" id="lista-aptos"></div>
+    <div id="aptos-vazio" class="vazio" style="display:none">Nenhum apartamento cadastrado.<br>Toque em <b>Adicionar apartamento</b>.</div>
+  </section>
+
+  <!-- ════════ APARTAMENTO: BIPAR E ENTREGAR ════════ -->
+  <section class="tela" id="tela-apto">
+    <div class="bipar-box">
+      <label style="margin-top:0">Bipar encomenda</label>
+      <input type="text" id="bip-campo" class="bipar-input" placeholder="Bipe ou digite o código"
+             autocomplete="off" autocapitalize="characters" spellcheck="false"
+             onkeydown="bipTecla(event)">
+      <div class="linha-btn" style="margin:10px 0 0">
+        <button class="btn btn-p" id="btn-cam" onclick="camToggle()">📷 Ativar câmera</button>
+        <button class="btn btn-p btn-a" onclick="bipManual()">＋ Registrar</button>
+      </div>
+      <div class="cam-wrap" id="cam-wrap">
+        <div id="leitor"></div>
+        <div class="cam-mira"><i></i></div>
+      </div>
+      <div class="aviso-bip" id="aviso-bip"></div>
+      <div class="ajuda">O leitor USB funciona direto: mantenha esta tela aberta e bipe. No celular, use a câmera.</div>
+    </div>
+
+    <div id="area-pendentes"></div>
+
+    <h2 style="margin-top:20px">Moradores <span style="text-transform:none;letter-spacing:0;color:var(--text3);font-weight:500">· quem recebe o aviso</span></h2>
+    <div id="lista-moradores"></div>
+    <button class="btn btn-p" style="margin-top:4px" onclick="abrirMorador()">➕ Adicionar morador</button>
+
+    <h2 style="margin-top:22px">Últimas entregas deste apartamento</h2>
+    <div id="hist-apto"></div>
+  </section>
+
+  <!-- ════════ PENDENTES (TODOS OS BLOCOS) ════════ -->
+  <section class="tela" id="tela-pendentes">
+    <h2>Encomendas aguardando retirada</h2>
+    <div id="lista-pendentes"></div>
+  </section>
+
+  <!-- ════════ HISTÓRICO ════════ -->
+  <section class="tela" id="tela-historico">
+    <input type="search" id="busca-hist" placeholder="Buscar por código, apto ou morador…" oninput="renderHistorico()" style="margin-bottom:12px">
+    <div id="lista-historico"></div>
+  </section>
+
+  <!-- ════════ AJUSTES ════════ -->
+  <section class="tela" id="tela-ajustes">
+    <h2>Portaria</h2>
+    <label>Nome do condomínio</label>
+    <input type="text" id="cfg-condominio" placeholder="Residencial Primavera">
+    <label>Seu nome (porteiro do turno)</label>
+    <input type="text" id="cfg-porteiro" placeholder="Ex.: Carlos" oninput="salvarPorteiro()">
+    <div class="ajuda">Fica gravado neste aparelho e entra no registro de quem recebeu e entregou.</div>
+
+    <h2>Aviso no WhatsApp</h2>
+    <div class="card plano" style="align-items:flex-start">
+      <div class="ic" id="wa-ic">💬</div>
+      <div class="txt">
+        <div class="nome" id="wa-titulo">…</div>
+        <div class="det" id="wa-detalhe" style="white-space:normal"></div>
+      </div>
+    </div>
+    <div class="morador">
+      <div class="txt"><div class="nome">Avisar sozinho ao bipar</div><div class="tel" style="font-family:inherit">Manda o aviso poucos segundos depois da última bipagem</div></div>
+      <div class="sw" id="sw-auto" onclick="toggleAuto()"><i></i></div>
+    </div>
+    <div class="morador">
+      <div class="txt"><div class="nome">Avisar quando entregar</div><div class="tel" style="font-family:inherit">Confirma no WhatsApp que a encomenda foi retirada</div></div>
+      <div class="sw" id="sw-entrega" onclick="toggleAvisoEntrega()"><i></i></div>
+    </div>
+
+    <h2>Mensagens automáticas</h2>
+    <label>Chegou 1 encomenda</label>
+    <textarea id="cfg-msg1"></textarea>
+    <label>Chegaram várias encomendas</label>
+    <textarea id="cfg-msgN"></textarea>
+    <label>Encomenda entregue</label>
+    <textarea id="cfg-msgE"></textarea>
+    <div class="ajuda">
+      Pode usar: <b>{nome}</b> morador · <b>{condominio}</b> · <b>{bloco}</b> · <b>{apto}</b> ·
+      <b>{codigo}</b> primeiro código · <b>{codigos}</b> todos separados por vírgula ·
+      <b>{lista}</b> todos em lista numerada · <b>{qtd}</b> quantidade ·
+      <b>{recebedor}</b> quem retirou · <b>{porteiro}</b> · <b>{data}</b> · <b>{hora}</b>.
+    </div>
+    <div class="linha-btn" style="margin-top:14px">
+      <button class="btn btn-p" onclick="restaurarMensagens()">↩︎ Restaurar padrão</button>
+      <button class="btn btn-a btn-p" onclick="salvarAjustes()">💾 Salvar</button>
+    </div>
+
+    <h2>Backup</h2>
+    <div class="linha-btn">
+      <button class="btn btn-p" onclick="exportar()">⬇️ Baixar cadastro</button>
+      <button class="btn btn-p" onclick="document.getElementById('arq-import').click()">⬆️ Importar</button>
+    </div>
+    <input type="file" id="arq-import" accept="application/json" style="display:none" onchange="importar(event)">
+    <div class="ajuda" id="info-versao" style="margin-top:14px"></div>
+  </section>
+</main>
+
+<!-- ════════ RODAPÉ ════════ -->
+<nav>
+  <button id="nav-home" class="on" onclick="irPara('home')"><b>🏢</b>Início</button>
+  <button id="nav-pendentes" onclick="irPara('pendentes')"><b>📦</b>Pendentes</button>
+  <button id="nav-historico" onclick="irPara('historico')"><b>🗂️</b>Histórico</button>
+  <button id="nav-ajustes" onclick="irPara('ajustes')"><b>⚙️</b>Ajustes</button>
+</nav>
+
+<!-- ════════ MODAL: BLOCO ════════ -->
+<div class="modal" id="modal-bloco" onclick="fecharModal(event,'modal-bloco')">
+  <div class="modal-cx" onclick="event.stopPropagation()">
+    <div class="puxador"></div>
+    <h3 id="mb-titulo">Novo bloco</h3>
+    <div class="sub">Ex.: Bloco A, Torre 1, Casa</div>
+    <label>Nome do bloco</label>
+    <input type="text" id="mb-nome" placeholder="Bloco A">
+    <label>Criar apartamentos de uma vez (opcional)</label>
+    <input type="text" id="mb-aptos" placeholder="Ex.: 101-104, 201, 202">
+    <div class="ajuda">Aceita intervalos (101-110) e listas separadas por vírgula.</div>
+    <div class="linha-btn" style="margin-top:16px">
+      <button class="btn btn-r btn-p" id="mb-excluir" onclick="excluirBloco()" style="display:none">🗑️ Excluir</button>
+      <button class="btn btn-a" onclick="salvarBloco()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ MODAL: APARTAMENTO ════════ -->
+<div class="modal" id="modal-apto" onclick="fecharModal(event,'modal-apto')">
+  <div class="modal-cx" onclick="event.stopPropagation()">
+    <div class="puxador"></div>
+    <h3 id="ma-titulo">Novo apartamento</h3>
+    <div class="sub" id="ma-sub"></div>
+    <label>Número / identificação</label>
+    <input type="text" id="ma-numero" placeholder="101">
+    <div id="ma-primeiro">
+      <label>Morador (opcional)</label>
+      <input type="text" id="ma-morador" placeholder="Nome de quem mora">
+      <label>WhatsApp</label>
+      <input type="tel" id="ma-telefone" inputmode="tel" placeholder="(48) 99999-9999">
+      <div class="ajuda">Dá pra cadastrar mais moradores depois, cada um com o seu WhatsApp.</div>
+    </div>
+    <div class="linha-btn" style="margin-top:16px">
+      <button class="btn btn-r btn-p" id="ma-excluir" onclick="excluirApto()" style="display:none">🗑️ Excluir</button>
+      <button class="btn btn-a" onclick="salvarApto()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ MODAL: MORADOR ════════ -->
+<div class="modal" id="modal-morador" onclick="fecharModal(event,'modal-morador')">
+  <div class="modal-cx" onclick="event.stopPropagation()">
+    <div class="puxador"></div>
+    <h3 id="mm-titulo">Novo morador</h3>
+    <div class="sub" id="mm-sub"></div>
+    <label>Nome</label>
+    <input type="text" id="mm-nome" placeholder="Maria Souza">
+    <label>WhatsApp (com DDD)</label>
+    <input type="tel" id="mm-telefone" inputmode="tel" placeholder="(48) 99999-9999">
+    <div class="ajuda">Cada morador do apartamento recebe o aviso no próprio número.</div>
+    <div class="linha-btn" style="margin-top:16px">
+      <button class="btn btn-r btn-p" id="mm-excluir" onclick="excluirMorador()" style="display:none">🗑️ Excluir</button>
+      <button class="btn btn-a" onclick="salvarMorador()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ MODAL: ENTREGA ════════ -->
+<div class="modal" id="modal-entrega" onclick="fecharModal(event,'modal-entrega')">
+  <div class="modal-cx" onclick="event.stopPropagation()">
+    <div class="puxador"></div>
+    <h3>Entregar ao morador</h3>
+    <div class="sub" id="me-sub"></div>
+    <div id="me-codigos" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px"></div>
+
+    <label>Quem está retirando</label>
+    <select id="me-morador" onchange="meTrocaMorador()"></select>
+    <input type="text" id="me-nome" placeholder="Nome de quem retirou" style="margin-top:8px">
+
+    <label>Foto da entrega</label>
+    <div class="linha-btn">
+      <button class="btn btn-p" onclick="document.getElementById('me-foto-cam').click()">📷 Tirar foto</button>
+      <button class="btn btn-p" onclick="document.getElementById('me-foto-arq').click()">🖼️ Escolher</button>
+    </div>
+    <input type="file" id="me-foto-cam" accept="image/*" capture="environment" style="display:none" onchange="carregarFoto(event)">
+    <input type="file" id="me-foto-arq" accept="image/*" style="display:none" onchange="carregarFoto(event)">
+    <img id="me-foto-prev" class="foto-prev" alt="Foto da entrega">
+
+    <label>Assinatura de quem recebeu</label>
+    <canvas id="me-assina" class="assina"></canvas>
+    <button class="btn btn-p" style="margin-top:8px" onclick="limparAssinatura()">🧽 Limpar assinatura</button>
+
+    <label>Observação (opcional)</label>
+    <input type="text" id="me-obs" placeholder="Ex.: caixa amassada">
+
+    <button class="btn btn-w" style="margin-top:16px" id="me-confirmar" onclick="confirmarEntrega()">✅ Confirmar entrega</button>
+  </div>
+</div>
+
+<!-- ════════ MODAL: LINKS DO WHATSAPP (envio manual) ════════ -->
+<div class="modal" id="modal-links" onclick="fecharModal(event,'modal-links')">
+  <div class="modal-cx" onclick="event.stopPropagation()">
+    <div class="puxador"></div>
+    <h3>Enviar aviso no WhatsApp</h3>
+    <div class="sub">Toque em cada morador para abrir a conversa com a mensagem pronta.</div>
+    <div id="ml-lista"></div>
+    <button class="btn" style="margin-top:12px" onclick="fecharModalId('modal-links')">Fechar</button>
+  </div>
+</div>
+
+<!-- ════════ MODAL: COMPROVANTE ════════ -->
+<div class="modal" id="modal-comprov" onclick="fecharModal(event,'modal-comprov')">
+  <div class="modal-cx" onclick="event.stopPropagation()">
+    <div class="puxador"></div>
+    <h3>Comprovante da entrega</h3>
+    <div class="sub" id="mc-sub"></div>
+    <div id="mc-corpo"></div>
+    <button class="btn" style="margin-top:12px" onclick="fecharModalId('modal-comprov')">Fechar</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// ESTADO
+// ═══════════════════════════════════════════════════════════════════════════════
+var dados = { cadastro: { condominio:'', blocos:[], mensagens:{}, avisoAutomatico:true, avisarNaEntrega:true },
+              pacotes: [], envioAutomatico:false, provedor:null, msgPadrao:{} };
+var estado = { tela:'home', blocoId:null, aptoId:null, sel:{}, anterior:[] };
+var PIN = localStorage.getItem('portaria_pin') || '';
+var porteiro = localStorage.getItem('portaria_porteiro') || '';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UTILIDADES
+// ═══════════════════════════════════════════════════════════════════════════════
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+var _toastT = null;
+function toast(msg, tipo){
+  var t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast ver ' + (tipo || '');
+  clearTimeout(_toastT);
+  _toastT = setTimeout(function(){ t.className = 'toast ' + (tipo || ''); }, 3200);
+}
+
+function api(caminho, corpo){
+  var op = { method: corpo ? 'POST' : 'GET', headers: {} };
+  if (PIN) op.headers['X-Portaria-Pin'] = PIN;
+  if (corpo){ op.headers['Content-Type'] = 'application/json'; op.body = JSON.stringify(corpo); }
+  return fetch(caminho, op).then(function(r){
+    return r.json().catch(function(){ return {}; }).then(function(j){
+      if (!r.ok) throw new Error(j.error || ('erro ' + r.status));
+      return j;
+    });
+  });
+}
+
+function imgUrl(id){ return '/api/imagem?id=' + encodeURIComponent(id) + (PIN ? '&pin=' + encodeURIComponent(PIN) : ''); }
+function novoId(p){ return p + '_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
+
+function telBonito(t){
+  var d = String(t||'').replace(/\D/g,'');
+  if (d.indexOf('55') === 0 && d.length > 11) d = d.slice(2);
+  if (d.length === 11) return '(' + d.slice(0,2) + ') ' + d.slice(2,7) + '-' + d.slice(7);
+  if (d.length === 10) return '(' + d.slice(0,2) + ') ' + d.slice(2,6) + '-' + d.slice(6);
+  return t || '';
+}
+function quando(ts){
+  if (!ts) return '';
+  var d = new Date(ts), hoje = new Date();
+  var hora = d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  if (d.toDateString() === hoje.toDateString()) return 'hoje ' + hora;
+  var ontem = new Date(hoje.getTime() - 86400000);
+  if (d.toDateString() === ontem.toDateString()) return 'ontem ' + hora;
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) + ' ' + hora;
+}
+
+// "101-104, 201, 202" → ['101','102','103','104','201','202']
+function expandirNumeros(txt){
+  var saida = [];
+  String(txt||'').split(/[,;\n]/).forEach(function(parte){
+    parte = parte.trim();
+    if (!parte) return;
+    var m = /^(\d+)\s*-\s*(\d+)$/.exec(parte);
+    if (m){
+      var ini = parseInt(m[1],10), fim = parseInt(m[2],10);
+      if (fim >= ini && fim - ini <= 300) { for (var i=ini;i<=fim;i++) saida.push(String(i)); return; }
+    }
+    saida.push(parte);
+  });
+  return saida;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BUSCA NO CADASTRO
+// ═══════════════════════════════════════════════════════════════════════════════
+function blocoAtual(){ return (dados.cadastro.blocos||[]).find(function(b){ return b.id === estado.blocoId; }) || null; }
+function aptoAtual(){
+  var b = blocoAtual();
+  return b ? ((b.apartamentos||[]).find(function(a){ return a.id === estado.aptoId; }) || null) : null;
+}
+function pendentesDe(aptoId){
+  return dados.pacotes.filter(function(p){ return p.aptoId === aptoId && p.status === 'pendente'; });
+}
+function pendentesDoBloco(blocoId){
+  return dados.pacotes.filter(function(p){ return p.blocoId === blocoId && p.status === 'pendente'; });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NAVEGAÇÃO
+// ═══════════════════════════════════════════════════════════════════════════════
+function irPara(tela, semHistorico){
+  if (estado.tela === 'apto' && tela !== 'apto') camParar();
+  if (!semHistorico && estado.tela !== tela) estado.anterior.push({ tela: estado.tela, blocoId: estado.blocoId, aptoId: estado.aptoId });
+  estado.tela = tela;
+  ['home','bloco','apto','pendentes','historico','ajustes'].forEach(function(t){
+    var el = $('tela-' + t);
+    if (el) el.classList.toggle('ativa', t === tela);
+  });
+  ['home','pendentes','historico','ajustes'].forEach(function(t){
+    var b = $('nav-' + t);
+    if (b) b.classList.toggle('on', t === tela);
+  });
+  $('btn-voltar').style.display = (tela === 'bloco' || tela === 'apto') ? 'flex' : 'none';
+  window.scrollTo(0,0);
+  atualizarTopo();
+  if (tela === 'home') renderBlocos();
+  if (tela === 'bloco') renderAptos();
+  if (tela === 'apto') renderApto();
+  if (tela === 'pendentes') renderPendentes();
+  if (tela === 'historico') renderHistorico();
+  if (tela === 'ajustes') renderAjustes();
+}
+function voltar(){
+  camParar();
+  if (estado.tela === 'apto'){ estado.aptoId = null; return irPara('bloco', true); }
+  if (estado.tela === 'bloco'){ estado.blocoId = null; return irPara('home', true); }
+  irPara('home', true);
+}
+function abrirBlocoTela(id){ estado.blocoId = id; estado.aptoId = null; $('busca-apto').value=''; irPara('bloco'); }
+function abrirAptoTela(id){ estado.aptoId = id; estado.sel = {}; irPara('apto'); }
+
+function atualizarTopo(){
+  var t = dados.cadastro.condominio || 'Portaria', s = 'Encomendas do condomínio';
+  var b = blocoAtual(), a = aptoAtual();
+  if (estado.tela === 'bloco' && b){ t = b.nome; s = (b.apartamentos||[]).length + ' apartamento(s)'; }
+  if (estado.tela === 'apto' && a){ t = 'Apto ' + a.numero; s = (b ? b.nome + ' · ' : '') + ((a.moradores||[]).length) + ' morador(es)'; }
+  if (estado.tela === 'pendentes'){ t = 'Pendentes'; s = totalPendentes() + ' encomenda(s) aguardando'; }
+  if (estado.tela === 'historico'){ t = 'Histórico'; s = 'Entregas já realizadas'; }
+  if (estado.tela === 'ajustes'){ t = 'Ajustes'; s = 'Mensagens, moradores e backup'; }
+  $('topo-titulo').textContent = t;
+  $('topo-sub').textContent = s;
+}
+function totalPendentes(){ return dados.pacotes.filter(function(p){ return p.status === 'pendente'; }).length; }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TELA: BLOCOS
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderBlocos(){
+  var blocos = dados.cadastro.blocos || [];
+  var n = totalPendentes();
+  $('ct-pend2').textContent = n ? '(' + n + ')' : '';
+  if (!blocos.length){
+    $('lista-blocos').innerHTML = '<div class="vazio">Nenhum bloco cadastrado ainda.<br>Toque em <b>Adicionar bloco</b> pra começar.</div>';
+    return;
+  }
+  $('lista-blocos').innerHTML = blocos.map(function(b){
+    var pend = pendentesDoBloco(b.id).length;
+    var aptos = (b.apartamentos||[]).length;
+    return '<div class="card" onclick="abrirBlocoTela(\'' + b.id + '\')">' +
+      '<div class="ic">🏢</div>' +
+      '<div class="txt"><div class="nome">' + esc(b.nome) + '</div>' +
+      '<div class="det">' + aptos + ' apartamento' + (aptos===1?'':'s') +
+        (pend ? ' · ' + pend + ' encomenda' + (pend===1?'':'s') + ' aguardando' : '') + '</div></div>' +
+      '<div class="badge' + (pend?'':' zero') + '">' + pend + '</div>' +
+      '<div class="seta">›</div></div>';
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TELA: APARTAMENTOS DO BLOCO
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderAptos(){
+  var b = blocoAtual();
+  if (!b) return irPara('home', true);
+  var busca = ($('busca-apto').value || '').trim().toLowerCase();
+  var lista = (b.apartamentos||[]).filter(function(a){
+    if (!busca) return true;
+    if (String(a.numero).toLowerCase().indexOf(busca) !== -1) return true;
+    return (a.moradores||[]).some(function(m){
+      return (m.nome||'').toLowerCase().indexOf(busca) !== -1 || (m.telefone||'').indexOf(busca) !== -1;
+    });
+  });
+  lista.sort(function(x,y){
+    var nx = parseInt(x.numero,10), ny = parseInt(y.numero,10);
+    if (!isNaN(nx) && !isNaN(ny) && nx !== ny) return nx - ny;
+    return String(x.numero).localeCompare(String(y.numero), 'pt-BR', { numeric:true });
+  });
+  $('aptos-vazio').style.display = (b.apartamentos||[]).length ? 'none' : 'block';
+  $('lista-aptos').innerHTML = lista.map(function(a){
+    var pend = pendentesDe(a.id).length;
+    var quem = (a.moradores||[]).length ? esc(a.moradores[0].nome.split(' ')[0]) +
+      ((a.moradores.length>1) ? ' +' + (a.moradores.length-1) : '') : 'sem morador';
+    return '<div class="apto' + (pend?' tem':'') + '" onclick="abrirAptoTela(\'' + a.id + '\')">' +
+      (pend ? '<div class="badge bg">' + pend + '</div>' : '') +
+      '<div class="n">' + esc(a.numero) + '</div><div class="m">' + quem + '</div></div>';
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TELA: APARTAMENTO (bipar, avisar, entregar)
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderApto(){
+  var a = aptoAtual();
+  if (!a) return irPara('bloco', true);
+  var pend = pendentesDe(a.id);
+  var selecionados = pend.filter(function(p){ return estado.sel[p.id]; });
+  var naoAvisados = pend.filter(function(p){ return !p.avisadoEm; });
+
+  var html = '';
+  if (pend.length){
+    html += '<h2 style="margin-top:18px">Aguardando retirada · ' + pend.length + '</h2>';
+    html += pend.map(function(p){
+      var on = !!estado.sel[p.id];
+      return '<div class="pac' + (on?' sel':'') + '">' +
+        '<div class="check' + (on?' on':'') + '" onclick="alternarSel(\'' + p.id + '\')">' + (on?'✓':'') + '</div>' +
+        '<div style="flex:1;min-width:0" onclick="alternarSel(\'' + p.id + '\')">' +
+          '<div class="cod">' + esc(p.codigo) +
+            '<span class="tag ' + (p.avisadoEm?'avisado':'pendente') + '">' + (p.avisadoEm?'avisado':'sem aviso') + '</span></div>' +
+          '<div class="meta">recebido ' + quando(p.criadoEm) + (p.porteiro ? ' · ' + esc(p.porteiro) : '') + '</div>' +
+        '</div>' +
+        '<button class="lixo" onclick="removerPacote(\'' + p.id + '\')">🗑️</button></div>';
+    }).join('');
+
+    html += '<div class="linha-btn" style="margin-top:12px">' +
+      '<button class="btn btn-w btn-p" id="btn-avisar" onclick="avisarAgora()">💬 ' +
+        (naoAvisados.length ? 'Avisar no WhatsApp (' + naoAvisados.length + ')' : 'Reenviar aviso') + '</button>' +
+      '<button class="btn btn-a btn-p" onclick="abrirEntrega()">✅ Entregar' +
+        (selecionados.length ? ' (' + selecionados.length + ')' : ' tudo') + '</button></div>';
+    html += '<div class="ajuda" style="margin-bottom:4px">Sem marcar nada, a entrega vale para todas as encomendas da lista.</div>';
+  } else {
+    html += '<div class="vazio">Nenhuma encomenda aguardando neste apartamento.</div>';
+  }
+  $('area-pendentes').innerHTML = html;
+
+  // moradores
+  var mor = a.moradores || [];
+  $('lista-moradores').innerHTML = mor.length ? mor.map(function(m){
+    return '<div class="morador">' +
+      '<div class="txt" onclick="abrirMorador(\'' + m.id + '\')">' +
+        '<div class="nome">' + esc(m.nome) + '</div>' +
+        '<div class="tel">' + (m.telefone ? esc(telBonito(m.telefone)) : 'sem WhatsApp') + '</div></div>' +
+      '<div class="sw' + (m.avisar!==false?' on':'') + '" onclick="toggleAvisarMorador(\'' + m.id + '\')"><i></i></div>' +
+      '</div>';
+  }).join('') : '<div class="ajuda" style="margin-bottom:6px">Nenhum morador cadastrado — sem WhatsApp o aviso não sai.</div>';
+
+  // histórico do apartamento
+  var hist = dados.pacotes.filter(function(p){ return p.aptoId === a.id && p.status === 'entregue'; })
+                          .sort(function(x,y){ return (y.entregueEm||0) - (x.entregueEm||0); }).slice(0,8);
+  $('hist-apto').innerHTML = hist.length ? hist.map(cardEntrega).join('')
+    : '<div class="ajuda">Nenhuma entrega registrada ainda.</div>';
+
+  atualizarTopo();
+}
+
+function cardEntrega(p){
+  return '<div class="pac" onclick="verComprovante(\'' + p.id + '\')">' +
+    (p.fotoId ? '<img class="mini" src="' + imgUrl(p.fotoId) + '" alt="foto">'
+              : '<div class="ic" style="width:52px;height:52px;border-radius:9px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:20px">📦</div>') +
+    '<div style="flex:1;min-width:0">' +
+      '<div class="cod">' + esc(p.codigo) + '</div>' +
+      '<div class="meta">' + esc(p.bloco || '') + ' · apto ' + esc(p.apto || '') + '</div>' +
+      '<div class="meta">para ' + esc(p.recebidoPor || 'morador') + ' · ' + quando(p.entregueEm) + '</div>' +
+    '</div><div class="seta">›</div></div>';
+}
+
+function alternarSel(id){
+  estado.sel[id] = !estado.sel[id];
+  renderApto();
+}
+function toggleAvisarMorador(id){
+  var a = aptoAtual(); if (!a) return;
+  var m = (a.moradores||[]).find(function(x){ return x.id === id; });
+  if (!m) return;
+  m.avisar = m.avisar === false;
+  salvarCadastro().then(renderApto);
+}
+function removerPacote(id){
+  if (!confirm('Apagar esta encomenda da lista?')) return;
+  api('/api/pacotes/remover', { ids:[id] }).then(function(){
+    delete estado.sel[id];
+    return carregar();
+  }).then(function(){ toast('Encomenda apagada'); }).catch(erro);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// BIPAGEM — leitor USB (teclado) e câmera
+// ═══════════════════════════════════════════════════════════════════════════════
+var _ultimoCod = '', _ultimoTs = 0, _timerAviso = null, _segundos = 0;
+
+function bipTecla(ev){
+  // o leitor USB "digita" o código e termina com Enter
+  if (ev.key === 'Enter'){ ev.preventDefault(); bipManual(); }
+}
+function bipManual(){
+  var campo = $('bip-campo');
+  var cod = (campo.value || '').trim();
+  if (!cod) { campo.focus(); return; }
+  campo.value = '';
+  registrarCodigo(cod);
+  campo.focus();
+}
+
+function mostrarAviso(classe, texto){
+  var el = $('aviso-bip');
+  el.className = 'aviso-bip ' + classe;
+  el.textContent = texto;
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.className = 'aviso-bip'; }, 4000);
+}
+
+function registrarCodigo(codigo){
+  var a = aptoAtual(), b = blocoAtual();
+  if (!a || !b) return;
+  codigo = String(codigo).trim().toUpperCase();
+  if (!codigo) return;
+  // bipou duas vezes seguidas o mesmo código (câmera lê várias vezes por segundo)
+  var agora = Date.now();
+  if (codigo === _ultimoCod && agora - _ultimoTs < 2500) return;
+  _ultimoCod = codigo; _ultimoTs = agora;
+
+  api('/api/pacotes/registrar', { blocoId:b.id, aptoId:a.id, codigos:[codigo], porteiro:porteiro })
+    .then(function(r){
+      if (r.criados && r.criados.length){
+        bip(true);
+        mostrarAviso('ok', '✓ ' + codigo + ' registrado');
+      } else {
+        bip(false);
+        mostrarAviso('rep', '⚠ ' + codigo + ' já estava na lista');
+      }
+      return carregar();
+    })
+    .then(function(){
+      if (estado.tela === 'apto') renderApto();   // a lista de pendentes muda a cada bipagem
+      agendarAvisoAutomatico();
+    })
+    .catch(function(e){ bip(false); mostrarAviso('err', '✗ ' + e.message); });
+}
+
+// bipe curto de confirmação (sem arquivo de som)
+function bip(ok){
+  try {
+    var ctx = new (window.AudioContext || window.webkitAudioContext)();
+    var osc = ctx.createOscillator(), g = ctx.createGain();
+    osc.connect(g); g.connect(ctx.destination);
+    osc.frequency.value = ok ? 880 : 320;
+    g.gain.setValueAtTime(0.08, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.16);
+    osc.start(); osc.stop(ctx.currentTime + 0.17);
+    setTimeout(function(){ ctx.close(); }, 400);
+  } catch(e){}
+  if (navigator.vibrate) navigator.vibrate(ok ? 40 : [40,60,40]);
+}
+
+// ─── aviso automático: espera parar de bipar e manda tudo numa mensagem só ──
+function agendarAvisoAutomatico(){
+  var a = aptoAtual();
+  if (!a) return;
+  if (!dados.cadastro.avisoAutomatico || !dados.envioAutomatico) return; // sem envio automático o porteiro toca no botão
+  clearTimeout(_timerAviso);
+  _segundos = 8;
+  tick();
+  function tick(){
+    var btn = $('btn-avisar');
+    if (_segundos <= 0){
+      if (btn) btn.textContent = '💬 enviando…';
+      avisarAgora(true);
+      return;
+    }
+    if (btn) btn.innerHTML = '💬 Avisar em <span class="contagem">' + _segundos + 's</span>';
+    _segundos--;
+    _timerAviso = setTimeout(tick, 1000);
+  }
+}
+
+function avisarAgora(automatico){
+  clearTimeout(_timerAviso);
+  var a = aptoAtual();
+  if (!a) return;
+  var pend = pendentesDe(a.id);
+  var alvo = pend.filter(function(p){ return !p.avisadoEm; });
+  if (!alvo.length) alvo = pend;                       // reenvio manual
+  if (!alvo.length) return toast('Nada para avisar');
+  var temTel = (a.moradores||[]).some(function(m){ return m.telefone && m.avisar !== false; });
+  if (!temTel){ toast('Cadastre o WhatsApp de um morador', 'err'); return; }
+
+  var btn = $('btn-avisar');
+  if (btn){ btn.disabled = true; btn.textContent = '💬 enviando…'; }
+  api('/api/avisar', { ids: alvo.map(function(p){ return p.id; }) })
+    .then(function(r){
+      if (r.automatico){
+        var ok = (r.enviados||[]).filter(function(e){ return e.enviado; }).length;
+        toast(ok ? 'Aviso enviado no WhatsApp (' + ok + ')' : 'Não consegui enviar — veja os ajustes', ok ? 'ok' : 'err');
+        if (!ok && r.enviados && r.enviados.length) mostrarLinks(r.enviados, alvo);
+      } else {
+        mostrarLinks(r.enviados || [], alvo);          // sem provedor: abre o WhatsApp
+      }
+      return carregar();
+    })
+    .catch(erro)
+    .then(function(){ if (estado.tela === 'apto') renderApto(); });
+}
+
+// lista os moradores com o link do WhatsApp pronto (envio manual)
+function mostrarLinks(enviados, pacotes){
+  var pendentesLink = enviados.filter(function(e){ return e.link; });
+  if (!pendentesLink.length){ return; }
+  var ids = (pacotes||[]).map(function(p){ return p.id; });
+  $('ml-lista').innerHTML = pendentesLink.map(function(e, i){
+    return '<a class="card" style="text-decoration:none;color:inherit" target="_blank" rel="noopener" href="' + esc(e.link) + '" ' +
+      'onclick="marcarAvisado(' + JSON.stringify(ids).replace(/"/g,'&quot;') + ')">' +
+      '<div class="ic">💬</div><div class="txt">' +
+      '<div class="nome">' + esc(e.morador) + '</div>' +
+      '<div class="det">' + esc(telBonito(e.telefone)) + ' · abrir conversa</div></div><div class="seta">›</div></a>';
+  }).join('');
+  abrirModal('modal-links');
+}
+function marcarAvisado(ids){
+  api('/api/avisado', { ids: ids }).then(carregar).then(function(){
+    if (estado.tela === 'apto') renderApto();
+  }).catch(function(){});
+}
+
+// ─── câmera ───────────────────────────────────────────────────────────────────
+var _camAtiva = false, _camStream = null, _camLoop = null, _camDetector = null, _camH5 = null;
+
+function camToggle(){ _camAtiva ? camParar() : camIniciar(); }
+
+function camIniciar(){
+  $('cam-wrap').style.display = 'block';
+  $('btn-cam').textContent = '⏹ Parar câmera';
+  $('btn-cam').classList.add('btn-r');
+  _camAtiva = true;
+  if ('BarcodeDetector' in window){
+    camNativo().catch(function(){ camFallback(); });
+  } else camFallback();
+}
+
+// Chrome/Android: leitor de código de barras nativo, bem mais rápido
+function camNativo(){
+  var querid = ['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf','data_matrix','pdf417'];
+  return BarcodeDetector.getSupportedFormats().then(function(sup){
+    var fmts = querid.filter(function(f){ return sup.indexOf(f) !== -1; });
+    _camDetector = new BarcodeDetector({ formats: fmts.length ? fmts : sup });
+    $('leitor').innerHTML = '<video id="cam-video" playsinline autoplay muted style="width:100%;display:block"></video>';
+    return navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment', width:{ideal:1280}, height:{ideal:720} } });
+  }).then(function(stream){
+    _camStream = stream;
+    var v = $('cam-video');
+    v.srcObject = stream;
+    return v.play().then(function(){
+      var loop = function(){
+        if (!_camAtiva || !_camDetector) return;
+        _camDetector.detect(v).then(function(cods){
+          if (cods && cods.length) registrarCodigo(cods[0].rawValue);
+        }).catch(function(){});
+        _camLoop = requestAnimationFrame(loop);
+      };
+      _camLoop = requestAnimationFrame(loop);
+    });
+  });
+}
+
+// iPhone e navegadores sem BarcodeDetector: biblioteca html5-qrcode
+function camFallback(){
+  carregarScript('https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js').then(function(){
+    $('leitor').innerHTML = '';
+    _camH5 = new Html5Qrcode('leitor');
+    return _camH5.start({ facingMode:'environment' },
+      { fps:15, qrbox:{ width:280, height:150 } },
+      function(txt){ registrarCodigo(txt); }, function(){});
+  }).catch(function(e){
+    mostrarAviso('err', 'Não consegui abrir a câmera: ' + (e.message || e));
+    camParar();
+  });
+}
+function carregarScript(src){
+  return new Promise(function(ok, falha){
+    if (window.Html5Qrcode) return ok();
+    var s = document.createElement('script');
+    s.src = src; s.onload = ok; s.onerror = function(){ falha(new Error('sem internet para carregar o leitor')); };
+    document.head.appendChild(s);
+  });
+}
+function camParar(){
+  _camAtiva = false;
+  if (_camLoop){ cancelAnimationFrame(_camLoop); _camLoop = null; }
+  _camDetector = null;
+  if (_camStream){ _camStream.getTracks().forEach(function(t){ t.stop(); }); _camStream = null; }
+  if (_camH5){ var h = _camH5; _camH5 = null; h.stop().catch(function(){}).then(function(){ try{ h.clear(); }catch(e){} }); }
+  var l = $('leitor'); if (l) l.innerHTML = '';
+  var w = $('cam-wrap'); if (w) w.style.display = 'none';
+  var b = $('btn-cam');
+  if (b){ b.textContent = '📷 Ativar câmera'; b.classList.remove('btn-r'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ENTREGA — quem recebeu, foto e assinatura
+// ═══════════════════════════════════════════════════════════════════════════════
+var _entregaIds = [], _fotoDataUrl = null, _assinaturaVazia = true;
+
+function abrirEntrega(ids){
+  var a = aptoAtual(), b = blocoAtual();
+  if (!a) return;
+  var pend = pendentesDe(a.id);
+  if (ids && ids.length) _entregaIds = ids.slice();
+  else {
+    var marcados = pend.filter(function(p){ return estado.sel[p.id]; });
+    _entregaIds = (marcados.length ? marcados : pend).map(function(p){ return p.id; });
+  }
+  if (!_entregaIds.length) return toast('Nenhuma encomenda para entregar', 'err');
+
+  var pacotes = pend.filter(function(p){ return _entregaIds.indexOf(p.id) !== -1; });
+  $('me-sub').textContent = (b ? b.nome + ' · ' : '') + 'Apto ' + a.numero + ' · ' + pacotes.length + ' encomenda(s)';
+  $('me-codigos').innerHTML = pacotes.map(function(p){
+    return '<span class="tag avisado" style="font-size:12px;padding:5px 9px">' + esc(p.codigo) + '</span>';
+  }).join('');
+
+  var mor = a.moradores || [];
+  $('me-morador').innerHTML = mor.map(function(m){
+    return '<option value="' + m.id + '">' + esc(m.nome) + '</option>';
+  }).join('') + '<option value="">Outra pessoa…</option>';
+  $('me-nome').value = mor.length ? mor[0].nome : '';
+  $('me-obs').value = '';
+  _fotoDataUrl = null;
+  $('me-foto-prev').style.display = 'none';
+  $('me-foto-prev').src = '';
+  abrirModal('modal-entrega');
+  setTimeout(prepararAssinatura, 60);
+}
+function meTrocaMorador(){
+  var a = aptoAtual(); if (!a) return;
+  var id = $('me-morador').value;
+  var m = (a.moradores||[]).find(function(x){ return x.id === id; });
+  $('me-nome').value = m ? m.nome : '';
+  if (!m) $('me-nome').focus();
+}
+
+// foto: reduz antes de enviar pra não pesar
+function carregarFoto(ev){
+  var f = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!f) return;
+  var leitor = new FileReader();
+  leitor.onload = function(){
+    var img = new Image();
+    img.onload = function(){
+      var max = 1200;
+      var escala = Math.min(1, max / Math.max(img.width, img.height));
+      var c = document.createElement('canvas');
+      c.width = Math.round(img.width * escala);
+      c.height = Math.round(img.height * escala);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      _fotoDataUrl = c.toDataURL('image/jpeg', 0.72);
+      var prev = $('me-foto-prev');
+      prev.src = _fotoDataUrl;
+      prev.style.display = 'block';
+    };
+    img.src = leitor.result;
+  };
+  leitor.readAsDataURL(f);
+}
+
+// assinatura no dedo/mouse
+function prepararAssinatura(){
+  var c = $('me-assina');
+  var dpr = window.devicePixelRatio || 1;
+  var larg = c.clientWidth || 320, alt = 190;
+  c.width = larg * dpr; c.height = alt * dpr;
+  var ctx = c.getContext('2d');
+  ctx.scale(dpr, dpr);
+  ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, larg, alt);
+  ctx.strokeStyle = '#111'; ctx.lineWidth = 2.4; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  _assinaturaVazia = true;
+  if (c._pronto) return;
+  c._pronto = true;
+  var desenhando = false;
+  function ponto(ev){
+    var r = c.getBoundingClientRect();
+    var t = (ev.touches && ev.touches[0]) || ev;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+  function comecar(ev){ ev.preventDefault(); desenhando = true; _assinaturaVazia = false;
+    var p = ponto(ev); ctx.beginPath(); ctx.moveTo(p.x, p.y); }
+  function mover(ev){ if (!desenhando) return; ev.preventDefault();
+    var p = ponto(ev); ctx.lineTo(p.x, p.y); ctx.stroke(); }
+  function parar(){ desenhando = false; }
+  c.addEventListener('pointerdown', comecar);
+  c.addEventListener('pointermove', mover);
+  window.addEventListener('pointerup', parar);
+  c.addEventListener('touchstart', comecar, { passive:false });
+  c.addEventListener('touchmove', mover, { passive:false });
+  c.addEventListener('touchend', parar);
+}
+function limparAssinatura(){ prepararAssinatura(); }
+
+function confirmarEntrega(){
+  var a = aptoAtual();
+  if (!a || !_entregaIds.length) return;
+  var nome = ($('me-nome').value || '').trim();
+  if (!nome) { toast('Diga quem está retirando', 'err'); $('me-nome').focus(); return; }
+  var btn = $('me-confirmar');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+
+  var assinatura = null;
+  if (!_assinaturaVazia) assinatura = $('me-assina').toDataURL('image/png');
+
+  api('/api/pacotes/entregar', {
+    ids: _entregaIds, recebidoPor: nome, moradorId: $('me-morador').value,
+    porteiro: porteiro, obs: ($('me-obs').value || '').trim(),
+    foto: _fotoDataUrl, assinatura: assinatura,
+    avisar: dados.cadastro.avisarNaEntrega !== false
+  }).then(function(r){
+    fecharModalId('modal-entrega');
+    estado.sel = {};
+    toast('Entrega registrada ✅', 'ok');
+    if (!r.automatico && r.enviados && r.enviados.length) mostrarLinks(r.enviados, []);
+    return carregar();
+  }).then(function(){
+    if (estado.tela === 'apto') renderApto();
+  }).catch(erro).then(function(){
+    btn.disabled = false; btn.textContent = '✅ Confirmar entrega';
+  });
+}
+
+function verComprovante(id){
+  var p = dados.pacotes.find(function(x){ return x.id === id; });
+  if (!p) return;
+  $('mc-sub').textContent = (p.bloco||'') + ' · Apto ' + (p.apto||'') + ' · ' + quando(p.entregueEm);
+  var html = '<div class="card plano"><div class="ic">📦</div><div class="txt">' +
+    '<div class="nome" style="font-family:ui-monospace,Menlo,monospace">' + esc(p.codigo) + '</div>' +
+    '<div class="det">recebido ' + quando(p.criadoEm) + (p.porteiro ? ' por ' + esc(p.porteiro) : '') + '</div></div></div>' +
+    '<div class="card plano"><div class="ic">🙋</div><div class="txt">' +
+    '<div class="nome">' + esc(p.recebidoPor || 'morador') + '</div>' +
+    '<div class="det">retirou ' + quando(p.entregueEm) + (p.porteiroEntrega ? ' · entregue por ' + esc(p.porteiroEntrega) : '') + '</div></div></div>';
+  if (p.obs) html += '<div class="ajuda" style="margin-bottom:10px">📝 ' + esc(p.obs) + '</div>';
+  if (p.fotoId) html += '<label>Foto</label><img src="' + imgUrl(p.fotoId) + '" style="width:100%;border-radius:12px;background:#000">';
+  if (p.assinaturaId) html += '<label>Assinatura</label><img src="' + imgUrl(p.assinaturaId) + '" style="width:100%;border-radius:12px;background:#fff">';
+  if (!p.fotoId && !p.assinaturaId) html += '<div class="ajuda">Esta entrega foi registrada sem foto e sem assinatura.</div>';
+  $('mc-corpo').innerHTML = html;
+  abrirModal('modal-comprov');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TELAS: PENDENTES E HISTÓRICO
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderPendentes(){
+  var pend = dados.pacotes.filter(function(p){ return p.status === 'pendente'; })
+                          .sort(function(x,y){ return (y.criadoEm||0) - (x.criadoEm||0); });
+  if (!pend.length){
+    $('lista-pendentes').innerHTML = '<div class="vazio">Nada aguardando retirada. 🎉</div>';
+    return;
+  }
+  // agrupado por apartamento, o jeito que o porteiro procura
+  var grupos = {};
+  pend.forEach(function(p){ (grupos[p.blocoId + '|' + p.aptoId] = grupos[p.blocoId + '|' + p.aptoId] || []).push(p); });
+  $('lista-pendentes').innerHTML = Object.keys(grupos).map(function(k){
+    var g = grupos[k], p0 = g[0];
+    var semAviso = g.filter(function(p){ return !p.avisadoEm; }).length;
+    return '<div class="card" onclick="abrirDoPendente(\'' + p0.blocoId + '\',\'' + p0.aptoId + '\')">' +
+      '<div class="ic">📦</div><div class="txt">' +
+      '<div class="nome">' + esc(p0.bloco || '') + ' · Apto ' + esc(p0.apto || '') + '</div>' +
+      '<div class="det">' + g.map(function(p){ return esc(p.codigo); }).join(', ') + '</div>' +
+      '<div class="det">' + quando(g[g.length-1].criadoEm) +
+        (semAviso ? ' · <span style="color:var(--amber)">' + semAviso + ' sem aviso</span>' : ' · avisado') + '</div>' +
+      '</div><div class="badge">' + g.length + '</div><div class="seta">›</div></div>';
+  }).join('');
+}
+function abrirDoPendente(blocoId, aptoId){
+  estado.blocoId = blocoId; estado.aptoId = aptoId; estado.sel = {};
+  irPara('apto');
+}
+
+function renderHistorico(){
+  var busca = ($('busca-hist').value || '').trim().toLowerCase();
+  var hist = dados.pacotes.filter(function(p){
+    if (p.status !== 'entregue') return false;
+    if (!busca) return true;
+    return (p.codigo + ' ' + (p.apto||'') + ' ' + (p.bloco||'') + ' ' + (p.recebidoPor||'')).toLowerCase().indexOf(busca) !== -1;
+  }).sort(function(x,y){ return (y.entregueEm||0) - (x.entregueEm||0); }).slice(0, 200);
+  $('lista-historico').innerHTML = hist.length ? hist.map(cardEntrega).join('')
+    : '<div class="vazio">Nenhuma entrega encontrada.</div>';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CADASTRO: BLOCO, APARTAMENTO E MORADOR
+// ═══════════════════════════════════════════════════════════════════════════════
+function salvarCadastro(){
+  return api('/api/cadastro', dados.cadastro).then(function(r){
+    dados.cadastro = r.cadastro;
+    return r.cadastro;
+  });
+}
+
+var _editBloco = null;
+function abrirBloco(id){
+  _editBloco = id || null;
+  var b = id ? (dados.cadastro.blocos||[]).find(function(x){ return x.id === id; }) : null;
+  $('mb-titulo').textContent = b ? 'Editar bloco' : 'Novo bloco';
+  $('mb-nome').value = b ? b.nome : '';
+  $('mb-aptos').value = '';
+  $('mb-excluir').style.display = b ? 'flex' : 'none';
+  abrirModal('modal-bloco');
+  setTimeout(function(){ $('mb-nome').focus(); }, 120);
+}
+function salvarBloco(){
+  var nome = ($('mb-nome').value || '').trim();
+  if (!nome) return toast('Dê um nome ao bloco', 'err');
+  var numeros = expandirNumeros($('mb-aptos').value);
+  var b;
+  if (_editBloco){
+    b = (dados.cadastro.blocos||[]).find(function(x){ return x.id === _editBloco; });
+    if (!b) return;
+    b.nome = nome;
+  } else {
+    b = { id: novoId('b'), nome: nome, apartamentos: [] };
+    dados.cadastro.blocos = dados.cadastro.blocos || [];
+    dados.cadastro.blocos.push(b);
+  }
+  numeros.forEach(function(n){
+    if ((b.apartamentos||[]).some(function(a){ return a.numero === n; })) return;
+    b.apartamentos = b.apartamentos || [];
+    b.apartamentos.push({ id: novoId('a'), numero: n, moradores: [] });
+  });
+  salvarCadastro().then(function(){
+    fecharModalId('modal-bloco');
+    toast(_editBloco ? 'Bloco salvo' : 'Bloco criado' + (numeros.length ? ' com ' + numeros.length + ' apto(s)' : ''), 'ok');
+    if (estado.tela === 'bloco') renderAptos(); else renderBlocos();
+    atualizarTopo();
+  }).catch(erro);
+}
+function excluirBloco(){
+  var b = (dados.cadastro.blocos||[]).find(function(x){ return x.id === _editBloco; });
+  if (!b) return;
+  if (pendentesDoBloco(b.id).length) return toast('Ainda há encomendas aguardando neste bloco', 'err');
+  if (!confirm('Excluir "' + b.nome + '" e todos os seus apartamentos?')) return;
+  dados.cadastro.blocos = dados.cadastro.blocos.filter(function(x){ return x.id !== b.id; });
+  salvarCadastro().then(function(){
+    fecharModalId('modal-bloco');
+    estado.blocoId = null;
+    irPara('home', true);
+    toast('Bloco excluído');
+  }).catch(erro);
+}
+
+var _editApto = null;
+function abrirApto(id){
+  var b = blocoAtual();
+  if (!b) return toast('Escolha um bloco primeiro', 'err');
+  _editApto = id || null;
+  var a = id ? (b.apartamentos||[]).find(function(x){ return x.id === id; }) : null;
+  $('ma-titulo').textContent = a ? 'Editar apartamento' : 'Novo apartamento';
+  $('ma-sub').textContent = b.nome;
+  $('ma-numero').value = a ? a.numero : '';
+  $('ma-morador').value = ''; $('ma-telefone').value = '';
+  $('ma-primeiro').style.display = a ? 'none' : 'block';
+  $('ma-excluir').style.display = a ? 'flex' : 'none';
+  abrirModal('modal-apto');
+  setTimeout(function(){ $('ma-numero').focus(); }, 120);
+}
+function salvarApto(){
+  var b = blocoAtual(); if (!b) return;
+  var num = ($('ma-numero').value || '').trim();
+  if (!num) return toast('Informe o número do apartamento', 'err');
+  b.apartamentos = b.apartamentos || [];
+  if (_editApto){
+    var a = b.apartamentos.find(function(x){ return x.id === _editApto; });
+    if (a) a.numero = num;
+  } else {
+    var numeros = expandirNumeros(num);
+    var criados = 0;
+    numeros.forEach(function(n){
+      if (b.apartamentos.some(function(x){ return x.numero === n; })) return;
+      var novo = { id: novoId('a'), numero: n, moradores: [] };
+      var nome = ($('ma-morador').value || '').trim();
+      var tel = ($('ma-telefone').value || '').trim();
+      if (numeros.length === 1 && (nome || tel)){
+        novo.moradores.push({ id: novoId('m'), nome: nome || 'Morador', telefone: tel, avisar: true });
+      }
+      b.apartamentos.push(novo); criados++;
+    });
+    if (!criados) return toast('Esse apartamento já existe', 'err');
+  }
+  salvarCadastro().then(function(){
+    fecharModalId('modal-apto');
+    toast(_editApto ? 'Apartamento salvo' : 'Apartamento cadastrado', 'ok');
+    renderAptos();
+    if (estado.tela === 'apto') renderApto();
+    atualizarTopo();
+  }).catch(erro);
+}
+function excluirApto(){
+  var b = blocoAtual(); if (!b) return;
+  var a = (b.apartamentos||[]).find(function(x){ return x.id === _editApto; });
+  if (!a) return;
+  if (pendentesDe(a.id).length) return toast('Ainda há encomendas aguardando neste apartamento', 'err');
+  if (!confirm('Excluir o apartamento ' + a.numero + '?')) return;
+  b.apartamentos = b.apartamentos.filter(function(x){ return x.id !== a.id; });
+  salvarCadastro().then(function(){
+    fecharModalId('modal-apto');
+    if (estado.aptoId === a.id){ estado.aptoId = null; irPara('bloco', true); }
+    else renderAptos();
+    toast('Apartamento excluído');
+  }).catch(erro);
+}
+
+var _editMorador = null;
+function abrirMorador(id){
+  var a = aptoAtual(); if (!a) return;
+  _editMorador = id || null;
+  var m = id ? (a.moradores||[]).find(function(x){ return x.id === id; }) : null;
+  $('mm-titulo').textContent = m ? 'Editar morador' : 'Novo morador';
+  $('mm-sub').textContent = (blocoAtual() ? blocoAtual().nome + ' · ' : '') + 'Apto ' + a.numero;
+  $('mm-nome').value = m ? m.nome : '';
+  $('mm-telefone').value = m ? telBonito(m.telefone) : '';
+  $('mm-excluir').style.display = m ? 'flex' : 'none';
+  abrirModal('modal-morador');
+  setTimeout(function(){ $('mm-nome').focus(); }, 120);
+}
+function salvarMorador(){
+  var a = aptoAtual(); if (!a) return;
+  var nome = ($('mm-nome').value || '').trim();
+  var tel = ($('mm-telefone').value || '').trim();
+  if (!nome) return toast('Informe o nome', 'err');
+  if (tel && tel.replace(/\D/g,'').length < 10) return toast('WhatsApp precisa do DDD', 'err');
+  a.moradores = a.moradores || [];
+  if (_editMorador){
+    var m = a.moradores.find(function(x){ return x.id === _editMorador; });
+    if (m){ m.nome = nome; m.telefone = tel; }
+  } else {
+    a.moradores.push({ id: novoId('m'), nome: nome, telefone: tel, avisar: true });
+  }
+  salvarCadastro().then(function(){
+    fecharModalId('modal-morador');
+    toast('Morador salvo', 'ok');
+    renderApto();
+  }).catch(erro);
+}
+function excluirMorador(){
+  var a = aptoAtual(); if (!a) return;
+  if (!confirm('Excluir este morador?')) return;
+  a.moradores = (a.moradores||[]).filter(function(x){ return x.id !== _editMorador; });
+  salvarCadastro().then(function(){
+    fecharModalId('modal-morador');
+    renderApto();
+    toast('Morador excluído');
+  }).catch(erro);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AJUSTES
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderAjustes(){
+  var c = dados.cadastro;
+  $('cfg-condominio').value = c.condominio || '';
+  $('cfg-porteiro').value = porteiro;
+  $('cfg-msg1').value = c.mensagens.chegadaUm || '';
+  $('cfg-msgN').value = c.mensagens.chegadaVarios || '';
+  $('cfg-msgE').value = c.mensagens.entregue || '';
+  $('sw-auto').classList.toggle('on', c.avisoAutomatico !== false);
+  $('sw-entrega').classList.toggle('on', c.avisarNaEntrega !== false);
+  if (dados.envioAutomatico){
+    $('wa-ic').textContent = '🤖';
+    $('wa-titulo').textContent = 'Envio automático ligado';
+    $('wa-detalhe').textContent = 'As mensagens saem sozinhas pelo servidor (' + dados.provedor + '). O porteiro não precisa fazer nada.';
+  } else {
+    $('wa-ic').textContent = '💬';
+    $('wa-titulo').textContent = 'Envio pelo WhatsApp do aparelho';
+    $('wa-detalhe').textContent = 'A mensagem já vem pronta: é só tocar no morador e enviar. Para sair 100% sozinha, configure um provedor no servidor (veja o README).';
+  }
+  var blocos = (c.blocos||[]).length;
+  var aptos = (c.blocos||[]).reduce(function(s,b){ return s + (b.apartamentos||[]).length; }, 0);
+  var mor = (c.blocos||[]).reduce(function(s,b){ return s + (b.apartamentos||[]).reduce(function(t,a){ return t + (a.moradores||[]).length; }, 0); }, 0);
+  $('info-versao').textContent = blocos + ' bloco(s) · ' + aptos + ' apartamento(s) · ' + mor + ' morador(es) · ' +
+    dados.pacotes.length + ' encomenda(s) no sistema.';
+}
+function salvarPorteiro(){
+  porteiro = ($('cfg-porteiro').value || '').trim();
+  localStorage.setItem('portaria_porteiro', porteiro);
+}
+function toggleAuto(){
+  dados.cadastro.avisoAutomatico = dados.cadastro.avisoAutomatico === false;
+  $('sw-auto').classList.toggle('on', dados.cadastro.avisoAutomatico);
+  salvarCadastro().catch(erro);
+}
+function toggleAvisoEntrega(){
+  dados.cadastro.avisarNaEntrega = dados.cadastro.avisarNaEntrega === false;
+  $('sw-entrega').classList.toggle('on', dados.cadastro.avisarNaEntrega);
+  salvarCadastro().catch(erro);
+}
+function salvarAjustes(){
+  dados.cadastro.condominio = ($('cfg-condominio').value || '').trim();
+  dados.cadastro.mensagens = {
+    chegadaUm: $('cfg-msg1').value,
+    chegadaVarios: $('cfg-msgN').value,
+    entregue: $('cfg-msgE').value
+  };
+  salvarPorteiro();
+  salvarCadastro().then(function(){
+    toast('Ajustes salvos', 'ok');
+    renderAjustes(); atualizarTopo();
+  }).catch(erro);
+}
+function restaurarMensagens(){
+  $('cfg-msg1').value = dados.msgPadrao.chegadaUm || '';
+  $('cfg-msgN').value = dados.msgPadrao.chegadaVarios || '';
+  $('cfg-msgE').value = dados.msgPadrao.entregue || '';
+  toast('Mensagens padrão carregadas — toque em Salvar');
+}
+function exportar(){
+  var blob = new Blob([JSON.stringify(dados.cadastro, null, 2)], { type:'application/json' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'portaria-cadastro-' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 2000);
+}
+function importar(ev){
+  var f = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if (!f) return;
+  var r = new FileReader();
+  r.onload = function(){
+    try {
+      var novo = JSON.parse(r.result);
+      if (!novo || !Array.isArray(novo.blocos)) throw new Error('arquivo sem blocos');
+      if (!confirm('Substituir o cadastro atual por ' + novo.blocos.length + ' bloco(s) do arquivo?')) return;
+      dados.cadastro = novo;
+      salvarCadastro().then(function(){ toast('Cadastro importado', 'ok'); renderAjustes(); renderBlocos(); });
+    } catch(e){ toast('Arquivo inválido: ' + e.message, 'err'); }
+  };
+  r.readAsText(f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODAIS
+// ═══════════════════════════════════════════════════════════════════════════════
+function abrirModal(id){ $(id).classList.add('ativa'); }
+function fecharModalId(id){ $(id).classList.remove('ativa'); }
+function fecharModal(ev, id){ if (ev.target === $(id)) fecharModalId(id); }
+
+function erro(e){ toast(e.message || 'deu ruim aqui', 'err'); }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CARREGAR E INICIAR
+// ═══════════════════════════════════════════════════════════════════════════════
+function carregar(){
+  return api('/api/dados').then(function(r){
+    dados.cadastro = r.cadastro;
+    dados.pacotes = r.pacotes || [];
+    dados.envioAutomatico = !!r.envioAutomatico;
+    dados.provedor = r.provedor;
+    dados.msgPadrao = r.msgPadrao || {};
+    $('pill-wa').textContent = r.envioAutomatico ? '💬 automático' : '💬 manual';
+    $('pill-wa').className = 'pill ' + (r.envioAutomatico ? 'on' : 'off');
+    var n = totalPendentes();
+    var nav = $('nav-pendentes');
+    nav.innerHTML = '<b>📦</b>Pendentes' + (n ? ' (' + n + ')' : '');
+    return r;
+  });
+}
+
+function entrarComPin(){
+  var pin = ($('pin-campo').value || '').trim();
+  fetch('/api/sessao', { headers: { 'X-Portaria-Pin': pin } })
+    .then(function(r){ return r.json(); })
+    .then(function(s){
+      if (!s.pinOk){ $('pin-erro').style.display = 'block'; return; }
+      PIN = pin;
+      localStorage.setItem('portaria_pin', pin);
+      $('tela-pin').style.display = 'none';
+      abrirApp();
+    })
+    .catch(function(){ $('pin-erro').textContent = 'Sem conexão com o servidor'; $('pin-erro').style.display = 'block'; });
+}
+
+function abrirApp(){
+  carregar().then(function(){
+    irPara('home', true);
+    if (!porteiro) setTimeout(function(){ toast('Coloque seu nome em Ajustes'); }, 900);
+  }).catch(erro);
+}
+
+function iniciar(){
+  var op = PIN ? { headers: { 'X-Portaria-Pin': PIN } } : {};
+  fetch('/api/sessao', op).then(function(r){ return r.json(); }).then(function(s){
+    if (s.precisaPin && !s.pinOk){
+      var t = $('tela-pin');
+      t.style.display = 'flex';
+      $('pin-campo').focus();
+      $('pin-campo').addEventListener('keydown', function(e){ if (e.key === 'Enter') entrarComPin(); });
+      return;
+    }
+    abrirApp();
+  }).catch(function(){ toast('Servidor fora do ar', 'err'); });
+}
+
+// mantém o foco no campo de bipagem: o leitor USB "digita" onde estiver o cursor
+document.addEventListener('click', function(ev){
+  if (estado.tela !== 'apto') return;
+  if (document.querySelector('.modal.ativa')) return;
+  var alvo = ev.target;
+  if (alvo.closest('input, textarea, select, button, a, .check, .sw, .card, .pac')) return;
+  var campo = $('bip-campo');
+  if (campo) campo.focus();
+});
+// atualiza sozinho quando o app volta pro primeiro plano (outro porteiro pode ter bipado)
+document.addEventListener('visibilitychange', function(){
+  if (!document.hidden && estado.tela) carregar().then(function(){
+    if (estado.tela === 'apto') renderApto();
+    if (estado.tela === 'pendentes') renderPendentes();
+    if (estado.tela === 'home') renderBlocos();
+  }).catch(function(){});
+});
+window.addEventListener('beforeunload', camParar);
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(function(){});
+iniciar();
+</script>
+</body>
+</html>
