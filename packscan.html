@@ -923,7 +923,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
       <input type="file" id="fi" accept=".csv,.xlsx,.xls" style="display:none;width:auto" onchange="handleFile(this)">
       <div class="g2" style="margin-bottom:1rem">
         <div><label>Tracking / Número pedido</label><select id="c0"><option>—</option></select></div>
-        <div><label>Endereço / Complemento</label><select id="c1"><option>—</option></select></div>
+        <div><label>Endereço / Complemento (opcional)</label><select id="c1"><option>—</option></select></div>
         <div><label>Bairro / Distrito</label><select id="c2"><option>—</option></select></div>
         <div><label>Cidade</label><select id="c4"><option>—</option></select></div>
         <div><label>CEP</label><select id="c3"><option>—</option></select></div>
@@ -2555,7 +2555,7 @@ function handleFile(inp, cb) {
       c1:{want:['complemento','endereco','endereço','address','logr'], avoid:[]},
       c2:{want:['distrito','bairro','neigh'], avoid:['origem']},
       c3:{want:['cep','postal','zip'], avoid:['origem']},
-      c4:{want:['cidade','city'], avoid:['origem']},
+      c4:{want:['cidade','city','munic'], avoid:['origem']},
       c5:{want:['terceiro','pedidos terceiros','pedido terceiro','codigo 2','cod2','2o codigo','2º codigo'], avoid:[]}
     };
     Object.keys(auto).forEach(function(id) {
@@ -2589,7 +2589,12 @@ function adicionarImport() {
 function _importarPlanilha(adicionar) {
   if (!_pFile) { alert('Selecione um arquivo.'); return; }
   var cols = ['c0','c1','c2','c3','c4','c5'].map(function(id){ var el=document.getElementById(id); return el?el.value:'—'; });
-  if (cols[0]==='—'||cols[1]==='—') { alert('Mapeie pelo menos Tracking e Endereço.'); return; }
+  if (cols[0]==='—') { alert('Mapeie pelo menos a coluna de Tracking / Número do pedido.'); return; }
+  // Endereço é opcional: sem ele, dá pra geocodificar pelo CEP (nível da rua, sem o número)
+  if (cols[1]==='—') {
+    if (cols[3]==='—') { alert('Sem a coluna de Endereço, é obrigatório mapear o CEP — é ele que localiza a entrega.'); return; }
+    if (!confirm('Você não mapeou a coluna de Endereço.\n\nVou localizar pelo CEP: o ponto cai no meio da RUA, sem o número da casa. Serve pra ver a distribuição no mapa e dividir regiões, mas não para entregar com precisão.\n\nContinuar assim?')) return;
+  }
   var ext = _pFile.name.split('.').pop().toLowerCase();
   var reader = new FileReader();
   reader.onload = function(e) {
@@ -2600,7 +2605,7 @@ function _importarPlanilha(adicionar) {
       rows = lines.slice(1).map(function(l){ var v=l.split(/[,;\t]/); var o={}; hdrs.forEach(function(h,i){ o[h]=(v[i]||'').trim().replace(/"/g,''); }); return o; });
     } else { var wb=XLSX.read(e.target.result,{type:'binary'}); rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); }
     var linhas = rows.filter(function(r){ return r[cols[0]]; }).map(function(r){
-      return { tracking:String(r[cols[0]]||'').trim(), endereco:String(r[cols[1]]||'').trim(),
+      return { tracking:String(r[cols[0]]||'').trim(), endereco:(cols[1]!=='—'?String(r[cols[1]]||'').trim():''),
         bairro:cols[2]!=='—'?String(r[cols[2]]||'').trim():'', cep:String(r[cols[3]]||'').trim().replace(/\D/g,''),
         cidade:cols[4]!=='—'?String(r[cols[4]]||'').trim():'',
         tracking2:cols[5]!=='—'?String(r[cols[5]]||'').trim():'', lat:null,lng:null,enderecoNorm:null,precisao:null,rota:null,numNaRota:null };
@@ -4875,7 +4880,7 @@ function renderListaPacotes(){
              : '<span style="color:var(--green)">geocodificado</span>');
     html+='<div class="pcard"><span class="pdot" style="background:'+cor+'"></span>'
       +'<div class="pmid"><div class="pt">'+esc(p.tracking||p.codigo||'')+'</div>'
-      +'<div class="pe" title="'+esc(p.endereco||'')+'">'+esc((geoOk&&p.enderecoNorm)?p.enderecoNorm:(p.endereco||''))+'</div>'
+      +'<div class="pe" title="'+esc(p.endereco||'')+'">'+esc((geoOk&&p.enderecoNorm)?p.enderecoNorm:(p.endereco|| [p.bairro,p.cep?('CEP '+p.cep):''].filter(Boolean).join(' · ') ||'(sem endereço)'))+'</div>'
       +'<div class="pb">'+badge+'</div></div>'
       +'<div class="pact"><button title="Editar" onclick="homeEditar(\''+tkEsc+'\')">✏</button>'
       +'<button class="del" title="Excluir" onclick="homeExcluirPacote(\''+tkEsc+'\')">🗑</button></div></div>';
@@ -4933,7 +4938,7 @@ function homeArquivoPick(adicionar){
   fi.click();
 }
 function homeImportSheet(){
-  var campos=[['c0','Tracking / pedido'],['c1','Endereço'],['c2','Bairro'],['c3','CEP'],['c4','Cidade'],['c5','2º código (Nº pedidos terceiros)']];
+  var campos=[['c0','Tracking / pedido'],['c1','Endereço (opcional)'],['c2','Bairro'],['c3','CEP'],['c4','Cidade'],['c5','2º código (Nº pedidos terceiros)']];
   var html='';
   campos.forEach(function(c){
     var src=document.getElementById(c[0]);

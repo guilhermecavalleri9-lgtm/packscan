@@ -2621,6 +2621,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       const resultado = { ...coord, cidade: coord.cidade || cidadeFinal, enderecoNormalizado: enderecoFinal, ruaCep, ruaTexto: info.rua, complemento, fromCache: false };
+      // planilha sem coluna de endereço: o ponto é do nível da RUA (não da casa) — marca
+      // pra aparecer como impreciso na lista e no mapa
+      if (!endereco) { resultado.precisao = 'SEM_NUMERO'; resultado.semEndereco = true; }
       await supabaseSet(cacheKey, resultado);
       console.log(`[geocode] ✓ ${enderecoFinal.substring(0,55)} (${coord.precisao})`);
       return json(res, 200, resultado);
