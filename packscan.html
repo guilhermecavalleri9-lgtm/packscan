@@ -2734,6 +2734,8 @@ async function iniciarGeo(forcar, soLocalArg) {
     var _hf=document.getElementById('home-geo-fill'); if(_hf)_hf.style.width=pct+'%';
     var _hs=document.getElementById('home-geo-sub'); if(_hs)_hs.textContent=done+'/'+total+' · '+pct+'%';
     var _hl=document.getElementById('home-geo-lb'); if(_hl)_hl.textContent='Geocodificando…';
+    // atualiza o contador do mapa de tempos em tempos (não fica preso em "0 de N")
+    if (done % 50 === 0) { try{ renderHome(); }catch(e){} }
   }
   async function _trabalhador(){
     while(true){
@@ -2741,10 +2743,17 @@ async function iniciarGeo(forcar, soLocalArg) {
       var i=idx++; if (i>=pendentes.length) return;
       var p=pendentes[i];
       try {
-        var r = await apiFetch(BACKEND+'/api/geocode', {
-          method:'POST', headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:!!forcar,soLocal:soLocal})
-        });
+        // timeout: sem ele, uma requisição travada prende o lote pra sempre
+        var _ac = (typeof AbortController!=='undefined') ? new AbortController() : null;
+        var _to = setTimeout(function(){ try{ _ac && _ac.abort(); }catch(e){} }, 45000);
+        var r;
+        try {
+          r = await apiFetch(BACKEND+'/api/geocode', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            signal: _ac ? _ac.signal : undefined,
+            body:JSON.stringify({endereco:p.endereco,bairro:p.bairro,cidade:p.cidade,cep:p.cep,ruaSugerida:cepRuaMap[p.cep]||'',forcar:!!forcar,soLocal:soLocal})
+          });
+        } finally { clearTimeout(_to); }
         if (r.status === 402) {
           if (!parou402) {
             parou402=true; geoParar=true;

@@ -175,13 +175,18 @@ async function otimizarOSRM(pontos, ini, fim) {
   return osrmDoisOpt(ordem, D, base, iniIdx, fimIdx);
 }
 
+// timeout obrigatório: sem ele, uma chamada travada no Google/ViaCEP deixa a
+// geocodificação presa pra sempre (o lote nunca termina).
+const HTTP_TIMEOUT_MS = 15000;
 function httpsGet(hostname, reqPath) {
   return new Promise((resolve, reject) => {
-    https.get({ hostname, path: reqPath, headers: { 'User-Agent': 'PackScan/3.0' } }, r => {
+    const req = https.get({ hostname, path: reqPath, headers: { 'User-Agent': 'PackScan/3.0' }, timeout: HTTP_TIMEOUT_MS }, r => {
       let data = '';
       r.on('data', c => data += c);
       r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } });
-    }).on('error', reject);
+    });
+    req.on('timeout', () => { req.destroy(new Error('timeout em ' + hostname)); });
+    req.on('error', reject);
   });
 }
 
@@ -189,9 +194,10 @@ function httpsPost(hostname, reqPath, headers, payload) {
   return new Promise((resolve, reject) => {
     const buf = Buffer.from(payload);
     const req = https.request(
-      { hostname, path: reqPath, method: 'POST', headers: { ...headers, 'Content-Length': buf.length } },
+      { hostname, path: reqPath, method: 'POST', headers: { ...headers, 'Content-Length': buf.length }, timeout: HTTP_TIMEOUT_MS },
       r => { let data = ''; r.on('data', c => data += c); r.on('end', () => { try { resolve(JSON.parse(data)); } catch(e) { reject(e); } }); }
     );
+    req.on('timeout', () => { req.destroy(new Error('timeout em ' + hostname)); });
     req.on('error', reject); req.write(buf); req.end();
   });
 }
@@ -397,11 +403,12 @@ function mpRequest(method, mpPath, body, extraHeaders) {
     const payload = body ? Buffer.from(JSON.stringify(body)) : null;
     const headers = { 'Authorization': 'Bearer ' + MERCADOPAGO_TOKEN, 'Content-Type': 'application/json', ...(extraHeaders || {}) };
     if (payload) headers['Content-Length'] = payload.length;
-    const req = https.request({ hostname: 'api.mercadopago.com', path: mpPath, method, headers }, r => {
+    const req = https.request({ hostname: 'api.mercadopago.com', path: mpPath, method, headers, timeout: HTTP_TIMEOUT_MS }, r => {
       let data = '';
       r.on('data', c => data += c);
       r.on('end', () => { let p; try { p = data ? JSON.parse(data) : {}; } catch(e) { p = data; } resolve({ status: r.statusCode, body: p }); });
     });
+    req.on('timeout', () => { req.destroy(new Error('timeout na requisição')); });
     req.on('error', reject);
     if (payload) req.write(payload);
     req.end();
@@ -560,7 +567,7 @@ function supabaseRequest(method, path, body, extraHeaders) {
       ...( extraHeaders || {} )
     };
     if (payload) headers['Content-Length'] = payload.length;
-    const req = https.request({ hostname: host, path, method, headers }, r => {
+    const req = https.request({ hostname: host, path, method, headers, timeout: HTTP_TIMEOUT_MS }, r => {
       let data = '';
       r.on('data', c => data += c);
       r.on('end', () => {
@@ -570,6 +577,7 @@ function supabaseRequest(method, path, body, extraHeaders) {
         resolve({ status: r.statusCode, body: parsed, headers: r.headers });
       });
     });
+    req.on('timeout', () => { req.destroy(new Error('timeout na requisição')); });
     req.on('error', reject);
     if (payload) req.write(payload);
     req.end();
