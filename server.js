@@ -733,6 +733,22 @@ function numeroDoTexto(t) {
   const m = String(t || '').match(/\d+/);
   return m ? m[0] : '';
 }
+// nomes dos setores (loteamentos) das cidades importadas — carregado uma vez e mantido em memória
+let _setoresNomes = null;
+async function nomeDoSetor(setor) {
+  if (!setor) return '';
+  if (!_setoresNomes) {
+    _setoresNomes = {};
+    for (const c of CNEFE_CIDADES) {
+      try {
+        const m = await supabaseGet('cnefesetor:' + c.cod);
+        if (m && typeof m === 'object') Object.assign(_setoresNomes, m);
+      } catch(e) {}
+    }
+  }
+  return _setoresNomes[setor] || '';
+}
+
 // nome de rua "vazio" do IBGE (ex: "TRAVESSA SEM DENOMINACAO 7", "RUA SEM DENOMINACAO 2")
 function ruaSemNome(rua) {
   return !rua || /sem\s*denomina/i.test(String(rua));
@@ -776,8 +792,13 @@ async function importarCnefe(cidade, onProgress, job) {
   const col = n => head.indexOf(n);
   const iCep = col('CEP'), iTipo = col('NOM_TIPO_SEGLOGR'), iTit = col('NOM_TITULO_SEGLOGR'),
         iNome = col('NOM_SEGLOGR'), iNum = col('NUM_ENDERECO'), iLoc = col('DSC_LOCALIDADE'),
-        iLat = col('LATITUDE'), iLng = col('LONGITUDE');
+        iLat = col('LATITUDE'), iLng = col('LONGITUDE'), iSetor = col('COD_SETOR');
   const mapa = new Map(); // cnefe:cep:numero -> coord_data (dedup, último vence)
+  // setor censitário = a menor divisão do IBGE (~300-900 casas). É o tamanho de um
+  // loteamento — bem melhor que o bairro pra dividir rota. Guardamos o código no
+  // endereço e um mapa código→nome amigável ("BAIRRO · Rua principal") à parte.
+  const ruasPorSetor = new Map(); // setor -> Map(rua -> contagem)
+  const bairroPorSetor = new Map();
   for (let k = 1; k < linhas.length; k++) {
     const p = linhas[k].split(';');
     if (p.length < head.length) continue;
@@ -786,8 +807,30 @@ async function importarCnefe(cidade, onProgress, job) {
     const lat = parseFloat(p[iLat]), lng = parseFloat(p[iLng]);
     if (cep.length !== 8 || !numero || numero === '0' || !isFinite(lat) || !isFinite(lng)) continue;
     const logradouro = [p[iTipo], p[iTit], p[iNome]].map(s => (s || '').trim()).filter(Boolean).join(' ');
-    mapa.set('cnefe:' + cep + ':' + numero, { lat, lng, logradouro, bairro: (p[iLoc] || '').trim(), cidade: cidade.nome });
+    const bairro = (p[iLoc] || '').trim();
+    const setorFull = (p[iSetor] || '').trim();
+    const setor = setorFull ? setorFull.slice(-9) : ''; // sufixo já é único dentro da cidade
+    if (setor) {
+      const rua = (p[iNome] || '').trim();
+      if (rua) {
+        if (!ruasPorSetor.has(setor)) ruasPorSetor.set(setor, new Map());
+        const m = ruasPorSetor.get(setor);
+        m.set(rua, (m.get(rua) || 0) + 1);
+      }
+      if (bairro && !bairroPorSetor.has(setor)) bairroPorSetor.set(setor, bairro);
+    }
+    mapa.set('cnefe:' + cep + ':' + numero, { lat, lng, logradouro, bairro, setor, cidade: cidade.nome });
   }
+  // nome amigável de cada setor: "BAIRRO · Rua mais frequente"
+  const nomesSetor = {};
+  for (const [setor, m] of ruasPorSetor) {
+    let melhor = '', qtd = -1;
+    for (const [rua, n] of m) if (n > qtd) { qtd = n; melhor = rua; }
+    const b = bairroPorSetor.get(setor) || '';
+    nomesSetor[setor] = (b ? b + ' · ' : '') + melhor;
+  }
+  await supabaseSet('cnefesetor:' + cidade.cod, nomesSetor);
+  if (job) job.setores = Object.keys(nomesSetor).length;
   // grava em lote na geo_cache (batches de 1000)
   const linhasCache = [];
   for (const [cache_key, coord_data] of mapa) linhasCache.push({ cache_key, coord_data });
@@ -2475,7 +2518,7 @@ const server = http.createServer(async (req, res) => {
             cnefeReserva = { ...local, numero: num0 }; // sem nome → tenta Google antes
           } else {
             const enderecoNormalizado = `${local.logradouro}, ${num0}, ${local.cidade}, SC, Brasil`;
-            const resultado = { lat: local.lat, lng: local.lng, enderecoFormatado: enderecoNormalizado, enderecoNormalizado, logradouro: local.logradouro, bairro: local.bairro, cidade: local.cidade, precisao: 'CNEFE', ruaCep: local.logradouro, complemento: num0, fromCache: false };
+            const resultado = { lat: local.lat, lng: local.lng, enderecoFormatado: enderecoNormalizado, enderecoNormalizado, logradouro: local.logradouro, bairro: local.bairro, cidade: local.cidade, setor: local.setor || '', setorNome: await nomeDoSetor(local.setor), precisao: 'CNEFE', ruaCep: local.logradouro, complemento: num0, fromCache: false };
             await supabaseSet(cacheKey, resultado);
             console.log(`[geocode] ✓ CNEFE ${enderecoNormalizado.substring(0,50)}`);
             return json(res, 200, resultado);
@@ -2584,7 +2627,7 @@ const server = http.createServer(async (req, res) => {
       if (!coord && cnefeReserva) {
         const nomeRua = info.rua || cnefeReserva.logradouro;
         const enderecoNormalizado = `${nomeRua}, ${cnefeReserva.numero}, ${cnefeReserva.cidade}, SC, Brasil`;
-        coord = { lat: cnefeReserva.lat, lng: cnefeReserva.lng, enderecoFormatado: enderecoNormalizado, enderecoNormalizado, logradouro: nomeRua, bairro: cnefeReserva.bairro, cidade: cnefeReserva.cidade, precisao: 'CNEFE', complemento: cnefeReserva.numero };
+        coord = { lat: cnefeReserva.lat, lng: cnefeReserva.lng, enderecoFormatado: enderecoNormalizado, enderecoNormalizado, logradouro: nomeRua, bairro: cnefeReserva.bairro, cidade: cnefeReserva.cidade, setor: cnefeReserva.setor || '', setorNome: await nomeDoSetor(cnefeReserva.setor), precisao: 'CNEFE', complemento: cnefeReserva.numero };
         console.log(`[geocode] ✓ CNEFE (reserva, sem nome) ${enderecoNormalizado.substring(0,50)}`);
       }
 
