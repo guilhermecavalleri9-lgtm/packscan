@@ -2777,7 +2777,6 @@ async function iniciarGeo(forcar, soLocalArg) {
         if (r.ok && d.lat) {
           var j=(Math.random()-.5)*0.0003;
           p.lat=d.lat+j; p.lng=d.lng+j; p.enderecoNorm=d.enderecoNormalizado; p.precisao=d.precisao;
-          if(d.setor) p.setor=d.setor; if(d.setorNome) p.setorNome=d.setorNome;
           if (d.bairro&&!p.bairro) p.bairro=d.bairro;
           if (d.cidade) p.cidade=d.cidade;
           var prec=d.precisao==='ROOFTOP'?'📍':d.precisao==='RANGE_INTERPOLATED'?'~':'≈';
@@ -3773,7 +3772,6 @@ async function regeocodificarPacotes(lista, statusEl) {
       if (r.ok && d.lat) {
         var j=(Math.random()-.5)*0.0003;
         p.lat=d.lat+j; p.lng=d.lng+j; p.enderecoNorm=d.enderecoNormalizado; p.precisao=d.precisao;
-          if(d.setor) p.setor=d.setor; if(d.setorNome) p.setorNome=d.setorNome;
         if (d.cidade) p.cidade=d.cidade;
         n++;
       }
@@ -4044,10 +4042,10 @@ async function arGerar() {
     // Distribui os loteamentos (do maior pro menor) sempre na rota com mais espaço livre.
     var porLote = {};
     geo.forEach(function(p){
-      var k = loteamentoChave(p);
+      var k = (p.bairro || '').trim().toUpperCase() || '(sem loteamento)';
       (porLote[k] = porLote[k] || []).push(p);
     });
-    var lotes = Object.keys(porLote).map(function(k){ return { nome:loteamentoDe(porLote[k][0]), pkgs:porLote[k] }; })
+    var lotes = Object.keys(porLote).map(function(k){ return { nome:k, pkgs:porLote[k] }; })
                   .sort(function(a,b){ return b.pkgs.length - a.pkgs.length; });
     var capac = _arConfig.map(function(c){ return parseInt(c.qtd) || 0; });
     lotes.forEach(function(lo){
@@ -4061,7 +4059,7 @@ async function arGerar() {
     });
     // guarda quais loteamentos caíram em cada rota (pra mostrar no resumo)
     _arRotasGeradas.forEach(function(r){
-      var s = {}; r.pkgs.forEach(function(p){ s[loteamentoDe(p)] = 1; });
+      var s = {}; r.pkgs.forEach(function(p){ s[(p.bairro||'').trim().toUpperCase()||'?'] = 1; });
       r.lotes = Object.keys(s).sort();
     });
   } else {
@@ -4765,7 +4763,7 @@ function homeMapPlot(preservarVista){
   }
   var pts=[];
   geo.forEach(function(p){
-    var cor = _verLoteamentos ? corDoLoteamento(loteamentoChave(p))
+    var cor = _verLoteamentos ? corDoLoteamento(p.bairro)
             : ((p.rota && rotas[p.rota-1])?rotas[p.rota-1].cor:'#4f8ef7');
     var rotaNome=(p.rota && rotas[p.rota-1])?rotas[p.rota-1].motorista:'';
     var tkEsc=String(p.tracking||'').replace(/'/g,"\\'");
@@ -4783,17 +4781,6 @@ function homeMapPlot(preservarVista){
 }
 function homeEditar(tracking){ try{ if(hmap) hmap.closePopup(); }catch(e){} abrirModal(tracking); }
 
-// loteamento de um pacote: usa o SETOR do IBGE (menor divisão, ~300-900 casas —
-// dentro de Forquilhas existem 32 deles). Sem setor, cai pro bairro.
-function loteamentoDe(p){
-  if(p && p.setor) return (p.setorNome || ('Setor '+p.setor));
-  return ((p && p.bairro) || '(sem loteamento)').trim();
-}
-function loteamentoChave(p){
-  if(p && p.setor) return 'S:'+p.setor;
-  return 'B:'+(((p && p.bairro)||'(sem)').trim().toUpperCase());
-}
-
 // ── VER LOTEAMENTOS NO MAPA (cor + nome por loteamento) ──
 var _verLoteamentos = false;
 var CORES_LOTE = ['#4f8ef7','#34c97e','#f5a623','#f05252','#a78bfa','#38bdf8','#fb923c','#e879f9','#4ade80','#facc15','#f472b6','#22d3ee','#c084fc','#fdba74','#5eead4','#fca5a5'];
@@ -4808,7 +4795,7 @@ function toggleLoteamentos(){
   _verLoteamentos=!_verLoteamentos;
   var b=document.getElementById('btn-lote'); if(b) b.classList.toggle('on',_verLoteamentos);
   if(_verLoteamentos){
-    var s={}; geo.forEach(function(p){ s[loteamentoChave(p)]=1; });
+    var s={}; geo.forEach(function(p){ s[(p.bairro||'(sem loteamento)').trim().toUpperCase()]=1; });
     var n=Object.keys(s).length;
     var hs=document.getElementById('home-hero-s');
     if(hs) hs.textContent=n+' loteamento(s) no mapa';
@@ -4821,7 +4808,7 @@ function plotarRotulosLoteamento(){
   var grupos={};
   pacotes.forEach(function(p){
     if(!(p.lat&&p.lng)) return;
-    var k=loteamentoChave(p);
+    var k=(p.bairro||'(sem loteamento)').trim().toUpperCase();
     (grupos[k]=grupos[k]||[]).push(p);
   });
   Object.keys(grupos).forEach(function(k){
@@ -4829,7 +4816,7 @@ function plotarRotulosLoteamento(){
     var la=0,ln=0; g.forEach(function(p){ la+=p.lat; ln+=p.lng; });
     la/=g.length; ln/=g.length;
     L.marker([la,ln],{interactive:false,icon:L.divIcon({className:'',
-      html:'<div style="white-space:nowrap;transform:translate(-50%,-50%);background:rgba(10,14,21,.82);border:1px solid '+corDoLoteamento(k)+';color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px">'+esc(loteamentoDe(g[0]))+' · '+g.length+'</div>',
+      html:'<div style="white-space:nowrap;transform:translate(-50%,-50%);background:rgba(10,14,21,.82);border:1px solid '+corDoLoteamento(k)+';color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:999px">'+esc(k)+' · '+g.length+'</div>',
       iconSize:null})}).addTo(hmapLayer);
   });
 }
