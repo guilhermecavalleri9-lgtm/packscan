@@ -224,6 +224,8 @@ function httpsGetBuffer(urlStr, saltos) {
 // descompacta o PRIMEIRO arquivo de um .zip usando só o zlib nativo (lê o diretório
 // central pra achar o tamanho comprimido e o offset — funciona pra zip de 1 arquivo).
 const zlib = require('zlib');
+// cache em memória do bairros.json já gzipado (gerado na 1ª requisição)
+let _bairrosGz = null;
 function unzipPrimeiroArquivo(buf) {
   let eocd = -1;
   for (let i = buf.length - 22; i >= 0 && i > buf.length - 22 - 65536; i--) {
@@ -2066,6 +2068,22 @@ const server = http.createServer(async (req, res) => {
       res.end(data);
     });
     return;
+  }
+
+  // ─── contornos dos bairros (OpenStreetMap) ────────────────────────────────
+  // Camada só visual do mapa: polígonos oficiais dos bairros da Grande
+  // Florianópolis. Arquivo estático, servido gzipado e com cache longo.
+  if (req.method === 'GET' && pathname === '/api/bairros') {
+    if (_bairrosGz) {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'public, max-age=86400' });
+      return res.end(_bairrosGz);
+    }
+    return fs.readFile(path.join(__dirname, 'bairros.json'), (err, data) => {
+      if (err) { res.writeHead(404); return res.end('[]'); }
+      _bairrosGz = zlib.gzipSync(data);
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Content-Encoding': 'gzip', 'Cache-Control': 'public, max-age=86400' });
+      res.end(_bairrosGz);
+    });
   }
 
   // ─── PWA: manifest, service worker e ícones (instalar na tela inicial) ─────
