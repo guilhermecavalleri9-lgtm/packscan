@@ -2938,7 +2938,7 @@ function renderRotasList() {
   vz.style.display='none'; el.innerHTML=''; if(lim) lim.style.display='flex';
   rotas.forEach(function(r,i) {
     var d=document.createElement('div'); d.className='rot-item';
-    d.innerHTML='<div class="dot" style="background:'+r.cor+'"></div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.motorista)+'</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">R'+String(r.id).padStart(2,'0')+' · '+r.pkgs.length+' pkg</div></div><button class="btn btn-r btn-sm" onclick="removerRota('+i+')">✕</button>';
+    d.innerHTML='<div class="dot" style="background:'+r.cor+'"></div><div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.motorista)+'</div><div style="font-size:11px;color:var(--text3);font-family:var(--mono)">R'+String(r.id).padStart(2,'0')+' · '+r.pkgs.length+' pkg</div></div><button class="btn btn-sm" title="Renomear rota" onclick="renomearRota('+i+')">✏️</button><button class="btn btn-r btn-sm" onclick="removerRota('+i+')">✕</button>';
     el.appendChild(d);
   });
 }
@@ -2981,9 +2981,23 @@ function atualizarAposExcluir() {
   try { if (document.getElementById('exr-lista')) renderExcluirRotas(); } catch(e) {}
 }
 
-// ── PAINEL "EXCLUIR ROTAS" (botão 🗑 no mapa da home) ──
+// renomeia uma rota (o nome é o que aparece na etiqueta e no romaneio)
+function renomearRota(i) {
+  if (!rotas || !rotas[i]) return;
+  var novo = prompt('Nome da rota / motorista:', rotas[i].motorista || '');
+  if (novo === null) return;
+  novo = (novo || '').trim();
+  if (!novo) { alert('O nome não pode ficar vazio.'); return; }
+  rotas[i].motorista = novo;
+  if (typeof motAtivo !== 'undefined' && motAtivo === rotas[i].id) { /* mantém a rota ativa */ }
+  atualizarAposExcluir();
+}
+
+// ── PAINEL "EXCLUIR / EDITAR ROTAS" (botão 🗑 no mapa da home) ──
 function abrirExcluirRotas() {
-  if (typeof rotas === 'undefined' || !rotas || !rotas.length) { alert('Não há rotas pra excluir.'); return; }
+  var temRotas = (typeof rotas !== 'undefined' && rotas && rotas.length);
+  var temPacotes = (typeof pacotes !== 'undefined' && pacotes && pacotes.length);
+  if (!temRotas && !temPacotes) { alert('Não há nada pra excluir.'); return; }
   var bg = document.getElementById('exr-bg');
   if (!bg) {
     bg = document.createElement('div'); bg.id = 'exr-bg';
@@ -2991,10 +3005,14 @@ function abrirExcluirRotas() {
     bg.onclick = function(e){ if (e.target === bg) fecharExcluirRotas(); };
     bg.innerHTML = '<div class="modal-box" style="width:420px">'
       + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem">'
-      + '<b style="font-size:15px">Excluir rotas</b>'
+      + '<b style="font-size:15px">Rotas e importação</b>'
       + '<button class="btn btn-sm" onclick="fecharExcluirRotas()">✕</button></div>'
       + '<div id="exr-lista" style="display:flex;flex-direction:column;gap:8px"></div>'
-      + '<button class="btn btn-r btn-sm" style="justify-content:center;width:100%;margin-top:1rem" onclick="excluirTodasRotas()">🗑 Apagar todas as rotas</button></div>';
+      + '<button class="btn btn-r btn-sm" id="exr-todas" style="justify-content:center;width:100%;margin-top:1rem" onclick="excluirTodasRotas()">🗑 Apagar todas as rotas</button>'
+      + '<div style="border-top:1px solid var(--border);margin:1rem 0 .75rem"></div>'
+      + '<div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:.5rem" id="exr-imp-info"></div>'
+      + '<button class="btn btn-r btn-sm" style="justify-content:center;width:100%" onclick="apagarSessao()">🗑 Apagar a importação inteira</button>'
+      + '<div style="font-size:11px;color:var(--text3);margin-top:.5rem">Apaga pacotes, rotas e bipagens — deste aparelho e do servidor. Não pode ser desfeito.</div></div>';
     document.body.appendChild(bg);
   }
   bg.style.display = 'flex';
@@ -3003,14 +3021,25 @@ function abrirExcluirRotas() {
 function fecharExcluirRotas() { var bg = document.getElementById('exr-bg'); if (bg) bg.style.display = 'none'; }
 function renderExcluirRotas() {
   var el = document.getElementById('exr-lista'); if (!el) return;
-  if (!rotas || !rotas.length) { fecharExcluirRotas(); return; }
+  var info = document.getElementById('exr-imp-info');
+  if (info) info.textContent = (pacotes && pacotes.length)
+    ? (pacotes.length + ' pacote(s) importado(s)' + (_arquivoNome ? ' · ' + _arquivoNome : ''))
+    : 'nenhum pacote importado';
+  var todas = document.getElementById('exr-todas');
   el.innerHTML = '';
+  if (!rotas || !rotas.length) {
+    if (todas) todas.style.display = 'none';
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3);font-family:var(--mono)">nenhuma rota criada</div>';
+    return;
+  }
+  if (todas) todas.style.display = 'flex';
   rotas.forEach(function(r,i){
     var d = document.createElement('div'); d.className = 'rot-item';
     d.innerHTML = '<div class="dot" style="background:'+r.cor+'"></div>'
       + '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(r.motorista)+'</div>'
       + '<div style="font-size:11px;color:var(--text3);font-family:var(--mono)">R'+String(r.id).padStart(2,'0')+' · '+((r.pkgs&&r.pkgs.length)||0)+' pkg</div></div>'
-      + '<button class="btn btn-r btn-sm" onclick="removerRota('+i+')">✕ excluir</button>';
+      + '<button class="btn btn-sm" title="Renomear" onclick="renomearRota('+i+')">✏️</button>'
+      + '<button class="btn btn-r btn-sm" onclick="removerRota('+i+')">✕</button>';
     el.appendChild(d);
   });
 }
@@ -4302,6 +4331,10 @@ async function apagarSessao() {
   } catch(e){}
   el.textContent = '✓ Importação apagada (navegador e servidor).';
   el.style.color = 'var(--text3)';
+  try { fecharExcluirRotas(); } catch(e) {}
+  try { renderHome(); } catch(e) {}
+  try { homeMapPlot(true); } catch(e) {}
+  try { renderListaPacotes(); } catch(e) {}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -4733,7 +4766,7 @@ function renderHome(){
   if(!nrotas && _editRotas) _editRotas=false;
   var pen=document.getElementById('btn-pen');
   if(pen){ pen.style.display = nrotas ? 'grid' : 'none'; pen.classList.toggle('on', _editRotas); }
-  var trash=document.getElementById('btn-trash'); if(trash) trash.style.display = nrotas ? 'grid' : 'none';
+  var trash=document.getElementById('btn-trash'); if(trash) trash.style.display = (nrotas||tot) ? 'grid' : 'none';
   var hint=document.getElementById('edit-rotas-hint');
   if(hint){ hint.style.display=_editRotas?'block':'none'; if(_editRotas) hint.innerHTML='✏️ <b>Editando rotas</b> — arraste os pontos brancos pra remodelar a área de cada rota. Os pacotes que ficarem dentro passam pra aquela rota. Toque no lápis de novo pra concluir.'; }
   var reo=document.getElementById('btn-reotimizar'); if(reo) reo.style.display = nrotas ? 'flex':'none';
