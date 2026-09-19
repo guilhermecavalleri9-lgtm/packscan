@@ -1274,6 +1274,14 @@ tr:hover td{background:rgba(255,255,255,.02)}
       </div>
       <div id="gkeys-teste" style="font-size:12px;font-family:var(--mono);min-height:16px;margin-bottom:.4rem"></div>
       <div style="border-top:1px solid var(--border);margin-top:.6rem;padding-top:.6rem">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:6px">Diagnóstico do e-mail de verificação (Brevo):</div>
+        <div style="display:flex;gap:6px;margin-bottom:.5rem">
+          <input type="text" id="email-teste-para" placeholder="e-mail pra receber o teste" style="flex:1;font-family:var(--mono);font-size:12px" autocomplete="off">
+          <button class="btn btn-p btn-sm" onclick="emailTestar()">📨 Testar envio</button>
+        </div>
+        <div id="email-teste-res" style="font-size:12px;font-family:var(--mono);white-space:pre-wrap;min-height:16px"></div>
+      </div>
+      <div style="border-top:1px solid var(--border);margin-top:.6rem;padding-top:.6rem">
         <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Mostrar o aviso (e iniciar as 72h) pra usuários específicos — cole um por linha (usuário ou e-mail):</div>
         <textarea id="gkey-marcar-input" placeholder="frangerd&#10;ana-demaria@hotmail.com&#10;raimundo07" style="width:100%;height:90px;font-family:var(--mono);font-size:12px;margin-bottom:6px"></textarea>
         <button class="btn btn-a btn-sm" onclick="gkeyMarcar()">⚠️ Marcar estes usuários (aviso + 72h)</button>
@@ -4031,6 +4039,22 @@ async function gkeyMarcar(){
     msg+='\n\nQuer avisá-los por e-mail agora? Use o botão "📧 Avisar pendentes por e-mail".';
     alert(msg);
   }catch(e){ alert('Erro: '+e.message); }
+}
+async function emailTestar(){
+  var el=document.getElementById('email-teste-res');
+  var para=(document.getElementById('email-teste-para').value||'').trim();
+  el.innerHTML='⏳ enviando…'; el.style.color='var(--text3)';
+  try{
+    var r=await apiFetch(BACKEND+'/api/admin/email/testar', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({para:para}) });
+    var d=await r.json();
+    var linhas=[];
+    linhas.push((d.chaveDefinida?'✓':'✗')+' BREVO_API_KEY definida');
+    linhas.push((d.configurado?'✓':'✗')+' remetente: '+esc(d.remetente||''));
+    linhas.push((d.authSecretDefinido?'✓':'✗')+' AUTH_SECRET definido'+(d.authSecretDefinido?'':' — sem ele todos são deslogados a cada deploy'));
+    if(d.enviado) linhas.push('<span style="color:var(--green)">✓ e-mail de teste enviado (HTTP '+d.status+')</span>');
+    else linhas.push('<span style="color:var(--red)">✗ não enviou: '+esc(d.erro||('HTTP '+(d.status||'?')+' — '+(d.resposta||'')))+'</span>');
+    el.innerHTML=linhas.join('\n'); el.style.color='var(--text2)';
+  }catch(e){ el.textContent='Erro: '+e.message; el.style.color='var(--red)'; }
 }
 async function gkeyDiagnostico(){
   var el=document.getElementById('gkeys-teste');

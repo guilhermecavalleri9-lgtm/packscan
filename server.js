@@ -624,7 +624,19 @@ const EMAIL_ATIVO = !!(BREVO_API_KEY && BREVO_SENDER); // só exige confirmaçã
 const EMAIL_CODIGO_VALIDADE_MS = 15 * 60 * 1000; // 15 minutos
 function emailValido(e) { return /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(e || '').trim()); }
 function gerarCodigo6() { return String(crypto.randomInt(0, 1000000)).padStart(6, '0'); }
-function hashCodigo(c) { return crypto.createHash('sha256').update(String(c) + '|' + AUTH_SECRET).digest('hex'); }
+// O hash do código de 6 dígitos NÃO pode depender do AUTH_SECRET: quando ele não
+// está definido no ambiente, um novo é sorteado a cada reinício do servidor e
+// todo código pendente passa a dar "Código incorreto". Por isso cada código
+// carrega o próprio sal aleatório, guardado junto no usuário.
+function novoSal() { return crypto.randomBytes(12).toString('hex'); }
+function hashCodigo(c, sal) { return crypto.createHash('sha256').update(String(c) + '|' + String(sal || AUTH_SECRET)).digest('hex'); }
+// confere o código aceitando também o formato antigo (sem sal), pra não invalidar
+// os códigos já enviados na hora do deploy
+function codigoConfere(codigo, hashSalvo, sal) {
+  if (!hashSalvo) return false;
+  if (sal && hashCodigo(codigo, sal) === hashSalvo) return true;
+  return hashCodigo(codigo, AUTH_SECRET) === hashSalvo;
+}
 
 // envia um e-mail transacional pela API do Brevo
 function enviarEmailBrevo(to, subject, html) {
@@ -637,12 +649,17 @@ function enviarEmailBrevo(to, subject, html) {
     }));
     const r = https.request({
       hostname: 'api.brevo.com', path: '/v3/smtp/email', method: 'POST',
-      headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Length': payload.length }
+      headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json', 'Accept': 'application/json', 'Content-Length': payload.length },
+      timeout: HTTP_TIMEOUT_MS
     }, resp => {
       let d = ''; resp.on('data', c => d += c);
-      resp.on('end', () => resolve({ ok: resp.statusCode < 300, status: resp.statusCode, body: d }));
+      resp.on('end', () => {
+        if (resp.statusCode >= 300) console.error('[email] Brevo respondeu ' + resp.statusCode + ':', d);
+        resolve({ ok: resp.statusCode < 300, status: resp.statusCode, body: d });
+      });
     });
-    r.on('error', e => resolve({ ok: false, motivo: e.message }));
+    r.on('timeout', () => { r.destroy(new Error('timeout na API do Brevo')); });
+    r.on('error', e => { console.error('[email] erro ao falar com o Brevo:', e.message); resolve({ ok: false, motivo: e.message }); });
     r.write(payload); r.end();
   });
 }
@@ -650,7 +667,8 @@ function enviarEmailBrevo(to, subject, html) {
 // gera um código novo pro usuário, salva o hash+validade e dispara o e-mail
 async function enviarCodigoEmail(u) {
   const codigo = gerarCodigo6();
-  u.emailCodigoHash = hashCodigo(codigo);
+  u.emailCodigoSal = novoSal();
+  u.emailCodigoHash = hashCodigo(codigo, u.emailCodigoSal);
   u.emailCodigoExp = Date.now() + EMAIL_CODIGO_VALIDADE_MS;
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:460px;margin:0 auto;padding:24px;background:#0e1424;color:#e8ecf3;border-radius:12px">
@@ -1141,7 +1159,7 @@ const server = http.createServer(async (req, res) => {
   // rotas de API que não exigem login (login/registro em si)
   const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados']);
   // rotas que, além de logado, exigem admin
-  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/admin/conta', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
+  const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/email/testar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/admin/conta', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
   if (pathname.indexOf('/api/') === 0 && !AUTH_PUBLICA.has(pathname)) {
     const usuarioAtual = await autenticar(req);
@@ -1210,9 +1228,9 @@ const server = http.createServer(async (req, res) => {
     if (!u.emailCodigoHash || !u.emailCodigoExp || Date.now() > u.emailCodigoExp) {
       return json(res, 400, { error: 'Código expirado. Reenvie um novo código.' });
     }
-    if (hashCodigo(codigo) !== u.emailCodigoHash) return json(res, 400, { error: 'Código incorreto.' });
+    if (!codigoConfere(codigo, u.emailCodigoHash, u.emailCodigoSal)) return json(res, 400, { error: 'Código incorreto.' });
     u.emailVerificado = true;
-    delete u.emailCodigoHash; delete u.emailCodigoExp;
+    delete u.emailCodigoHash; delete u.emailCodigoExp; delete u.emailCodigoSal;
     await setUsuarios(lista);
     console.log(`[auth] e-mail confirmado: ${usuario}`);
     return json(res, 200, { ok: true, pendente: u.status !== 'aprovado' });
@@ -1253,7 +1271,8 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, { ...respostaGenerica, jaEnviado: true });
     }
     const codigo = gerarCodigo6();
-    u.senhaCodigoHash = hashCodigo(codigo);
+    u.senhaCodigoSal = novoSal();
+    u.senhaCodigoHash = hashCodigo(codigo, u.senhaCodigoSal);
     u.senhaCodigoExp = Date.now() + EMAIL_CODIGO_VALIDADE_MS;
     u.senhaCodigoTentativas = 0;
     const html = `
@@ -1289,12 +1308,12 @@ const server = http.createServer(async (req, res) => {
       delete u.senhaCodigoHash; delete u.senhaCodigoExp; await setUsuarios(lista);
       return json(res, 429, { error: 'Muitas tentativas erradas. Peça um novo código.' });
     }
-    if (hashCodigo(codigo) !== u.senhaCodigoHash) {
+    if (!codigoConfere(codigo, u.senhaCodigoHash, u.senhaCodigoSal)) {
       await setUsuarios(lista);
       return json(res, 400, { error: 'Código incorreto.' });
     }
     u.senhaHash = hashSenha(senhaNova);
-    delete u.senhaCodigoHash; delete u.senhaCodigoExp; delete u.senhaCodigoTentativas;
+    delete u.senhaCodigoHash; delete u.senhaCodigoExp; delete u.senhaCodigoTentativas; delete u.senhaCodigoSal;
     u.emailVerificado = true; // quem recebeu o código no e-mail comprova que o e-mail é dele
     await setUsuarios(lista);
     console.log(`[senha] redefinida: ${u.usuario}`);
@@ -2006,6 +2025,24 @@ const server = http.createServer(async (req, res) => {
     });
   }
   // ─── POOL DE CHAVES GOOGLE: avisar por e-mail os usuários com chave pendente (admin) ──
+  // ─── DIAGNÓSTICO DO E-MAIL (admin) ────────────────────────────────────────
+  // Mostra se o Brevo está configurado e manda um e-mail de teste, devolvendo a
+  // resposta crua da API — é assim que se descobre por que o código não chega.
+  if (req.method === 'POST' && pathname === '/api/admin/email/testar') {
+    const body = await readBody(req);
+    const para = String((body && body.para) || '').trim() || (req.usuarioAtual.email || '');
+    const estado = {
+      configurado: EMAIL_ATIVO,
+      remetente: BREVO_SENDER || '(vazio)',
+      chaveDefinida: !!BREVO_API_KEY,
+      authSecretDefinido: !!process.env.AUTH_SECRET
+    };
+    if (!EMAIL_ATIVO) return json(res, 200, { ...estado, enviado: false, erro: 'BREVO_API_KEY e/ou BREVO_SENDER nao estao definidos no ambiente.' });
+    if (!emailValido(para)) return json(res, 400, { ...estado, enviado: false, erro: 'Informe um e-mail valido para o teste.' });
+    const r = await enviarEmailBrevo(para, 'Teste de e-mail PackScan', '<p>Se voce recebeu isso, o envio de e-mail esta funcionando.</p>');
+    return json(res, 200, { ...estado, enviado: !!r.ok, status: r.status || null, resposta: r.body || r.motivo || '' });
+  }
+
   if (req.method === 'POST' && pathname === '/api/admin/gkeys/avisar') {
     if (!EMAIL_ATIVO) return json(res, 503, { error: 'E-mail (Brevo) não configurado.' });
     const usuarios = await getUsuarios();
