@@ -620,7 +620,13 @@ function senhaConfere(senha, hashArmazenado) {
 }
 
 // ─── CONFIRMAÇÃO DE E-MAIL (Brevo) ─────────────────────────────────────────────
-const EMAIL_ATIVO = !!(BREVO_API_KEY && BREVO_SENDER); // só exige confirmação se configurado
+const EMAIL_ATIVO = !!(BREVO_API_KEY && BREVO_SENDER); // dá pra enviar e-mail?
+// CHAVE GERAL da confirmação de e-mail no cadastro. Está DESLIGADA: o Brevo está
+// barrando as chamadas vindas do IP do Render, então ninguém conseguia receber o
+// código e o cadastro ficava travado. Pra religar, basta definir a variável de
+// ambiente VERIFICAR_EMAIL=on (nada mais precisa mudar). O envio de e-mail em si
+// continua ligado — é o mesmo caminho usado pelo "esqueci minha senha".
+const EXIGIR_EMAIL = EMAIL_ATIVO && String(process.env.VERIFICAR_EMAIL || '').toLowerCase() === 'on';
 const EMAIL_CODIGO_VALIDADE_MS = 15 * 60 * 1000; // 15 minutos
 function emailValido(e) { return /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(e || '').trim()); }
 function gerarCodigo6() { return String(crypto.randomInt(0, 1000000)).padStart(6, '0'); }
@@ -1196,7 +1202,7 @@ const server = http.createServer(async (req, res) => {
       usuario, senhaHash: hashSenha(senha),
       email: email || null,
       tipoConta,
-      emailVerificado: EMAIL_ATIVO ? ehPrimeiro : true, // se e-mail não configurado, não exige
+      emailVerificado: EXIGIR_EMAIL ? ehPrimeiro : true, // confirmação desligada = já entra liberado
       status: 'aprovado',
       admin: ehPrimeiro,
       creditos: 0,
@@ -1205,7 +1211,7 @@ const server = http.createServer(async (req, res) => {
       criadoEm: new Date().toISOString()
     };
     let emailEnviado = false;
-    if (EMAIL_ATIVO && !novo.emailVerificado) {
+    if (EXIGIR_EMAIL && !novo.emailVerificado) {
       const r = await enviarCodigoEmail(novo);
       emailEnviado = !!(r && r.ok);
       if (!emailEnviado) console.error('[auth] falha ao enviar e-mail de confirmação:', r && (r.body || r.motivo));
@@ -1213,7 +1219,7 @@ const server = http.createServer(async (req, res) => {
     lista.push(novo);
     await setUsuarios(lista);
     console.log(`[auth] registro: ${usuario}${ehPrimeiro ? ' (primeiro usuário → admin)' : ` (auto-aprovado, teste ${TRIAL_DIAS} dias)`}${novo.emailVerificado ? '' : ' — aguardando confirmação de e-mail'}`);
-    return json(res, 200, { ok: true, pendente: false, trialDias: TRIAL_DIAS, refIgnorado, precisaEmail: EMAIL_ATIVO && !novo.emailVerificado, emailEnviado });
+    return json(res, 200, { ok: true, pendente: false, trialDias: TRIAL_DIAS, refIgnorado, precisaEmail: EXIGIR_EMAIL && !novo.emailVerificado, emailEnviado });
   }
 
   // ─── AUTENTICAÇÃO: confirma o código de e-mail ─────────────────────────────
@@ -1338,7 +1344,8 @@ const server = http.createServer(async (req, res) => {
       return json(res, 401, { error: 'Usuário ou senha inválidos' });
     }
     delete loginFalhas[chaveLogin]; // acertou a senha — zera o contador
-    if (u.emailVerificado === false) return json(res, 403, { error: 'Confirme seu e-mail antes de entrar.', emailNaoVerificado: true, usuario: u.usuario });
+    // com a confirmação desligada, quem ficou preso por causa do Brevo entra normalmente
+    if (EXIGIR_EMAIL && u.emailVerificado === false) return json(res, 403, { error: 'Confirme seu e-mail antes de entrar.', emailNaoVerificado: true, usuario: u.usuario });
     if (u.status !== 'aprovado') return json(res, 403, { error: 'Cadastro ainda não foi aprovado por um administrador' });
     const saldoLogin = await saldoCreditos(u);
     return json(res, 200, {
