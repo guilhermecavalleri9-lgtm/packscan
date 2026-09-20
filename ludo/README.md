@@ -5,6 +5,7 @@ De **2 a 4 jogadores**, 4 peões cada, um no seu celular — ou vários no mesmo
 aparelho, pra quem estiver junto. A tela de escolha dos jogos fica em `/jogos`.
 
 ## Regras
+- **Passa o dedo** na mesa e o dado rola (não tem botão).
 - Precisa tirar **6** pra botar um peão na pista.
 - Tirou **6, joga de novo** — três seguidos perde a vez.
 - Parou em cima de peão adversário, **manda ele pra casa**. Nas casas marcadas
@@ -16,6 +17,11 @@ aparelho, pra quem estiver junto. A tela de escolha dos jogos fica em `/jogos`.
 
 Com 2 jogadores as cores ficam em cantos opostos (vermelho e amarelo), que é
 como se joga na mesa. As cores são distribuídas quando a partida começa.
+
+Enrolou mais de **10 segundos**? O servidor joga por você: rola o dado e, se
+tiver mais de um peão possível, escolhe sozinho — chegar no meio vale mais que
+comer, comer mais que tirar peão da casa, e o desempate vai no peão mais
+adiantado. A barrinha embaixo do dado mostra o tempo.
 
 ## Como o tabuleiro é representado
 A posição do peão é um **passo de -1 a 56**, não uma coordenada:
@@ -40,7 +46,7 @@ retas finais, triângulos do meio) mora só no celular, que monta o SVG.
 | `POST /api/ludo/entrar` | entra pelo código; sem token vira jogador novo (mais gente no mesmo celular), com token conhecido é reconexão |
 | `GET /api/ludo/estado` | long-poll: segura a resposta até mudar algo (máx. 25s) |
 | `POST /api/ludo/comecar` | dono começa a partida (mínimo 2) |
-| `POST /api/ludo/rolar` | rola o dado |
+| `POST /api/ludo/rolar` | rola o dado (o servidor também chama sozinho depois de 10s) |
 | `POST /api/ludo/mover` | escolhe qual peão mexer (só quando dá mais de uma opção) |
 | `POST /api/ludo/revanche` | joga de novo com a mesma turma |
 | `POST /api/ludo/sair` | libera a vaga (aceita vários tokens separados por vírgula) |

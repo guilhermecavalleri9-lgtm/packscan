@@ -109,6 +109,19 @@ input{-webkit-user-select:text;user-select:text}
 .dado i{border-radius:50%;background:#1b1f3d;width:9px;height:9px;align-self:center;justify-self:center}
 .dado.rola{animation:chacoalha .42s ease-in-out infinite}
 @keyframes chacoalha{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-7px) rotate(-11deg)}75%{transform:translateY(5px) rotate(13deg)}}
+/* mesa de rolar: passa o dedo por cima e o dado gira. touch-action:none pra o
+   arrasto não virar rolagem da página no celular. */
+.mesa{border:2px dashed var(--linha);border-radius:18px;padding:12px 14px 11px;
+  display:flex;flex-direction:column;align-items:center;gap:9px;touch-action:none;
+  transition:border-color .2s,background .2s}
+.mesa.minha{border-style:solid;border-color:var(--verde);background:rgba(52,211,153,.07)}
+.mesa.escolher{border-style:solid;border-color:var(--amarelo);background:rgba(250,204,21,.08)}
+.mesa-tx{font-size:13px;font-weight:700;color:var(--txt3);text-align:center;line-height:1.25}
+.mesa.minha .mesa-tx{color:var(--verde)}
+.mesa.escolher .mesa-tx{color:var(--amarelo)}
+.relogio{width:100%;height:5px;border-radius:99px;background:var(--linha);overflow:hidden;visibility:hidden}
+.relogio .barra{height:100%;width:100%;background:var(--amarelo);border-radius:99px;transition:width .2s linear}
+.dado{transition:transform .12s ease-out}
 .fala{text-align:center;font-size:13px;color:var(--txt2);min-height:34px;margin-top:4px;
   display:flex;align-items:center;justify-content:center;padding:0 4px}
 .linha-info{display:flex;align-items:center;justify-content:space-between;margin-top:8px;color:var(--txt3);font-size:11px;font-weight:600}
@@ -151,11 +164,12 @@ input{-webkit-user-select:text;user-select:text}
     <div class="regra">
       <b>Como funciona</b>
       <ul>
-        <li>Precisa tirar <b>6</b> pra botar um peão na pista.</li>
+        <li><b>Passa o dedo</b> na mesa pra rolar. Precisa de <b>6</b> pra botar peão na pista.</li>
         <li>Tirou 6, <b>joga de novo</b> — três seguidos perde a vez.</li>
         <li>Parou em cima de peão adversário, <b>manda ele pra casa</b> (menos nas casas marcadas ★).</li>
         <li>Pra entrar no meio tem que tirar o <b>número certinho</b>.</li>
         <li>Ganha quem levar os <b>4 peões</b> pra chegada primeiro.</li>
+        <li>Demorou mais de <b>10 segundos</b>? O jogo joga por você.</li>
       </ul>
     </div>
     <div class="campo">
@@ -199,9 +213,12 @@ input{-webkit-user-select:text;user-select:text}
     <div class="topo" id="jg-topo"></div>
     <div class="tabwrap" id="jg-wrap"><div id="jg-svg"></div></div>
     <div class="pe">
-      <div class="dados" id="jg-dados"></div>
+      <div class="mesa" id="jg-mesa">
+        <div class="dados" id="jg-dados"></div>
+        <div class="mesa-tx" id="jg-mesa-tx">passe o dedo pra rolar</div>
+        <div class="relogio" id="jg-relogio"><div class="barra" id="jg-barra"></div></div>
+      </div>
       <div class="fala" id="jg-fala"></div>
-      <button class="btn btn-1" id="bt-rolar">Rolar o dado</button>
       <div class="linha-info">
         <span class="sala" id="jg-sala"></span>
         <span class="acoes"><button id="bt-sair-jogo">sair</button></span>
@@ -227,6 +244,7 @@ var CHAVE = 'lu:sala';
 var eu = { codigo:null, vagas:[] };
 var jogo = null, versaoVista = 0, laco = 0, seqVista = 0;
 var animando = false, enviando = false, svgPronto = false;
+var prazoLocal = 0;   // quando o servidor joga sozinho, na hora deste celular
 
 var $ = function(id){ return document.getElementById(id); };
 function esc(t){ return String(t==null?'':t).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
@@ -397,6 +415,7 @@ function marcarPodem(){
 function aplicar(novo){
   var antes = jogo;
   jogo = novo; versaoVista = novo.versao;
+  prazoLocal = novo.prazoMs ? Date.now() + novo.prazoMs : 0;
   if (novo.estado === 'lobby') { $('fim').classList.remove('on'); svgPronto = false; renderLobby(); tela('lobby'); return; }
   tela('jogo');
   renderJogo(!antes || antes.estado === 'lobby');
@@ -450,30 +469,41 @@ function renderJogo(remontar){
   if (!svgPronto || remontar) { $('jg-svg').innerHTML = montarSvg(); montarPeoes(); svgPronto = true; }
   var jg = jogo.ultimaJogada;
   $('jg-dados').innerHTML = jg ? dadoHtml(jg.dado) : (jogo.dado ? dadoHtml(jogo.dado) : '');
-  if (!animando) atualizarBotao();
+  if (!animando) atualizarMesa();
 }
 
-function atualizarBotao(){
-  var b = $('bt-rolar'), fala = $('jg-fala');
-  if (jogo.estado === 'fim') { b.style.display = 'none'; return; }
-  var daVez = jogo.jogadores.filter(function(p){ return p.id === jogo.vezId; })[0];
-  if (jogo.fase === 'mover' && minhaVez()) {
-    b.style.display = 'none';
-    fala.innerHTML = '<b>Toque no peão que quer mexer</b>';
-    marcarPodem();
-    return;
-  }
-  b.style.display = '';
-  if (animando) { b.disabled = true; b.textContent = '…'; return; }
-  if (minhaVez()) {
-    b.disabled = false;
-    b.textContent = eu.vagas.length > 1 ? 'Rolar — ' + (daVez ? daVez.nome : '') : 'Rolar o dado';
-  } else {
-    b.disabled = true;
-    b.textContent = daVez ? 'Vez de ' + daVez.nome : 'Aguarde';
-  }
-  fala.innerHTML = jogo.ultimaJogada ? esc(jogo.ultimaJogada.texto) : 'Precisa de 6 pra sair da casa. Boa sorte!';
+function podeRolar(){
+  return jogo && jogo.estado === 'jogando' && jogo.fase === 'rolar' && minhaVez() && !animando && !enviando;
 }
+function textoMesa(){
+  if (!jogo) return '';
+  if (jogo.estado === 'fim') return 'fim de jogo';
+  if (animando) return '…';
+  var daVez = jogo.jogadores.filter(function(p){ return p.id === jogo.vezId; })[0];
+  var resta = prazoLocal ? Math.max(0, prazoLocal - Date.now()) : 0;
+  var conta = (resta && resta <= 5000) ? ' · joga sozinho em ' + Math.ceil(resta/1000) + 's' : '';
+  if (jogo.fase === 'mover') {
+    return (minhaVez() ? 'toque no peão que quer mexer'
+                       : (daVez ? daVez.nome + ' está escolhendo o peão' : '...')) + conta;
+  }
+  if (minhaVez()) return (eu.vagas.length > 1 ? 'passe o dedo — ' + (daVez ? daVez.nome : '') : 'passe o dedo pra rolar') + conta;
+  return 'vez de ' + (daVez ? daVez.nome : '...') + conta;
+}
+function atualizarMesa(){
+  if (!jogo) return;
+  var escolher = jogo.estado === 'jogando' && jogo.fase === 'mover' && minhaVez() && !animando;
+  $('jg-mesa').classList.toggle('minha', !!podeRolar());
+  $('jg-mesa').classList.toggle('escolher', !!escolher);
+  $('jg-mesa-tx').textContent = textoMesa();
+  var cx = $('jg-relogio'), total = jogo.sozinhoMs || 10000;
+  var resta = prazoLocal ? Math.max(0, prazoLocal - Date.now()) : 0;
+  cx.style.visibility = (jogo.estado === 'jogando' && resta) ? 'visible' : 'hidden';
+  $('jg-barra').style.width = (100 * resta / total) + '%';
+  $('jg-barra').style.background = resta <= 4000 ? 'var(--vermelho)' : 'var(--amarelo)';
+  $('jg-fala').innerHTML = jogo.ultimaJogada ? esc(jogo.ultimaJogada.texto) : 'Precisa de 6 pra sair da casa. Boa sorte!';
+  marcarPodem();
+}
+setInterval(atualizarMesa, 200);
 
 function dadoHtml(v){
   if (!v) return '';
@@ -488,7 +518,7 @@ function animarJogada(jg, depois){
   var p = jogo.jogadores.filter(function(x){ return x.id === jg.id; })[0];
   var g = p && $(idPeao(jg.id, jg.peao));
   if (!g) { depois(); return; }
-  animando = true; atualizarBotao(); marcarPodem();
+  animando = true; atualizarMesa();
   $('jg-fala').innerHTML = esc(jg.texto);
 
   function poe(passo, desliza){
@@ -499,7 +529,7 @@ function animarJogada(jg, depois){
   function fimDaAnimacao(){
     animando = false;
     if (jg.comeu && jg.comeu.length) vibra([25,50,25]);
-    atualizarBotao();
+    atualizarMesa();
     depois();
   }
   if (jg.de === -1) { poe(0, true); vibra(20); setTimeout(fimDaAnimacao, 400); return; }
@@ -591,15 +621,15 @@ async function puxarSempre(meuLaco){
 function conexao(ok){ $('conexao').classList.toggle('off', !ok); $('conexao-txt').textContent = ok ? 'conectado' : 'reconectando…'; }
 
 async function rolar(){
-  if (enviando || animando || !minhaVez() || jogo.fase !== 'rolar') return;
+  if (!podeRolar()) return;
   enviando = true;
-  $('bt-rolar').disabled = true;
   var dd = $('jg-dados').children[0];
   if (dd) dd.classList.add('rola');
   vibra(15);
   try { aplicar((await api('rolar', { codigo: eu.codigo, token: vagaDaVez().token })).jogo); }
-  catch(e){ toast(e.message); if (dd) dd.classList.remove('rola'); atualizarBotao(); }
+  catch(e){ toast(e.message); if (dd) dd.classList.remove('rola'); }
   enviando = false;
+  atualizarMesa();
 }
 async function mover(peao){
   if (enviando || animando) return;
@@ -648,7 +678,29 @@ $('bt-criar').addEventListener('click', criar);
 $('bt-entrar').addEventListener('click', function(){ entrar(); });
 $('bt-local').addEventListener('click', addLocal);
 $('bt-comecar').addEventListener('click', comecar);
-$('bt-rolar').addEventListener('click', rolar);
+// passar o dedo pela mesa rola o dado (o dado acompanha o dedo um pouquinho)
+var arrasto = null;
+function dadoNaTela(){ return $('jg-dados').firstElementChild; }
+$('jg-mesa').addEventListener('pointerdown', function(ev){
+  if (!podeRolar()) return;
+  arrasto = { x: ev.clientX, y: ev.clientY, feito: false };
+  try { this.setPointerCapture(ev.pointerId); } catch(e){}
+});
+$('jg-mesa').addEventListener('pointermove', function(ev){
+  if (!arrasto || arrasto.feito) return;
+  var dx = ev.clientX - arrasto.x, dy = ev.clientY - arrasto.y;
+  var d = Math.sqrt(dx*dx + dy*dy), dado = dadoNaTela();
+  if (dado) dado.style.transform = 'translate('+(dx*0.3)+'px,'+(dy*0.3)+'px) rotate('+(dx*0.8)+'deg)';
+  if (d > 38) {
+    arrasto.feito = true;
+    if (dado) dado.style.transform = '';
+    rolar();
+  }
+});
+function soltouDado(){ var dado = dadoNaTela(); if (dado) dado.style.transform = ''; arrasto = null; }
+$('jg-mesa').addEventListener('pointerup', soltouDado);
+$('jg-mesa').addEventListener('pointercancel', soltouDado);
+$('jg-mesa').addEventListener('pointerleave', soltouDado);
 $('bt-revanche').addEventListener('click', revanche);
 $('bt-compartilhar').addEventListener('click', compartilhar);
 $('bt-sair-lobby').addEventListener('click', function(){ sair(false); });
