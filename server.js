@@ -1505,6 +1505,226 @@ function ceReiniciar(sala, tabuleiroId) {
   sala.log = ['Partida nova no tabuleiro ' + sala.tab.nome + '!'];
 }
 
+// ─── LUDO ─────────────────────────────────────────────────────────────────────
+// App separado (/ludo), sem login, de 2 a 4 jogadores, cada um no seu celular
+// (ou vários no mesmo). Um dado: precisa de 6 pra tirar peão da casa, 6 joga de
+// novo (três seguidos perde a vez), cair em cima de peão adversário manda ele
+// pra casa, e a chegada é exata.
+//
+// A posição do peão é um passo de 0 a 56, não uma coordenada:
+//   -1        = na casa (base)
+//   0 a 50    = volta no percurso; a casa física é percurso[(inicio + passo) % 52]
+//   51 a 55   = reta final da cor
+//   56        = chegou no meio
+// Assim o servidor não precisa saber desenho nenhum: pra saber se dois peões
+// estão na mesma casa basta comparar (inicio + passo) % 52.
+const LU_MAX_JOGADORES = 4;
+const LU_LIMPA_MS  = 6 * 60 * 60 * 1000;
+const LU_ESPERA_MS = 25000;
+const LU_ONLINE_MS = 45000;
+const LU_PASSOS    = 56;   // passo final = chegada no meio
+const LU_PEOES     = 4;
+const LU_SEGURAS   = [0, 8, 13, 21, 26, 34, 39, 47]; // saídas + estrelas: não come ninguém aí
+
+const LU_LADOS = [
+  { id:'vermelho', nome:'Vermelho', cor:'#ef4444', inicio:0  },
+  { id:'verde',    nome:'Verde',    cor:'#22c55e', inicio:13 },
+  { id:'amarelo',  nome:'Amarelo',  cor:'#eab308', inicio:26 },
+  { id:'azul',     nome:'Azul',     cor:'#3b82f6', inicio:39 }
+];
+// com 2 jogadores dá pra jogar em cantos opostos, que é como se joga na mesa
+const LU_ESCOLHA = { 2: ['vermelho','amarelo'], 3: ['vermelho','verde','amarelo'],
+                     4: ['vermelho','verde','amarelo','azul'] };
+
+const luSalas = new Map();
+
+function luLado(id) { return LU_LADOS.filter(function(l){ return l.id === id; })[0] || LU_LADOS[0]; }
+function luCodigo() {
+  var alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789', cod;
+  do {
+    cod = '';
+    for (var i = 0; i < 4; i++) cod += alfabeto[crypto.randomInt(alfabeto.length)];
+  } while (luSalas.has(cod));
+  return cod;
+}
+
+function luNovaSala(codigo) {
+  return {
+    codigo: codigo, criadaEm: Date.now(), mexidoEm: Date.now(), versao: 1,
+    jogadores: [], proximoId: 1, donoId: null,
+    estado: 'lobby',              // lobby | jogando | fim
+    vezId: null, fase: 'rolar',   // rolar | mover (quando dá pra escolher o peão)
+    dado: null, lances: [], seis: 0,
+    ultimaJogada: null, seq: 0, log: [],
+    esperando: []
+  };
+}
+
+function luAtivos(sala) { return sala.jogadores.filter(function(p){ return !p.colocacao; }); }
+function luAchar(sala, id) { return sala.jogadores.filter(function(p){ return p.id === id; })[0] || null; }
+function luQuem(sala, token) {
+  if (!token) return null;
+  var p = sala.jogadores.filter(function(j){ return j.token === token; })[0];
+  if (!p) return null;
+  p.visto = Date.now();
+  return p;
+}
+function luProximo(sala, id) {
+  var ordem = sala.jogadores.map(function(p){ return p.id; });
+  var i = ordem.indexOf(id);
+  for (var v = 1; v <= ordem.length; v++) {
+    var cand = luAchar(sala, ordem[(i + v) % ordem.length]);
+    if (cand && !cand.colocacao) return cand.id;
+  }
+  var ativos = luAtivos(sala);
+  return ativos.length ? ativos[0].id : null;
+}
+
+// casa do percurso (0 a 51) onde o peão está, ou null se está na casa/reta final
+function luCasaComum(p, passo) {
+  if (passo < 0 || passo > 50) return null;
+  return (luLado(p.lado).inicio + passo) % 52;
+}
+
+// que peões podem mexer com esse dado
+function luLances(p, dado) {
+  var podem = [];
+  for (var i = 0; i < LU_PEOES; i++) {
+    var passo = p.peoes[i];
+    if (passo === -1) { if (dado === 6) podem.push(i); continue; }   // sair da casa só no 6
+    if (passo === LU_PASSOS) continue;                               // já chegou
+    if (passo + dado <= LU_PASSOS) podem.push(i);                    // chegada exata
+  }
+  return podem;
+}
+
+// mexe o peão e resolve o que acontece na casa onde ele parou
+function luAplicar(sala, p, peao) {
+  var dado = sala.dado, saiu = p.peoes[peao] === -1;
+  var de = p.peoes[peao];
+  var para = saiu ? 0 : de + dado;
+  p.peoes[peao] = para;
+
+  var texto = p.nome + ' tirou ' + dado + (saiu ? ' e tirou um peão da casa' : '');
+  var comeu = [];
+  var casa = luCasaComum(p, para);
+  if (casa !== null && LU_SEGURAS.indexOf(casa) < 0) {
+    sala.jogadores.forEach(function(outro){
+      if (outro.id === p.id) return;
+      for (var i = 0; i < LU_PEOES; i++) {
+        if (luCasaComum(outro, outro.peoes[i]) === casa) {
+          outro.peoes[i] = -1;
+          comeu.push({ jogador: outro.id, peao: i, nome: outro.nome });
+        }
+      }
+    });
+  }
+  if (comeu.length) texto += ' e comeu ' + comeu.map(function(c){ return c.nome; }).join(', ') + '! 😈';
+  else if (!saiu) texto += (para === LU_PASSOS ? ' e botou um peão na chegada! 🎉'
+                          : (para >= 51 ? ' e entrou na reta final' : ''));
+
+  var terminou = p.peoes.every(function(x){ return x === LU_PASSOS; });
+  if (terminou) {
+    p.colocacao = sala.jogadores.filter(function(j){ return j.colocacao; }).length + 1;
+    texto = p.nome + ' levou os 4 peões pra chegada — ' + p.colocacao + 'º lugar! 🏆';
+  }
+
+  sala.seq++;
+  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, peao:peao,
+                        de:de, para:para, comeu:comeu, seq:sala.seq, texto:texto };
+  sala.log.push(texto);
+  if (sala.log.length > 40) sala.log = sala.log.slice(-40);
+
+  // quem tira 6 joga de novo, mas três seguidos perde a vez
+  var deNovo = (dado === 6) && !terminou && sala.seis < 2;
+  if (dado === 6 && !terminou && !deNovo) sala.log.push('3 seis seguidos: ' + p.nome + ' perdeu a vez');
+  sala.seis = deNovo ? sala.seis + 1 : 0;
+
+  luFecharVez(sala, p, deNovo);
+}
+
+function luFecharVez(sala, p, deNovo) {
+  sala.fase = 'rolar'; sala.dado = null; sala.lances = [];
+  var restam = luAtivos(sala);
+  if (restam.length <= 1) {
+    if (restam.length === 1) restam[0].colocacao = sala.jogadores.length;
+    sala.estado = 'fim'; sala.vezId = null;
+    sala.log.push('Fim de jogo!');
+    return;
+  }
+  sala.vezId = deNovo && !p.colocacao ? p.id : luProximo(sala, p.id);
+}
+
+function luJogada(sala) {
+  var p = luAchar(sala, sala.vezId);
+  var dado = 1 + crypto.randomInt(6);
+  sala.dado = dado;
+  var podem = luLances(p, dado);
+
+  if (!podem.length) {                       // nada pra mexer: passa a vez
+    sala.seq++;
+    var texto = p.nome + ' tirou ' + dado + ' — sem jogada possível';
+    sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, peao:null,
+                          de:null, para:null, comeu:[], seq:sala.seq, texto:texto };
+    sala.log.push(texto);
+    sala.seis = 0;
+    luFecharVez(sala, p, false);
+    return;
+  }
+  if (podem.length === 1) { luAplicar(sala, p, podem[0]); return; }  // só um jeito: já vai
+
+  sala.fase = 'mover'; sala.lances = podem;   // escolhe o peão
+  sala.seq++;
+  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, peao:null,
+                        de:null, para:null, comeu:[], seq:sala.seq,
+                        texto: p.nome + ' tirou ' + dado + ' — escolhendo o peão' };
+}
+
+function luComecar(sala) {
+  var lados = LU_ESCOLHA[sala.jogadores.length] || LU_ESCOLHA[4];
+  sala.jogadores.forEach(function(p, i){
+    var l = luLado(lados[i]);
+    p.lado = l.id; p.cor = l.cor;
+    p.peoes = [-1,-1,-1,-1]; p.colocacao = 0;
+  });
+  sala.estado = 'jogando';
+  sala.vezId = sala.jogadores[0].id;
+  sala.fase = 'rolar'; sala.dado = null; sala.lances = []; sala.seis = 0;
+  sala.ultimaJogada = null; sala.seq = 0;
+  sala.log = ['Partida nova! Precisa de 6 pra tirar peão da casa.'];
+}
+
+function luPublico(sala) {
+  return {
+    codigo: sala.codigo, versao: sala.versao, estado: sala.estado,
+    maxJogadores: LU_MAX_JOGADORES, passos: LU_PASSOS, peoes: LU_PEOES,
+    seguras: LU_SEGURAS, lados: LU_LADOS,
+    donoId: sala.donoId, vezId: sala.vezId, fase: sala.fase,
+    dado: sala.dado, lances: sala.lances,
+    ultimaJogada: sala.ultimaJogada, seq: sala.seq, log: sala.log.slice(-12),
+    jogadores: sala.jogadores.map(function(p){
+      return { id:p.id, nome:p.nome, lado:p.lado, cor:p.cor, peoes:p.peoes.slice(),
+               colocacao:p.colocacao, online: (Date.now() - p.visto) < LU_ONLINE_MS };
+    })
+  };
+}
+
+function luAcordar(sala) {
+  var fila = sala.esperando;
+  sala.esperando = [];
+  for (var i = 0; i < fila.length; i++) {
+    clearTimeout(fila[i].timer);
+    try { json(fila[i].res, 200, { ok: true, jogo: luPublico(sala) }); } catch (e) {}
+  }
+}
+function luMudou(sala) { sala.versao++; sala.mexidoEm = Date.now(); luAcordar(sala); }
+function luLimpar() {
+  var agora = Date.now();
+  luSalas.forEach(function(sala, cod) {
+    if (agora - sala.mexidoEm > LU_LIMPA_MS) { luAcordar(sala); luSalas.delete(cod); }
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1515,7 +1735,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados', '/api/jogodavelha/criar', '/api/jogodavelha/entrar', '/api/jogodavelha/estado', '/api/jogodavelha/jogar', '/api/jogodavelha/revanche', '/api/jogodavelha/zerar', '/api/jogodavelha/sair', '/api/cobras/criar', '/api/cobras/entrar', '/api/cobras/estado', '/api/cobras/tabuleiro', '/api/cobras/comecar', '/api/cobras/rolar', '/api/cobras/revanche', '/api/cobras/lobby', '/api/cobras/sair']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados', '/api/jogodavelha/criar', '/api/jogodavelha/entrar', '/api/jogodavelha/estado', '/api/jogodavelha/jogar', '/api/jogodavelha/revanche', '/api/jogodavelha/zerar', '/api/jogodavelha/sair', '/api/cobras/criar', '/api/cobras/entrar', '/api/cobras/estado', '/api/cobras/tabuleiro', '/api/cobras/comecar', '/api/cobras/rolar', '/api/cobras/revanche', '/api/cobras/lobby', '/api/cobras/sair', '/api/ludo/criar', '/api/ludo/entrar', '/api/ludo/estado', '/api/ludo/comecar', '/api/ludo/rolar', '/api/ludo/mover', '/api/ludo/revanche', '/api/ludo/sair']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/email/testar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/admin/conta', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -2952,6 +3172,165 @@ const server = http.createServer(async (req, res) => {
     });
     if (!sala.jogadores.length) { ceAcordar(sala); ceSalas.delete(sala.codigo); return json(res, 200, { ok: true }); }
     ceMudou(sala);
+    return json(res, 200, { ok: true });
+  }
+
+  // ─── LUDO (app separado, sem login, só por link direto) ───────────────────
+  if (req.method === 'GET' && (pathname === '/ludo' || pathname === '/ludo/' || pathname === '/ludo/index.html')) {
+    fs.readFile(path.join(__dirname, 'ludo', 'index.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+  if (req.method === 'GET' && pathname === '/ludo/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify({
+      name: 'Ludo', short_name: 'Ludo', description: 'Ludo de 2 a 4 jogadores, cada um no seu celular',
+      start_url: '/ludo/', scope: '/ludo/', display: 'standalone',
+      background_color: '#0e1020', theme_color: '#0e1020', orientation: 'portrait',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }
+      ]
+    }));
+  }
+  if (req.method === 'GET' && pathname === '/ludo/sw.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/ludo/' });
+    return res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
+  }
+
+  if (req.method === 'POST' && pathname === '/api/ludo/criar') {
+    luLimpar();
+    const body = await readBody(req);
+    const sala = luNovaSala(luCodigo());
+    const token = crypto.randomBytes(12).toString('hex');
+    const lado = LU_LADOS[0];
+    const p = { id: sala.proximoId++, token, nome: jvNome(body.nome, 'Jogador 1'),
+                lado: lado.id, cor: lado.cor, peoes: [-1,-1,-1,-1], colocacao: 0, visto: Date.now() };
+    sala.jogadores.push(p);
+    sala.donoId = p.id;
+    sala.log.push(p.nome + ' criou a sala');
+    luSalas.set(sala.codigo, sala);
+    return json(res, 200, { ok: true, codigo: sala.codigo, id: p.id, token, jogo: luPublico(sala) });
+  }
+
+  // sem token entra como jogador novo (serve pra pôr mais gente no mesmo
+  // celular); com token conhecido é só reconexão
+  if (req.method === 'POST' && pathname === '/api/ludo/entrar') {
+    const body = await readBody(req);
+    const sala = luSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada. Confira o código.' });
+    const velho = luQuem(sala, body.token);
+    if (velho) {
+      velho.nome = jvNome(body.nome, velho.nome);
+      luMudou(sala);
+      return json(res, 200, { ok: true, codigo: sala.codigo, id: velho.id, token: velho.token, jogo: luPublico(sala) });
+    }
+    if (sala.estado !== 'lobby') return json(res, 403, { error: 'Essa partida já começou.' });
+    if (sala.jogadores.length >= LU_MAX_JOGADORES) return json(res, 403, { error: 'Essa sala já tem 4 jogadores.' });
+    const token = crypto.randomBytes(12).toString('hex');
+    const lado = LU_LADOS[sala.jogadores.length];
+    const p = { id: sala.proximoId++, token, nome: jvNome(body.nome, 'Jogador ' + (sala.jogadores.length + 1)),
+                lado: lado.id, cor: lado.cor, peoes: [-1,-1,-1,-1], colocacao: 0, visto: Date.now() };
+    sala.jogadores.push(p);
+    sala.log.push(p.nome + ' entrou');
+    luMudou(sala);
+    return json(res, 200, { ok: true, codigo: sala.codigo, id: p.id, token, jogo: luPublico(sala) });
+  }
+
+  if (req.method === 'GET' && pathname === '/api/ludo/estado') {
+    const sala = luSalas.get(String(parsedUrl.query.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    String(parsedUrl.query.token || '').split(',').forEach(function(t){ luQuem(sala, t); });
+    const visto = parseInt(parsedUrl.query.v, 10);
+    if (visto !== sala.versao) return json(res, 200, { ok: true, jogo: luPublico(sala) });
+    const espera = { res, timer: null };
+    espera.timer = setTimeout(() => {
+      sala.esperando = sala.esperando.filter(w => w !== espera);
+      try { json(res, 200, { ok: true, jogo: luPublico(sala) }); } catch (e) {}
+    }, LU_ESPERA_MS);
+    req.on('close', () => {
+      clearTimeout(espera.timer);
+      sala.esperando = sala.esperando.filter(w => w !== espera);
+    });
+    sala.esperando.push(espera);
+    return;
+  }
+
+  if (req.method === 'POST' && pathname === '/api/ludo/comecar') {
+    const body = await readBody(req);
+    const sala = luSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const p = luQuem(sala, body.token);
+    if (!p) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (p.id !== sala.donoId) return json(res, 403, { error: 'Só quem criou a sala começa a partida.' });
+    if (sala.jogadores.length < 2) return json(res, 400, { error: 'Precisa de pelo menos 2 jogadores.' });
+    luComecar(sala);
+    luMudou(sala);
+    return json(res, 200, { ok: true, jogo: luPublico(sala) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/ludo/rolar') {
+    const body = await readBody(req);
+    const sala = luSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const p = luQuem(sala, body.token);
+    if (!p) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (sala.estado !== 'jogando') return json(res, 400, { error: 'A partida não está rolando.' });
+    if (sala.vezId !== p.id) return json(res, 400, { error: 'Não é sua vez.' });
+    if (sala.fase !== 'rolar') return json(res, 400, { error: 'Escolhe o peão primeiro.' });
+    luJogada(sala);
+    luMudou(sala);
+    return json(res, 200, { ok: true, jogo: luPublico(sala) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/ludo/mover') {
+    const body = await readBody(req);
+    const sala = luSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const p = luQuem(sala, body.token);
+    if (!p) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (sala.estado !== 'jogando') return json(res, 400, { error: 'A partida não está rolando.' });
+    if (sala.vezId !== p.id) return json(res, 400, { error: 'Não é sua vez.' });
+    if (sala.fase !== 'mover') return json(res, 400, { error: 'Rola o dado primeiro.' });
+    const peao = parseInt(body.peao, 10);
+    if (sala.lances.indexOf(peao) < 0) return json(res, 400, { error: 'Esse peão não pode mexer com esse dado.' });
+    luAplicar(sala, p, peao);
+    luMudou(sala);
+    return json(res, 200, { ok: true, jogo: luPublico(sala) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/ludo/revanche') {
+    const body = await readBody(req);
+    const sala = luSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const p = luQuem(sala, body.token);
+    if (!p) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (sala.jogadores.length < 2) return json(res, 400, { error: 'Precisa de pelo menos 2 jogadores.' });
+    luComecar(sala);
+    luMudou(sala);
+    return json(res, 200, { ok: true, jogo: luPublico(sala) });
+  }
+
+  if (req.method === 'POST' && pathname === '/api/ludo/sair') {
+    const body = await readBody(req);
+    const sala = luSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 200, { ok: true });
+    String(body.token || '').split(',').forEach(function(tk){
+      const p = luQuem(sala, tk);
+      if (!p) return;
+      const proximo = (sala.vezId === p.id) ? luProximo(sala, p.id) : sala.vezId;
+      sala.jogadores = sala.jogadores.filter(function(j){ return j.id !== p.id; });
+      sala.log.push(p.nome + ' saiu');
+      if (sala.donoId === p.id && sala.jogadores.length) sala.donoId = sala.jogadores[0].id;
+      sala.vezId = (proximo === p.id) ? (sala.jogadores[0] ? sala.jogadores[0].id : null) : proximo;
+      sala.fase = 'rolar'; sala.dado = null; sala.lances = [];
+      if (sala.estado === 'jogando' && luAtivos(sala).length <= 1) { sala.estado = 'fim'; sala.vezId = null; }
+    });
+    if (!sala.jogadores.length) { luAcordar(sala); luSalas.delete(sala.codigo); return json(res, 200, { ok: true }); }
+    luMudou(sala);
     return json(res, 200, { ok: true });
   }
 
