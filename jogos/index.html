@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1020">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/jogos/manifest.json">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<title>Jogos</title>
+<style>
+:root{
+  --bg:#0e1020; --card:#1b1f3d; --linha:#2a2f56;
+  --txt:#f2f3fb; --txt2:#a6abd4; --txt3:#6b719e;
+  --ciano:#22d3ee; --verde:#34d399;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:var(--sans);color:var(--txt);font-size:15px;line-height:1.45;
+  background:radial-gradient(120% 80% at 50% 0%,#1b2050 0%,var(--bg) 60%) fixed,var(--bg);
+  -webkit-font-smoothing:antialiased;user-select:none}
+#app{max-width:460px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top) + 24px) 18px calc(env(safe-area-inset-bottom) + 20px)}
+.marca{text-align:center;margin:18px 0 6px}
+.marca h1{font-size:34px;font-weight:800;letter-spacing:-1px}
+.marca p{color:var(--txt2);font-size:14px;margin-top:8px}
+.lista{display:flex;flex-direction:column;gap:14px;margin-top:28px}
+.jogo{display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--linha);
+  border-radius:20px;padding:18px 16px;color:inherit;text-decoration:none;transition:transform .12s,border-color .2s}
+.jogo:active{transform:scale(.985)}
+.jogo .ic{width:58px;height:58px;border-radius:17px;display:flex;align-items:center;justify-content:center;
+  font-size:30px;flex:0 0 auto}
+.jogo .tx{min-width:0;flex:1}
+.jogo .tit{font-size:18px;font-weight:800;letter-spacing:-.3px}
+.jogo .sub{font-size:13px;color:var(--txt2);margin-top:3px}
+.jogo .meta{font-size:11.5px;color:var(--txt3);margin-top:6px;font-weight:600}
+.jogo .seta{color:var(--txt3);font-size:20px;flex:0 0 auto}
+.velha .ic{background:rgba(34,211,238,.14);color:var(--ciano)}
+.velha:hover{border-color:var(--ciano)}
+.cobras .ic{background:rgba(52,211,153,.14)}
+.cobras:hover{border-color:var(--verde)}
+.rodape{margin-top:auto;padding-top:26px;text-align:center;color:var(--txt3);font-size:12px}
+.rodape a{color:var(--txt3)}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="marca">
+    <h1>Jogos</h1>
+    <p>Escolhe qual vai ser</p>
+  </div>
+
+  <div class="lista">
+    <a class="jogo velha" href="/jogodavelha">
+      <div class="ic">✕◯</div>
+      <div class="tx">
+        <div class="tit">Velha ∞</div>
+        <div class="sub">Jogo da velha infinito, nunca dá empate</div>
+        <div class="meta">2 jogadores · 3 peças · a mais antiga some</div>
+      </div>
+      <div class="seta">›</div>
+    </a>
+
+    <a class="jogo cobras" href="/cobras">
+      <div class="ic">🐍</div>
+      <div class="tx">
+        <div class="tit">Cobras e Escadas</div>
+        <div class="sub">Sobe escada, escorrega na cobra</div>
+        <div class="meta">2 a 4 jogadores · 2 dados · 7 tabuleiros</div>
+      </div>
+      <div class="seta">›</div>
+    </a>
+  </div>
+
+  <div class="rodape">Cada um no seu celular — quem cria a sala passa o código.<br><a href="/">voltar pro PackScan</a></div>
+</div>
+</body>
+</html>
