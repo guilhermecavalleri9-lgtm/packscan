@@ -1262,7 +1262,7 @@ function jvNome(txt, padrao) {
 // ─── COBRAS E ESCADAS ─────────────────────────────────────────────────────────
 // App separado (/cobras), sem login, de 2 a 4 jogadores, cada um no seu celular
 // (ou vários no mesmo aparelho). Um dado só — com dois a partida acabava rápido
-// demais. Passou da última casa: nos tabuleiros grandes volta o que sobrou.
+// demais. Pra chegar tem que tirar o número certinho; passou, fica onde está.
 // As salas moram só na memória do servidor, igual as do jogo da velha.
 const CE_MAX_JOGADORES = 4;
 const CE_LIMPA_MS  = 6 * 60 * 60 * 1000;
@@ -1279,13 +1279,13 @@ const ceSalas = new Map();
 // Tabuleiros, do menorzinho ao maratona. `seed` deixa o sorteio de cobras e
 // escadas sempre igual: quem escolhe "Grandão" pega sempre o mesmo desenho.
 const CE_TABULEIROS = [
-  { id:'corrida',  nome:'Corridinha',   cols:5,  linhas:4,  seed:101, tempo:'~2 min',  exato:true },
-  { id:'rapido',   nome:'Rapidinho',    cols:6,  linhas:5,  seed:202, tempo:'~3 min',  exato:true },
-  { id:'meio',     nome:'Clássico 50',  cols:10, linhas:5,  seed:303, tempo:'~5 min',  exato:true },
-  { id:'classico', nome:'Clássico 100', cols:10, linhas:10, fixo:true, tempo:'~10 min', exato:true },
-  { id:'grandao',  nome:'Grandão 144',  cols:12, linhas:12, seed:505, tempo:'~15 min', exato:true },
-  { id:'epico',    nome:'Épico 225',    cols:15, linhas:15, seed:606, tempo:'~20 min', exato:true },
-  { id:'maratona', nome:'Maratona 400', cols:20, linhas:20, seed:707, tempo:'~40 min', exato:true }
+  { id:'corrida',  nome:'Corridinha',   cols:5,  linhas:4,  seed:101, tempo:'~2 min' },
+  { id:'rapido',   nome:'Rapidinho',    cols:6,  linhas:5,  seed:202, tempo:'~3 min' },
+  { id:'meio',     nome:'Clássico 50',  cols:10, linhas:5,  seed:303, tempo:'~5 min' },
+  { id:'classico', nome:'Clássico 100', cols:10, linhas:10, fixo:true, tempo:'~10 min' },
+  { id:'grandao',  nome:'Grandão 144',  cols:12, linhas:12, seed:505, tempo:'~15 min' },
+  { id:'epico',    nome:'Épico 225',    cols:15, linhas:15, seed:606, tempo:'~20 min' },
+  { id:'maratona', nome:'Maratona 400', cols:20, linhas:20, seed:707, tempo:'~40 min' }
 ];
 
 // o tabuleiro clássico de 100 casas, com o desenho tradicional
@@ -1361,7 +1361,7 @@ function ceTabuleiro(id) {
   var desenho = ceDesenhar(def);
   return {
     id: def.id, nome: def.nome, cols: def.cols, linhas: def.linhas,
-    total: def.cols * def.linhas, tempo: def.tempo, exato: !!def.exato,
+    total: def.cols * def.linhas, tempo: def.tempo,
     escadas: desenho.escadas, cobras: desenho.cobras
   };
 }
@@ -1404,7 +1404,7 @@ function cePublico(sala) {
     codigo: sala.codigo, versao: sala.versao, estado: sala.estado,
     tab: sala.tab, maxJogadores: CE_MAX_JOGADORES,
     tabuleiros: CE_TABULEIROS.map(function(t){
-      return { id:t.id, nome:t.nome, cols:t.cols, linhas:t.linhas, casas:t.cols*t.linhas, tempo:t.tempo, exato:!!t.exato };
+      return { id:t.id, nome:t.nome, cols:t.cols, linhas:t.linhas, casas:t.cols*t.linhas, tempo:t.tempo };
     }),
     donoId: sala.donoId, vezId: sala.vezId,
     ultimaJogada: sala.ultimaJogada, seq: sala.seq, log: sala.log.slice(-12),
@@ -1452,23 +1452,21 @@ function ceJogada(sala) {
   var passos = [], partiu = p.casa, alvo = p.casa + dado;
   var texto = p.nome + ' tirou ' + dado;
 
-  if (alvo > total) {                       // chegada exata: anda até o fim e volta o que passou
-    passos.push({ tipo:'anda',  de:partiu, para:total });
-    passos.push({ tipo:'volta', de:total,  para:total - (alvo - total) });
-    p.casa = total - (alvo - total);
-    texto += ', passou da chegada e voltou pra ' + p.casa;
+  if (alvo > total) {                       // não deu o número certinho, não sai do lugar
+    texto += ' — precisava de ' + (total - p.casa) + ' pra chegar, ficou na ' + p.casa;
   } else {
     passos.push({ tipo:'anda', de:partiu, para:alvo });
     p.casa = alvo;
     texto += ', foi pra ' + p.casa;
   }
 
-  if (sala.tab.escadas[p.casa]) {
+  // se ficou parado não mexe em escada nem cobra (ele já estava nessa casa)
+  if (passos.length && sala.tab.escadas[p.casa]) {
     var cima = sala.tab.escadas[p.casa];
     passos.push({ tipo:'escada', de:p.casa, para:cima });
     texto += ' 🪜 subiu pra ' + cima;
     p.casa = cima;
-  } else if (sala.tab.cobras[p.casa]) {
+  } else if (passos.length && sala.tab.cobras[p.casa]) {
     var baixo = sala.tab.cobras[p.casa];
     passos.push({ tipo:'cobra', de:p.casa, para:baixo });
     texto += ' 🐍 escorregou pra ' + baixo;

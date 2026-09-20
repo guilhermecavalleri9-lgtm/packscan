@@ -170,7 +170,7 @@ input{-webkit-user-select:text;user-select:text}
       <ul>
         <li>Rola <b>o dado</b> e anda o que tirar.</li>
         <li>Caiu no pé da escada, <b>sobe</b>. Caiu na cabeça da cobra, <b>escorrega</b>.</li>
-        <li>A chegada é <b>exata</b>: passou da última casa, volta o que sobrou.</li>
+        <li>Pra chegar tem que tirar o <b>número certinho</b> — passou, fica onde está.</li>
         <li>Cada um no seu celular (ou vários no mesmo, se estiverem juntos).</li>
       </ul>
     </div>
@@ -407,7 +407,9 @@ function renderLobby(){
 function renderJogo(){
   $('jg-topo').innerHTML = jogo.jogadores.map(function(p){
     var vez = p.id === jogo.vezId;
-    var onde = p.colocacao ? ['🥇','🥈','🥉','🏁'][p.colocacao-1] || (p.colocacao+'º') : ('casa ' + p.casa);
+    var falta = jogo.tab.total - p.casa;
+    var onde = p.colocacao ? (['🥇','🥈','🥉','🏁'][p.colocacao-1] || (p.colocacao+'º'))
+             : ('casa ' + p.casa + (falta <= 6 && p.casa > 0 ? ' · falta ' + falta : ''));
     return '<div class="chip'+(vez?' vez':'')+'" style="color:'+p.cor+'">'+
       '<div class="l1"><span class="bl" style="background:'+p.cor+'"></span>'+esc(p.nome)+'</div>'+
       '<div class="l2">'+onde+'</div></div>';

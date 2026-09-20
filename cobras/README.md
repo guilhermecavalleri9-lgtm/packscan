@@ -10,7 +10,8 @@ A tela de escolha entre os jogos fica em **`/jogos`**.
 - Rola **um dado** e anda o que tirar. (Com dois dados a média era 7 casas por vez
   e a partida acabava rápido demais.)
 - Pé de escada **sobe**, cabeça de cobra **escorrega**.
-- **Chegada exata**: passou da última casa, volta o que sobrou.
+- Pra chegar tem que tirar o **número certinho**: se o dado passar da última casa,
+  o peão **não sai do lugar**. A partir de 6 casas do fim o placar mostra quanto falta.
 - O jogo segue até todo mundo terminar (🥇🥈🥉); quem sobra por último fica em último.
 
 ## Tabuleiros
