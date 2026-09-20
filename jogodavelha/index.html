@@ -39,7 +39,9 @@ input{-webkit-user-select:text;user-select:text}
 @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 
 /* ── topo ── */
-.marca{text-align:center;margin:22px 0 6px}
+.voltar{display:inline-flex;align-items:center;gap:6px;color:var(--txt3);font-size:13px;
+  font-weight:700;padding:6px 2px;align-self:flex-start;text-decoration:none}
+.marca{text-align:center;margin:14px 0 6px}
 .marca h1{font-size:34px;font-weight:800;letter-spacing:-1px}
 .marca h1 span{color:var(--x)}
 .marca p{color:var(--txt2);font-size:14px;margin-top:8px}
@@ -150,6 +152,7 @@ input{-webkit-user-select:text;user-select:text}
 
   <!-- ─────────── TELA 1: início ─────────── -->
   <section class="tela on" id="tela-inicio">
+    <a class="voltar" href="/jogos">◀ jogos</a>
     <div class="marca">
       <h1>Velha <span>∞</span></h1>
       <p>Jogo da velha infinito · 3 peças · 2 celulares</p>

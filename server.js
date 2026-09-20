@@ -1259,6 +1259,266 @@ function jvNome(txt, padrao) {
   return n || padrao;
 }
 
+// ─── COBRAS E ESCADAS ─────────────────────────────────────────────────────────
+// App separado (/cobras), sem login, de 2 a 4 jogadores, cada um no seu celular
+// (ou vários no mesmo aparelho). Dois dados: tirou dupla, joga de novo; três
+// duplas seguidas, perde a vez. Passou da última casa, volta o que sobrou.
+// As salas moram só na memória do servidor, igual as do jogo da velha.
+const CE_MAX_JOGADORES = 4;
+const CE_LIMPA_MS  = 6 * 60 * 60 * 1000;
+const CE_ESPERA_MS = 25000;
+const CE_ONLINE_MS = 45000;
+const CE_CORES = [
+  { cor: '#22d3ee', nome: 'Ciano'   },
+  { cor: '#fb7185', nome: 'Rosa'    },
+  { cor: '#facc15', nome: 'Amarelo' },
+  { cor: '#34d399', nome: 'Verde'   }
+];
+const ceSalas = new Map();
+
+// Tabuleiros, do menorzinho ao maratona. `seed` deixa o sorteio de cobras e
+// escadas sempre igual: quem escolhe "Grandão" pega sempre o mesmo desenho.
+const CE_TABULEIROS = [
+  { id:'corrida',  nome:'Corridinha',   cols:5,  linhas:4,  seed:101, tempo:'~3 min',  exato:false },
+  { id:'rapido',   nome:'Rapidinho',    cols:6,  linhas:5,  seed:202, tempo:'~5 min',  exato:false },
+  { id:'meio',     nome:'Clássico 50',  cols:10, linhas:5,  seed:303, tempo:'~8 min',  exato:false },
+  { id:'classico', nome:'Clássico 100', cols:10, linhas:10, fixo:true, tempo:'~15 min', exato:true },
+  { id:'grandao',  nome:'Grandão 144',  cols:12, linhas:12, seed:505, tempo:'~25 min', exato:true },
+  { id:'epico',    nome:'Épico 225',    cols:15, linhas:15, seed:606, tempo:'~40 min', exato:true },
+  { id:'maratona', nome:'Maratona 400', cols:20, linhas:20, seed:707, tempo:'1 h+',    exato:true }
+];
+
+// o tabuleiro clássico de 100 casas, com o desenho tradicional
+const CE_CLASSICO = {
+  escadas: { 1:38, 4:14, 9:31, 21:42, 28:84, 36:44, 51:67, 71:91, 80:100 },
+  cobras:  { 16:6, 47:26, 49:11, 56:53, 62:19, 64:60, 87:24, 93:73, 95:75, 98:78 }
+};
+
+function ceRandom(semente) { // gerador com semente (mulberry32)
+  var s = semente >>> 0;
+  return function() {
+    s = (s + 0x6D2B79F5) >>> 0;
+    var t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function ceLinha(casa, cols) { return Math.floor((casa - 1) / cols); }
+
+// o tabuleiro é uma cobrinha: a linha de baixo vai pra direita, a de cima volta.
+// cePos diz em que linha/coluna a casa está; ceCasa faz o caminho de volta.
+function cePos(casa, cols) {
+  var r = Math.floor((casa - 1) / cols), i = (casa - 1) % cols;
+  return { r: r, x: (r % 2 === 0) ? i : (cols - 1 - i) };
+}
+function ceCasa(r, x, cols) {
+  var i = (r % 2 === 0) ? x : (cols - 1 - x);
+  return r * cols + i + 1;
+}
+
+// sorteia cobras e escadas que não se atropelam: nenhuma casa é ponta de duas
+// coisas ao mesmo tempo, então não tem como entrar em looping infinito.
+function ceDesenhar(def) {
+  var total = def.cols * def.linhas;
+  if (def.fixo) return { escadas: Object.assign({}, CE_CLASSICO.escadas), cobras: Object.assign({}, CE_CLASSICO.cobras) };
+  var rnd = ceRandom(def.seed), usadas = {}, escadas = {}, cobras = {};
+  var quantas = Math.max(2, Math.round(total / 11));
+
+  // O salto é medido em LINHAS, não em casas soltas: assim a escada/cobra sai
+  // curtinha no desenho (1 a 3 linhas, no máximo 3 colunas de lado) mesmo no
+  // tabuleiro de 400 casas — senão vira um espaguete atravessando tudo.
+  function sorteia(sobe) {
+    var de = 2 + Math.floor(rnd() * (total - 3));
+    var pos = cePos(de, def.cols);
+    var linhas = 1 + Math.floor(rnd() * 3);
+    var r = pos.r + (sobe ? linhas : -linhas);
+    if (r < 0 || r >= def.linhas) return null;
+    var x = pos.x + (Math.floor(rnd() * 7) - 3);
+    x = Math.max(0, Math.min(def.cols - 1, x));
+    var para = ceCasa(r, x, def.cols);
+    if (para <= 1 || para >= total || de <= 1 || de >= total) return null;
+    if (sobe ? para <= de : para >= de) return null;
+    if (usadas[de] || usadas[para]) return null;
+    return { de: de, para: para };
+  }
+
+  for (var t = 0, n = 0; n < quantas && t < 6000; t++) {
+    var e = sorteia(true);
+    if (!e) continue;
+    escadas[e.de] = e.para; usadas[e.de] = 1; usadas[e.para] = 1; n++;
+  }
+  for (var t2 = 0, m = 0; m < quantas && t2 < 6000; t2++) {
+    var c = sorteia(false);
+    if (!c) continue;
+    cobras[c.de] = c.para; usadas[c.de] = 1; usadas[c.para] = 1; m++;
+  }
+  return { escadas: escadas, cobras: cobras };
+}
+
+function ceTabuleiro(id) {
+  var def = CE_TABULEIROS.filter(function(t){ return t.id === id; })[0] || CE_TABULEIROS[2];
+  var desenho = ceDesenhar(def);
+  return {
+    id: def.id, nome: def.nome, cols: def.cols, linhas: def.linhas,
+    total: def.cols * def.linhas, tempo: def.tempo, exato: !!def.exato,
+    escadas: desenho.escadas, cobras: desenho.cobras
+  };
+}
+
+function ceCodigo() {
+  var alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  var cod;
+  do {
+    cod = '';
+    for (var i = 0; i < 4; i++) cod += alfabeto[crypto.randomInt(alfabeto.length)];
+  } while (ceSalas.has(cod));
+  return cod;
+}
+
+function ceNovaSala(codigo, tabuleiroId) {
+  return {
+    codigo: codigo, criadaEm: Date.now(), mexidoEm: Date.now(), versao: 1,
+    tab: ceTabuleiro(tabuleiroId),
+    jogadores: [], proximoId: 1, donoId: null,
+    estado: 'lobby',            // lobby | jogando | fim
+    vezId: null, duplas: 0,
+    ultimaJogada: null, seq: 0, log: [],
+    esperando: []
+  };
+}
+
+function ceAtivos(sala) { return sala.jogadores.filter(function(p){ return !p.colocacao; }); }
+function ceAchar(sala, id) { return sala.jogadores.filter(function(p){ return p.id === id; })[0] || null; }
+
+function ceQuem(sala, token) { // dono do token (e marca que deu sinal de vida)
+  if (!token) return null;
+  var p = sala.jogadores.filter(function(j){ return j.token === token; })[0];
+  if (!p) return null;
+  p.visto = Date.now();
+  return p;
+}
+
+function cePublico(sala) {
+  return {
+    codigo: sala.codigo, versao: sala.versao, estado: sala.estado,
+    tab: sala.tab, maxJogadores: CE_MAX_JOGADORES,
+    tabuleiros: CE_TABULEIROS.map(function(t){
+      return { id:t.id, nome:t.nome, cols:t.cols, linhas:t.linhas, casas:t.cols*t.linhas, tempo:t.tempo, exato:!!t.exato };
+    }),
+    donoId: sala.donoId, vezId: sala.vezId, duplas: sala.duplas,
+    ultimaJogada: sala.ultimaJogada, seq: sala.seq, log: sala.log.slice(-12),
+    jogadores: sala.jogadores.map(function(p){
+      return { id:p.id, nome:p.nome, cor:p.cor, casa:p.casa, colocacao:p.colocacao,
+               online: (Date.now() - p.visto) < CE_ONLINE_MS };
+    })
+  };
+}
+
+function ceAcordar(sala) {
+  var fila = sala.esperando;
+  sala.esperando = [];
+  for (var i = 0; i < fila.length; i++) {
+    clearTimeout(fila[i].timer);
+    try { json(fila[i].res, 200, { ok: true, jogo: cePublico(sala) }); } catch (e) {}
+  }
+}
+function ceMudou(sala) { sala.versao++; sala.mexidoEm = Date.now(); ceAcordar(sala); }
+function ceLimpar() {
+  var agora = Date.now();
+  ceSalas.forEach(function(sala, cod) {
+    if (agora - sala.mexidoEm > CE_LIMPA_MS) { ceAcordar(sala); ceSalas.delete(cod); }
+  });
+}
+
+// quem joga depois de `id` (pula quem já terminou)
+function ceProximo(sala, id) {
+  var ativos = ceAtivos(sala);
+  if (!ativos.length) return null;
+  var ordem = sala.jogadores.map(function(p){ return p.id; });
+  var i = ordem.indexOf(id);
+  for (var v = 1; v <= ordem.length; v++) {
+    var cand = ceAchar(sala, ordem[(i + v) % ordem.length]);
+    if (cand && !cand.colocacao) return cand.id;
+  }
+  return ativos[0].id;
+}
+
+// a jogada inteira: dois dados, o caminho andado e o que aconteceu no fim
+function ceJogada(sala) {
+  var p = ceAchar(sala, sala.vezId);
+  var total = sala.tab.total;
+  var d1 = 1 + crypto.randomInt(6), d2 = 1 + crypto.randomInt(6);
+  var soma = d1 + d2, dupla = d1 === d2;
+  var passos = [], partiu = p.casa, alvo = p.casa + soma;
+  var texto = p.nome + ' tirou ' + d1 + '+' + d2 + ' = ' + soma;
+
+  if (alvo > total && sala.tab.exato) {     // tabuleiro grande: anda até o fim e volta o que passou
+    passos.push({ tipo:'anda',  de:partiu, para:total });
+    passos.push({ tipo:'volta', de:total,  para:total - (alvo - total) });
+    p.casa = total - (alvo - total);
+    texto += ', passou da chegada e voltou pra ' + p.casa;
+  } else if (alvo > total) {                // tabuleiro pequeno: passou, chegou
+    passos.push({ tipo:'anda', de:partiu, para:total });
+    p.casa = total;
+    texto += ', passou da chegada e chegou';
+  } else {
+    passos.push({ tipo:'anda', de:partiu, para:alvo });
+    p.casa = alvo;
+    texto += ', foi pra ' + p.casa;
+  }
+
+  if (sala.tab.escadas[p.casa]) {
+    var cima = sala.tab.escadas[p.casa];
+    passos.push({ tipo:'escada', de:p.casa, para:cima });
+    texto += ' 🪜 subiu pra ' + cima;
+    p.casa = cima;
+  } else if (sala.tab.cobras[p.casa]) {
+    var baixo = sala.tab.cobras[p.casa];
+    passos.push({ tipo:'cobra', de:p.casa, para:baixo });
+    texto += ' 🐍 escorregou pra ' + baixo;
+    p.casa = baixo;
+  }
+
+  var terminou = p.casa === total;
+  if (terminou) {
+    p.colocacao = sala.jogadores.filter(function(j){ return j.colocacao; }).length + 1;
+    texto += ' — chegou em ' + p.colocacao + 'º!';
+  }
+
+  // dupla joga de novo, mas três seguidas perde a vez
+  if (dupla && !terminou) sala.duplas++; else sala.duplas = 0;
+  var deNovo = dupla && !terminou && sala.duplas < 3;
+  if (dupla && !terminou && !deNovo) texto += ' — 3 duplas seguidas, perdeu a vez!';
+  else if (deNovo) texto += ' — dupla, joga de novo!';
+
+  sala.seq++;
+  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dados:[d1,d2], dupla:dupla,
+                        passos:passos, seq:sala.seq, deNovo:deNovo, texto:texto };
+  sala.log.push(texto);
+  if (sala.log.length > 40) sala.log = sala.log.slice(-40);
+
+  var restam = ceAtivos(sala);
+  if (restam.length <= 1) {                 // sobrou um: ele fica em último e acaba
+    if (restam.length === 1) restam[0].colocacao = sala.jogadores.length;
+    sala.estado = 'fim';
+    sala.vezId = null;
+    sala.log.push('Fim de jogo!');
+  } else {
+    sala.vezId = deNovo ? p.id : ceProximo(sala, p.id);
+    if (!deNovo) sala.duplas = 0;
+  }
+}
+
+function ceReiniciar(sala, tabuleiroId) {
+  if (tabuleiroId) sala.tab = ceTabuleiro(tabuleiroId);
+  sala.jogadores.forEach(function(p){ p.casa = 0; p.colocacao = 0; });
+  sala.estado = 'jogando';
+  sala.vezId = sala.jogadores.length ? sala.jogadores[0].id : null;
+  sala.duplas = 0; sala.ultimaJogada = null; sala.seq = 0;
+  sala.log = ['Partida nova no tabuleiro ' + sala.tab.nome + '!'];
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1269,7 +1529,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados', '/api/jogodavelha/criar', '/api/jogodavelha/entrar', '/api/jogodavelha/estado', '/api/jogodavelha/jogar', '/api/jogodavelha/revanche', '/api/jogodavelha/zerar', '/api/jogodavelha/sair']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados', '/api/jogodavelha/criar', '/api/jogodavelha/entrar', '/api/jogodavelha/estado', '/api/jogodavelha/jogar', '/api/jogodavelha/revanche', '/api/jogodavelha/zerar', '/api/jogodavelha/sair', '/api/cobras/criar', '/api/cobras/entrar', '/api/cobras/estado', '/api/cobras/tabuleiro', '/api/cobras/comecar', '/api/cobras/rolar', '/api/cobras/revanche', '/api/cobras/lobby', '/api/cobras/sair']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/email/testar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/admin/conta', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -2507,6 +2767,205 @@ const server = http.createServer(async (req, res) => {
       jvMudou(sala);
       if (!sala.jogadores.X && !sala.jogadores.O) jvSalas.delete(sala.codigo);
     }
+    return json(res, 200, { ok: true });
+  }
+
+  // ─── JOGOS: tela inicial com a escolha do jogo ────────────────────────────
+  if (req.method === 'GET' && (pathname === '/jogos' || pathname === '/jogos/' || pathname === '/jogos/index.html')) {
+    fs.readFile(path.join(__dirname, 'jogos', 'index.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+  if (req.method === 'GET' && pathname === '/jogos/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify({
+      name: 'Jogos', short_name: 'Jogos', description: 'Jogo da velha infinito e cobras e escadas',
+      start_url: '/jogos/', scope: '/', display: 'standalone',
+      background_color: '#0e1020', theme_color: '#0e1020', orientation: 'portrait',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }
+      ]
+    }));
+  }
+
+  // ─── COBRAS E ESCADAS (app separado, sem login, só por link direto) ───────
+  if (req.method === 'GET' && (pathname === '/cobras' || pathname === '/cobras/' || pathname === '/cobras/index.html')) {
+    fs.readFile(path.join(__dirname, 'cobras', 'index.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+  if (req.method === 'GET' && pathname === '/cobras/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify({
+      name: 'Cobras e Escadas', short_name: 'Cobras',
+      description: 'Cobras e escadas com 2 dados, de 2 a 4 jogadores',
+      start_url: '/cobras/', scope: '/cobras/', display: 'standalone',
+      background_color: '#0e1020', theme_color: '#0e1020', orientation: 'portrait',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }
+      ]
+    }));
+  }
+  if (req.method === 'GET' && pathname === '/cobras/sw.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/cobras/' });
+    return res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
+  }
+
+  // criar sala -> quem cria é o dono (escolhe tabuleiro e começa a partida)
+  if (req.method === 'POST' && pathname === '/api/cobras/criar') {
+    ceLimpar();
+    const body = await readBody(req);
+    const sala = ceNovaSala(ceCodigo(), String(body.tabuleiro || 'meio'));
+    const token = crypto.randomBytes(12).toString('hex');
+    const p = { id: sala.proximoId++, token, nome: jvNome(body.nome, 'Jogador 1'),
+                cor: CE_CORES[0].cor, casa: 0, colocacao: 0, visto: Date.now() };
+    sala.jogadores.push(p);
+    sala.donoId = p.id;
+    sala.log.push(p.nome + ' criou a sala');
+    ceSalas.set(sala.codigo, sala);
+    return json(res, 200, { ok: true, codigo: sala.codigo, id: p.id, token, jogo: cePublico(sala) });
+  }
+
+  // entrar: sem token entra como jogador novo (serve também pra pôr mais de um
+  // jogador no mesmo celular); com token conhecido, é só reconexão.
+  if (req.method === 'POST' && pathname === '/api/cobras/entrar') {
+    const body = await readBody(req);
+    const sala = ceSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada. Confira o código.' });
+
+    const velho = ceQuem(sala, body.token);
+    if (velho) {
+      velho.nome = jvNome(body.nome, velho.nome);
+      ceMudou(sala);
+      return json(res, 200, { ok: true, codigo: sala.codigo, id: velho.id, token: velho.token, jogo: cePublico(sala) });
+    }
+    if (sala.estado !== 'lobby') return json(res, 403, { error: 'Essa partida já começou.' });
+    if (sala.jogadores.length >= CE_MAX_JOGADORES) return json(res, 403, { error: 'Essa sala já tem 4 jogadores.' });
+
+    const token = crypto.randomBytes(12).toString('hex');
+    const p = { id: sala.proximoId++, token, nome: jvNome(body.nome, 'Jogador ' + (sala.jogadores.length + 1)),
+                cor: CE_CORES[sala.jogadores.length].cor, casa: 0, colocacao: 0, visto: Date.now() };
+    sala.jogadores.push(p);
+    sala.log.push(p.nome + ' entrou');
+    ceMudou(sala);
+    return json(res, 200, { ok: true, codigo: sala.codigo, id: p.id, token, jogo: cePublico(sala) });
+  }
+
+  // estado — long-poll: só responde quando muda algo (ou depois de 25s)
+  if (req.method === 'GET' && pathname === '/api/cobras/estado') {
+    const sala = ceSalas.get(String(parsedUrl.query.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    String(parsedUrl.query.token || '').split(',').forEach(function(t){ ceQuem(sala, t); });
+    const visto = parseInt(parsedUrl.query.v, 10);
+    if (visto !== sala.versao) return json(res, 200, { ok: true, jogo: cePublico(sala) });
+
+    const espera = { res, timer: null };
+    espera.timer = setTimeout(() => {
+      sala.esperando = sala.esperando.filter(w => w !== espera);
+      try { json(res, 200, { ok: true, jogo: cePublico(sala) }); } catch (e) {}
+    }, CE_ESPERA_MS);
+    req.on('close', () => {
+      clearTimeout(espera.timer);
+      sala.esperando = sala.esperando.filter(w => w !== espera);
+    });
+    sala.esperando.push(espera);
+    return;
+  }
+
+  // dono troca o tabuleiro (só no lobby)
+  if (req.method === 'POST' && pathname === '/api/cobras/tabuleiro') {
+    const body = await readBody(req);
+    const sala = ceSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const p = ceQuem(sala, body.token);
+    if (!p) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (p.id !== sala.donoId) return json(res, 403, { error: 'Só quem criou a sala escolhe o tabuleiro.' });
+    if (sala.estado !== 'lobby') return json(res, 400, { error: 'A partida já começou.' });
+    sala.tab = ceTabuleiro(String(body.tabuleiro || ''));
+    ceMudou(sala);
+    return json(res, 200, { ok: true, jogo: cePublico(sala) });
+  }
+
+  // dono começa a partida (mínimo 2 jogadores)
+  if (req.method === 'POST' && pathname === '/api/cobras/comecar') {
+    const body = await readBody(req);
+    const sala = ceSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const p = ceQuem(sala, body.token);
+    if (!p) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (p.id !== sala.donoId) return json(res, 403, { error: 'Só quem criou a sala começa a partida.' });
+    if (sala.jogadores.length < 2) return json(res, 400, { error: 'Precisa de pelo menos 2 jogadores.' });
+    ceReiniciar(sala, null);
+    ceMudou(sala);
+    return json(res, 200, { ok: true, jogo: cePublico(sala) });
+  }
+
+  // rolar os dois dados (só na sua vez)
+  if (req.method === 'POST' && pathname === '/api/cobras/rolar') {
+    const body = await readBody(req);
+    const sala = ceSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const p = ceQuem(sala, body.token);
+    if (!p) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (sala.estado !== 'jogando') return json(res, 400, { error: 'A partida não está rolando.' });
+    if (sala.vezId !== p.id) return json(res, 400, { error: 'Não é sua vez.' });
+    ceJogada(sala);
+    ceMudou(sala);
+    return json(res, 200, { ok: true, jogo: cePublico(sala) });
+  }
+
+  // jogar de novo com a mesma turma / voltar pro lobby pra trocar de tabuleiro
+  if (req.method === 'POST' && pathname === '/api/cobras/revanche') {
+    const body = await readBody(req);
+    const sala = ceSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const p = ceQuem(sala, body.token);
+    if (!p) return json(res, 403, { error: 'Você não está nessa partida.' });
+    ceReiniciar(sala, null);
+    ceMudou(sala);
+    return json(res, 200, { ok: true, jogo: cePublico(sala) });
+  }
+  if (req.method === 'POST' && pathname === '/api/cobras/lobby') {
+    const body = await readBody(req);
+    const sala = ceSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const p = ceQuem(sala, body.token);
+    if (!p) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (p.id !== sala.donoId) return json(res, 403, { error: 'Só quem criou a sala mexe nisso.' });
+    sala.estado = 'lobby';
+    sala.jogadores.forEach(function(j){ j.casa = 0; j.colocacao = 0; });
+    sala.vezId = null; sala.ultimaJogada = null; sala.seq = 0;
+    sala.log = ['De volta pra escolha do tabuleiro'];
+    ceMudou(sala);
+    return json(res, 200, { ok: true, jogo: cePublico(sala) });
+  }
+
+  // sair (libera a vaga; se a sala esvaziar, some)
+  if (req.method === 'POST' && pathname === '/api/cobras/sair') {
+    const body = await readBody(req);
+    const sala = ceSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 200, { ok: true });
+    String(body.token || '').split(',').forEach(function(tk){
+      const p = ceQuem(sala, tk);
+      if (!p) return;
+      const eraVez = sala.vezId === p.id;
+      const proximo = eraVez ? ceProximo(sala, p.id) : sala.vezId;
+      sala.jogadores = sala.jogadores.filter(function(j){ return j.id !== p.id; });
+      sala.log.push(p.nome + ' saiu');
+      if (sala.donoId === p.id && sala.jogadores.length) sala.donoId = sala.jogadores[0].id;
+      sala.vezId = (proximo === p.id) ? (sala.jogadores[0] ? sala.jogadores[0].id : null) : proximo;
+      if (sala.estado === 'jogando' && ceAtivos(sala).length <= 1) { sala.estado = 'fim'; sala.vezId = null; }
+    });
+    if (!sala.jogadores.length) { ceAcordar(sala); ceSalas.delete(sala.codigo); return json(res, 200, { ok: true }); }
+    ceMudou(sala);
     return json(res, 200, { ok: true });
   }
 
