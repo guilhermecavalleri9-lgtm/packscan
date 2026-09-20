@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1020">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/jogodavelha/manifest.json">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<title>Velha ∞ — Jogo da Velha Infinito</title>
+<style>
+:root{
+  --bg:#0e1020; --bg2:#151834; --card:#1b1f3d; --linha:#2a2f56;
+  --txt:#f2f3fb; --txt2:#a6abd4; --txt3:#6b719e;
+  --x:#22d3ee; --x-fraco:rgba(34,211,238,.14);
+  --o:#fb7185; --o-fraco:rgba(251,113,133,.14);
+  --verde:#34d399; --amarelo:#fbbf24; --vermelho:#f87171;
+  --r:16px; --r-lg:24px;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  font-family:var(--sans);color:var(--txt);font-size:15px;line-height:1.45;
+  background:radial-gradient(120% 80% at 50% 0%,#1b2050 0%,var(--bg) 60%) fixed,var(--bg);
+  -webkit-font-smoothing:antialiased;overscroll-behavior:none;user-select:none
+}
+button,input{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+input{-webkit-user-select:text;user-select:text}
+
+#app{max-width:460px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top) + 14px) 16px calc(env(safe-area-inset-bottom) + 16px)}
+.tela{display:none;flex:1;flex-direction:column}
+.tela.on{display:flex;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+/* ── topo ── */
+.marca{text-align:center;margin:22px 0 6px}
+.marca h1{font-size:34px;font-weight:800;letter-spacing:-1px}
+.marca h1 span{color:var(--x)}
+.marca p{color:var(--txt2);font-size:14px;margin-top:8px}
+.regra{background:var(--card);border:1px solid var(--linha);border-radius:var(--r);
+  padding:14px 16px;margin:20px 0 6px;color:var(--txt2);font-size:13.5px}
+.regra b{color:var(--txt)}
+.regra ul{margin:8px 0 0 16px}
+.regra li{margin-top:5px}
+
+/* ── formulário ── */
+.campo{margin-top:16px}
+.campo label{display:block;font-size:12px;font-weight:700;color:var(--txt3);
+  text-transform:uppercase;letter-spacing:.6px;margin:0 2px 7px}
+.campo input{width:100%;background:var(--bg2);border:1px solid var(--linha);border-radius:14px;
+  padding:14px 16px;font-size:16px;outline:none;transition:border-color .15s}
+.campo input:focus{border-color:var(--x)}
+.campo input.cod{text-align:center;letter-spacing:10px;font-weight:800;font-size:26px;
+  text-transform:uppercase;padding-left:26px}
+.btn{width:100%;border-radius:14px;padding:15px;font-size:16px;font-weight:700;margin-top:14px;
+  transition:transform .1s,opacity .15s}
+.btn:active{transform:scale(.98)}
+.btn[disabled]{opacity:.45}
+.btn-x{background:linear-gradient(135deg,var(--x),#0ea5b7);color:#04212a}
+.btn-o{background:linear-gradient(135deg,var(--o),#e11d48);color:#2d0510}
+.btn-ghost{background:var(--card);border:1px solid var(--linha);color:var(--txt)}
+.ou{display:flex;align-items:center;gap:12px;color:var(--txt3);font-size:12px;
+  font-weight:700;margin:22px 0 4px;text-transform:uppercase;letter-spacing:1px}
+.ou::before,.ou::after{content:'';flex:1;height:1px;background:var(--linha)}
+.erro{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.35);color:#fecaca;
+  border-radius:12px;padding:11px 14px;font-size:13.5px;margin-top:14px;display:none}
+.erro.on{display:block}
+
+/* ── sala de espera ── */
+.espera{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:6px}
+.espera .rot{color:var(--txt2);font-size:14px}
+.codigao{font-size:58px;font-weight:800;letter-spacing:10px;color:var(--x);margin:6px 0 2px;
+  text-shadow:0 0 26px rgba(34,211,238,.35)}
+.pulsa{display:inline-flex;align-items:center;gap:8px;color:var(--amarelo);font-size:13.5px;font-weight:600;margin-top:10px}
+.pulsa i{width:8px;height:8px;border-radius:50%;background:var(--amarelo);animation:pisca 1.1s infinite}
+@keyframes pisca{0%,100%{opacity:.25}50%{opacity:1}}
+
+/* ── placar ── */
+.placar{display:flex;align-items:stretch;gap:8px;margin-bottom:14px}
+.jog{flex:1;background:var(--card);border:1px solid var(--linha);border-radius:var(--r);padding:11px 12px;
+  transition:border-color .2s,background .2s;min-width:0}
+.jog.vez{border-color:currentColor;box-shadow:0 0 0 1px currentColor inset}
+.jog.eX{color:var(--x)} .jog.eO{color:var(--o)}
+.jog.vez.eX{background:var(--x-fraco)} .jog.vez.eO{background:var(--o-fraco)}
+.jog .top{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:800}
+.jog .top .pt{width:7px;height:7px;border-radius:50%;background:var(--txt3);flex:0 0 auto}
+.jog .top .pt.on{background:var(--verde)}
+.jog .nome{color:var(--txt);font-size:14px;font-weight:600;margin-top:3px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jog .pts{color:var(--txt);font-size:24px;font-weight:800;line-height:1.1;margin-top:2px}
+.jog .eu{font-size:10px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px}
+.vs{display:flex;align-items:center;color:var(--txt3);font-size:12px;font-weight:700}
+
+/* ── aviso da vez ── */
+.aviso{text-align:center;font-size:14.5px;font-weight:700;min-height:44px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.aviso .sub{font-size:12px;font-weight:600;color:var(--txt3)}
+.aviso.minha{color:var(--verde)}
+.aviso.dele{color:var(--txt2)}
+.aviso.fim{color:var(--amarelo);font-size:17px}
+
+/* ── tabuleiro ── */
+.tabwrap{display:flex;align-items:center;justify-content:center;flex:1;padding:6px 0}
+.tab{width:100%;max-width:340px;aspect-ratio:1;display:grid;
+  grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:10px}
+.casa{background:var(--card);border:1px solid var(--linha);border-radius:18px;
+  display:flex;align-items:center;justify-content:center;position:relative;
+  transition:transform .12s,background .2s,border-color .2s}
+.casa:active{transform:scale(.96)}
+.casa.livre.pode{border-color:rgba(255,255,255,.14)}
+.casa.livre.pode::after{content:'';width:12px;height:12px;border-radius:50%;background:rgba(255,255,255,.09)}
+.casa svg{width:52%;height:52%;overflow:visible}
+.casa svg .tr{fill:none;stroke-width:9;stroke-linecap:round}
+.casa.x svg .tr{stroke:var(--x)} .casa.o svg .tr{stroke:var(--o)}
+.casa.x{background:var(--x-fraco)} .casa.o{background:var(--o-fraco)}
+.casa.nova svg{animation:pop .22s cubic-bezier(.34,1.56,.64,1)}
+@keyframes pop{from{transform:scale(.3);opacity:0}to{transform:none;opacity:1}}
+.casa.sumindo svg{animation:some 1.3s ease-in-out infinite}
+@keyframes some{0%,100%{opacity:1}50%{opacity:.18}}
+.casa.sumindo::before{content:'';position:absolute;inset:-1px;border-radius:18px;
+  border:2px dashed currentColor;opacity:.5}
+.casa.x.sumindo{color:var(--x)} .casa.o.sumindo{color:var(--o)}
+.casa.ganha{background:rgba(52,211,153,.18);border-color:var(--verde);animation:brilha .5s ease}
+@keyframes brilha{from{transform:scale(1)}50%{transform:scale(1.07)}to{transform:scale(1)}}
+.tab.travado .casa{cursor:default}
+
+/* ── rodapé ── */
+.pes{display:flex;gap:8px;margin-top:14px}
+.pes .btn{margin-top:0}
+.linha-info{display:flex;align-items:center;justify-content:space-between;margin-top:12px;
+  color:var(--txt3);font-size:11.5px;font-weight:600}
+.linha-info .sala{letter-spacing:2px;font-weight:800;color:var(--txt2)}
+.conexao{display:inline-flex;align-items:center;gap:6px}
+.conexao i{width:7px;height:7px;border-radius:50%;background:var(--verde)}
+.conexao.off i{background:var(--vermelho);animation:pisca 1s infinite}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 22px);transform:translateX(-50%);
+  background:#2b3160;color:#fff;border-radius:999px;padding:10px 18px;font-size:13.5px;font-weight:600;
+  box-shadow:0 10px 30px rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:50}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(-4px)}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ─────────── TELA 1: início ─────────── -->
+  <section class="tela on" id="tela-inicio">
+    <div class="marca">
+      <h1>Velha <span>∞</span></h1>
+      <p>Jogo da velha infinito · 4 peças · 2 celulares</p>
+    </div>
+
+    <div class="regra">
+      <b>Como funciona</b>
+      <ul>
+        <li>Cada um só pode ter <b>4 peças</b> no tabuleiro.</li>
+        <li>Ao colocar a 5ª, a <b>peça mais antiga some</b> (ela fica piscando antes).</li>
+        <li>Ganha quem fizer 3 em linha. <b>Nunca dá velha.</b></li>
+      </ul>
+    </div>
+
+    <div class="campo">
+      <label for="in-nome">Seu nome</label>
+      <input id="in-nome" maxlength="14" placeholder="Como você aparece no placar" autocomplete="nickname">
+    </div>
+    <button class="btn btn-x" id="bt-criar">Criar partida</button>
+
+    <div class="ou">ou</div>
+
+    <div class="campo">
+      <label for="in-cod">Código da sala</label>
+      <input id="in-cod" class="cod" maxlength="4" placeholder="----" inputmode="text"
+             autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <button class="btn btn-o" id="bt-entrar">Entrar na partida</button>
+
+    <div class="erro" id="erro-inicio"></div>
+  </section>
+
+  <!-- ─────────── TELA 2: esperando o outro ─────────── -->
+  <section class="tela" id="tela-espera">
+    <div class="espera">
+      <div class="rot">Código da sala</div>
+      <div class="codigao" id="sala-cod">----</div>
+      <div class="rot">Mande esse código (ou o link) pro outro celular</div>
+      <div class="pulsa"><i></i> Esperando o outro jogador…</div>
+    </div>
+    <button class="btn btn-x" id="bt-compartilhar">Compartilhar link</button>
+    <button class="btn btn-ghost" id="bt-cancelar">Cancelar</button>
+  </section>
+
+  <!-- ─────────── TELA 3: jogo ─────────── -->
+  <section class="tela" id="tela-jogo">
+    <div class="placar">
+      <div class="jog eX" id="jog-x">
+        <div class="top"><i class="pt" id="pt-x"></i> ✕ <span class="eu" id="eu-x"></span></div>
+        <div class="nome" id="nome-x">—</div>
+        <div class="pts" id="pts-x">0</div>
+      </div>
+      <div class="vs">vs</div>
+      <div class="jog eO" id="jog-o">
+        <div class="top"><i class="pt" id="pt-o"></i> ◯ <span class="eu" id="eu-o"></span></div>
+        <div class="nome" id="nome-o">—</div>
+        <div class="pts" id="pts-o">0</div>
+      </div>
+    </div>
+
+    <div class="aviso" id="aviso"></div>
+
+    <div class="tabwrap">
+      <div class="tab" id="tab"></div>
+    </div>
+
+    <div class="pes" id="pes"></div>
+
+    <div class="linha-info">
+      <span class="sala" id="info-sala"></span>
+      <span class="conexao" id="conexao"><i></i> <span id="conexao-txt">conectado</span></span>
+    </div>
+  </section>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+// ── estado local ───────────────────────────────────────────────────────────
+var CHAVE = 'jv:sala';
+var eu = { codigo:null, token:null, jogador:null };   // quem eu sou nessa sala
+var jogo = null;          // último estado vindo do servidor
+var versaoVista = 0;      // versão que o long-poll já conhece
+var enviando = false;     // trava anti duplo-toque
+var laco = 0;             // id do laço de polling em execução
+var wakeLock = null;
+
+var $ = function(id){ return document.getElementById(id); };
+
+// ── utilidades ─────────────────────────────────────────────────────────────
+function tela(qual){
+  var lista = document.querySelectorAll('.tela');
+  for (var i=0;i<lista.length;i++) lista[i].classList.toggle('on', lista[i].id === 'tela-'+qual);
+}
+var toastTimer;
+function toast(msg){
+  var t = $('toast'); t.textContent = msg; t.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(function(){ t.classList.remove('on'); }, 2200);
+}
+function erroInicio(msg){
+  var e = $('erro-inicio');
+  if (!msg) { e.classList.remove('on'); return; }
+  e.textContent = msg; e.classList.add('on');
+}
+function esc(t){
+  return String(t == null ? '' : t).replace(/[&<>"]/g, function(c){
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+  });
+}
+function vibra(ms){ try { if (navigator.vibrate) navigator.vibrate(ms); } catch(e){} }
+function salvar(){ try { localStorage.setItem(CHAVE, JSON.stringify(eu)); } catch(e){} }
+function esquecer(){ try { localStorage.removeItem(CHAVE); } catch(e){} }
+
+async function api(rota, corpo){
+  var r = await fetch('/api/jogodavelha/' + rota, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corpo||{})
+  });
+  var d = await r.json().catch(function(){ return {}; });
+  if (!r.ok) throw new Error(d.error || 'Deu ruim na conexão. Tenta de novo.');
+  return d;
+}
+
+async function manterAcordado(){
+  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
+}
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'visible') { manterAcordado(); if (eu.codigo) puxar(); }
+});
+
+// ── entrar / criar ─────────────────────────────────────────────────────────
+function nomeDigitado(){
+  var n = $('in-nome').value.trim();
+  try { localStorage.setItem('jv:nome', n); } catch(e){}
+  return n;
+}
+
+async function criar(){
+  erroInicio('');
+  $('bt-criar').disabled = true;
+  try {
+    var d = await api('criar', { nome: nomeDigitado() });
+    assumir(d);
+  } catch(e) { erroInicio(e.message); }
+  $('bt-criar').disabled = false;
+}
+
+async function entrar(codigo){
+  erroInicio('');
+  codigo = (codigo || $('in-cod').value).trim().toUpperCase();
+  if (codigo.length !== 4) { erroInicio('O código tem 4 letras/números.'); return; }
+  $('bt-entrar').disabled = true;
+  try {
+    var guardado = null;
+    try { guardado = JSON.parse(localStorage.getItem(CHAVE) || 'null'); } catch(e){}
+    var token = (guardado && guardado.codigo === codigo) ? guardado.token : null;
+    var d = await api('entrar', { codigo: codigo, nome: nomeDigitado(), token: token });
+    assumir(d);
+  } catch(e) { erroInicio(e.message); }
+  $('bt-entrar').disabled = false;
+}
+
+function assumir(d){
+  eu = { codigo: d.codigo, token: d.token, jogador: d.jogador };
+  salvar();
+  aplicar(d.jogo);
+  manterAcordado();
+  laco++;
+  puxarSempre(laco);
+}
+
+// ── long-poll: o servidor segura a resposta até algo mudar ──────────────────
+async function puxarSempre(meuLaco){
+  while (meuLaco === laco && eu.codigo) {
+    try {
+      var r = await fetch('/api/jogodavelha/estado?codigo=' + encodeURIComponent(eu.codigo) +
+                          '&v=' + versaoVista + '&token=' + encodeURIComponent(eu.token));
+      if (r.status === 404) { toast('A sala expirou.'); sair(true); return; }
+      var d = await r.json();
+      if (meuLaco !== laco) return;
+      conexao(true);
+      if (d.jogo) aplicar(d.jogo);
+    } catch(e) {
+      if (meuLaco !== laco) return;
+      conexao(false);
+      await new Promise(function(ok){ setTimeout(ok, 1500); });
+    }
+  }
+}
+function puxar(){ /* força uma volta nova do laço */ laco++; puxarSempre(laco); }
+
+function conexao(ok){
+  var c = $('conexao');
+  c.classList.toggle('off', !ok);
+  $('conexao-txt').textContent = ok ? 'conectado' : 'reconectando…';
+}
+
+// ── render ─────────────────────────────────────────────────────────────────
+var SVG_X = '<svg viewBox="0 0 100 100"><path class="tr" d="M18 18 L82 82"/><path class="tr" d="M82 18 L18 82"/></svg>';
+var SVG_O = '<svg viewBox="0 0 100 100"><circle class="tr" cx="50" cy="50" r="32"/></svg>';
+
+function aplicar(novo){
+  var antes = jogo;
+  jogo = novo;
+  versaoVista = novo.versao;
+
+  var cheio = novo.nomes.X && novo.nomes.O;
+  if (!cheio) { desenharEspera(); tela('espera'); return; }
+
+  // chegou a vez? dá um toque no celular
+  if (antes && antes.versao !== novo.versao) {
+    if (!novo.vencedor && novo.vez === eu.jogador && antes.vez !== eu.jogador) vibra(35);
+    if (novo.vencedor && !antes.vencedor) vibra(novo.vencedor === eu.jogador ? [30,60,30] : 90);
+  }
+  tela('jogo');
+  desenharJogo(antes);
+}
+
+function desenharEspera(){
+  $('sala-cod').textContent = eu.codigo;
+}
+
+function desenharJogo(antes){
+  var souX = eu.jogador === 'X';
+  var meuTurno = !jogo.vencedor && jogo.vez === eu.jogador;
+
+  $('nome-x').textContent = jogo.nomes.X || '—';
+  $('nome-o').textContent = jogo.nomes.O || '—';
+  $('pts-x').textContent  = jogo.placar.X;
+  $('pts-o').textContent  = jogo.placar.O;
+  $('eu-x').textContent   = souX ? '(você)' : '';
+  $('eu-o').textContent   = souX ? '' : '(você)';
+  $('pt-x').classList.toggle('on', !!jogo.online.X);
+  $('pt-o').classList.toggle('on', !!jogo.online.O);
+  $('jog-x').classList.toggle('vez', !jogo.vencedor && jogo.vez === 'X');
+  $('jog-o').classList.toggle('vez', !jogo.vencedor && jogo.vez === 'O');
+  $('info-sala').textContent = 'SALA ' + jogo.codigo + ' · rodada ' + jogo.rodada;
+
+  // aviso do topo
+  var av = $('aviso');
+  av.className = 'aviso';
+  if (jogo.vencedor) {
+    av.classList.add('fim');
+    var quem = jogo.vencedor === eu.jogador ? 'Você ganhou! 🎉'
+             : (esc(jogo.nomes[jogo.vencedor]) + ' ganhou');
+    av.innerHTML = '<div>' + quem + '</div>';
+  } else {
+    var proximaSome = jogo.ordem[jogo.vez].length >= jogo.maxPecas;
+    av.classList.add(meuTurno ? 'minha' : 'dele');
+    var tit = meuTurno ? 'Sua vez' : ('Vez de ' + esc(jogo.nomes[jogo.vez] || '...'));
+    var sub = proximaSome
+      ? (meuTurno ? 'sua peça mais antiga vai sumir' : 'a peça mais antiga dele(a) vai sumir')
+      : ((meuTurno ? 'você tem ' : 'ele(a) tem ') + jogo.ordem[jogo.vez].length + ' de ' + jogo.maxPecas + ' peças');
+    av.innerHTML = '<div>' + tit + '</div><div class="sub">' + sub + '</div>';
+  }
+
+  // tabuleiro
+  var tab = $('tab');
+  if (!tab.childNodes.length) {
+    for (var i=0;i<9;i++) {
+      var b = document.createElement('button');
+      b.className = 'casa'; b.dataset.casa = i;
+      b.addEventListener('click', tocar);
+      tab.appendChild(b);
+    }
+  }
+  var vaiSumir = (!jogo.vencedor && jogo.ordem[jogo.vez].length >= jogo.maxPecas)
+               ? jogo.ordem[jogo.vez][0] : -1;
+  tab.classList.toggle('travado', !meuTurno);
+
+  for (var c=0;c<9;c++) {
+    var casa = tab.childNodes[c];
+    var dono = jogo.tab[c];
+    var mudou = !antes || antes.tab[c] !== dono;
+    var cls = 'casa';
+    if (dono === 'X') cls += ' x'; else if (dono === 'O') cls += ' o';
+    else cls += ' livre' + (meuTurno ? ' pode' : '');
+    if (c === vaiSumir) cls += ' sumindo';
+    if (jogo.linha && jogo.linha.indexOf(c) >= 0) cls += ' ganha';
+    if (dono && mudou) cls += ' nova';
+    casa.className = cls;
+    if (mudou) casa.innerHTML = dono === 'X' ? SVG_X : (dono === 'O' ? SVG_O : '');
+    casa.disabled = !meuTurno || !!dono;
+  }
+
+  // botões de baixo
+  var pes = $('pes');
+  if (jogo.vencedor) {
+    var pedi = jogo.revanche[eu.jogador];
+    var pediuOutro = jogo.revanche[eu.jogador === 'X' ? 'O' : 'X'];
+    pes.innerHTML =
+      '<button class="btn btn-x" id="bt-revanche"' + (pedi ? ' disabled' : '') + '>' +
+        (pedi ? 'Esperando o outro…' : (pediuOutro ? 'Ele(a) quer revanche — bora!' : 'Jogar de novo')) +
+      '</button>' +
+      '<button class="btn btn-ghost" id="bt-sair">Sair</button>';
+    $('bt-revanche').addEventListener('click', revanche);
+    $('bt-sair').addEventListener('click', function(){ sair(false); });
+  } else if (pes.dataset.modo !== 'jogo') {
+    pes.innerHTML = '<button class="btn btn-ghost" id="bt-sair">Sair da sala</button>';
+    $('bt-sair').addEventListener('click', function(){ sair(false); });
+  }
+  pes.dataset.modo = jogo.vencedor ? 'fim' : 'jogo';
+}
+
+// ── ações ──────────────────────────────────────────────────────────────────
+async function tocar(ev){
+  if (enviando || !jogo || jogo.vencedor) return;
+  if (jogo.vez !== eu.jogador) { toast('Calma, não é sua vez.'); return; }
+  var casa = parseInt(ev.currentTarget.dataset.casa, 10);
+  if (jogo.tab[casa]) return;
+  enviando = true;
+  vibra(12);
+  try {
+    var d = await api('jogar', { codigo: eu.codigo, token: eu.token, casa: casa });
+    aplicar(d.jogo);
+  } catch(e) { toast(e.message); }
+  enviando = false;
+}
+
+async function revanche(){
+  try {
+    var d = await api('revanche', { codigo: eu.codigo, token: eu.token });
+    aplicar(d.jogo);
+  } catch(e) { toast(e.message); }
+}
+
+async function sair(silencioso){
+  var antigo = eu;
+  laco++;
+  eu = { codigo:null, token:null, jogador:null };
+  jogo = null; versaoVista = 0;
+  esquecer();
+  $('tab').innerHTML = ''; $('pes').innerHTML = ''; $('pes').dataset.modo = '';
+  tela('inicio');
+  if (!silencioso && antigo.codigo) {
+    try { await api('sair', { codigo: antigo.codigo, token: antigo.token }); } catch(e){}
+  }
+}
+
+function linkDaSala(){
+  return location.origin + '/jogodavelha?sala=' + eu.codigo;
+}
+async function compartilhar(){
+  var texto = 'Bora jogar Velha ∞? Sala ' + eu.codigo + ': ' + linkDaSala();
+  try {
+    if (navigator.share) { await navigator.share({ title:'Velha ∞', text: texto }); return; }
+    await navigator.clipboard.writeText(texto);
+    toast('Link copiado!');
+  } catch(e) {
+    if (e && e.name === 'AbortError') return;
+    toast('Copia o código: ' + eu.codigo);
+  }
+}
+
+// ── liga tudo ──────────────────────────────────────────────────────────────
+$('bt-criar').addEventListener('click', criar);
+$('bt-entrar').addEventListener('click', function(){ entrar(); });
+$('bt-compartilhar').addEventListener('click', compartilhar);
+$('bt-cancelar').addEventListener('click', function(){ sair(false); });
+$('in-cod').addEventListener('input', function(){
+  this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,4);
+  if (this.value.length === 4) this.blur();
+});
+$('in-cod').addEventListener('keydown', function(e){ if (e.key === 'Enter') entrar(); });
+$('in-nome').addEventListener('keydown', function(e){ if (e.key === 'Enter') this.blur(); });
+
+(function inicio(){
+  try { $('in-nome').value = localStorage.getItem('jv:nome') || ''; } catch(e){}
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/jogodavelha/sw.js').catch(function(){});
+
+  var daUrl = (new URLSearchParams(location.search).get('sala') || '').trim().toUpperCase();
+  var guardado = null;
+  try { guardado = JSON.parse(localStorage.getItem(CHAVE) || 'null'); } catch(e){}
+
+  if (daUrl) { $('in-cod').value = daUrl; entrar(daUrl); }
+  else if (guardado && guardado.codigo) { entrar(guardado.codigo); }  // voltou pra partida
+})();
+
+})();
+</script>
+</body>
+</html>

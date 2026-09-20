@@ -1153,6 +1153,112 @@ function aplicarCorrecoesNome(endereco, lista) {
 }
 
 // ─── SERVER ───────────────────────────────────────────────────────────────────
+// ─── JOGO DA VELHA INFINITO ───────────────────────────────────────────────────
+// App separado (/jogodavelha), sem login, dois celulares na mesma sala.
+// Regra: cada jogador só pode ter 4 peças no tabuleiro. Ao colocar a 5ª, a peça
+// mais antiga dele some — por isso nunca dá "velha", o jogo é infinito.
+// O estado das salas mora só na memória do servidor (partida é coisa passageira).
+const JV_MAX_PECAS  = 4;
+const JV_LIMPA_MS   = 3 * 60 * 60 * 1000; // salas paradas há 3h somem
+const JV_ESPERA_MS  = 25000;              // long-poll: segura a resposta até 25s
+const JV_ONLINE_MS  = 45000;              // sem dar sinal nesse tempo = offline
+const JV_LINHAS = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+const jvSalas = new Map();
+
+function jvCodigo() {
+  const alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sem I/O/0/1 (confunde na tela)
+  let cod;
+  do {
+    cod = '';
+    for (let i = 0; i < 4; i++) cod += alfabeto[crypto.randomInt(alfabeto.length)];
+  } while (jvSalas.has(cod));
+  return cod;
+}
+
+function jvNovaSala(codigo) {
+  return {
+    codigo, criadaEm: Date.now(), mexidoEm: Date.now(), versao: 1,
+    jogadores: { X: null, O: null },
+    tab: new Array(9).fill(null),
+    ordem: { X: [], O: [] },
+    vez: 'X', vencedor: null, linha: null,
+    placar: { X: 0, O: 0 }, rodada: 1,
+    revanche: { X: false, O: false },
+    esperando: []
+  };
+}
+
+function jvOnline(sala, j) {
+  const p = sala.jogadores[j];
+  return !!p && (Date.now() - p.visto) < JV_ONLINE_MS;
+}
+
+function jvPublico(sala) {
+  return {
+    codigo: sala.codigo, versao: sala.versao, maxPecas: JV_MAX_PECAS,
+    tab: sala.tab, ordem: sala.ordem, vez: sala.vez,
+    vencedor: sala.vencedor, linha: sala.linha,
+    placar: sala.placar, rodada: sala.rodada, revanche: sala.revanche,
+    nomes:  { X: sala.jogadores.X ? sala.jogadores.X.nome : null,
+              O: sala.jogadores.O ? sala.jogadores.O.nome : null },
+    online: { X: jvOnline(sala, 'X'), O: jvOnline(sala, 'O') }
+  };
+}
+
+// acorda todo mundo que está segurando o long-poll dessa sala
+function jvAcordar(sala) {
+  const fila = sala.esperando;
+  sala.esperando = [];
+  for (const w of fila) {
+    clearTimeout(w.timer);
+    try { json(w.res, 200, { ok: true, jogo: jvPublico(sala) }); } catch (e) {}
+  }
+}
+
+function jvMudou(sala) {
+  sala.versao++;
+  sala.mexidoEm = Date.now();
+  jvAcordar(sala);
+}
+
+function jvLimpar() {
+  const agora = Date.now();
+  for (const [cod, sala] of jvSalas) {
+    if (agora - sala.mexidoEm > JV_LIMPA_MS) { jvAcordar(sala); jvSalas.delete(cod); }
+  }
+}
+
+function jvVitoria(tab, j) {
+  for (const l of JV_LINHAS) if (tab[l[0]] === j && tab[l[1]] === j && tab[l[2]] === j) return l;
+  return null;
+}
+
+function jvNovaRodada(sala, comeca) {
+  sala.tab = new Array(9).fill(null);
+  sala.ordem = { X: [], O: [] };
+  sala.vez = comeca;
+  sala.vencedor = null; sala.linha = null;
+  sala.revanche = { X: false, O: false };
+  sala.rodada++;
+}
+
+// acha o jogador dono do token (e marca que ele deu sinal de vida)
+function jvQuem(sala, token) {
+  if (!token) return null;
+  for (const j of ['X', 'O']) {
+    if (sala.jogadores[j] && sala.jogadores[j].token === token) {
+      sala.jogadores[j].visto = Date.now();
+      return j;
+    }
+  }
+  return null;
+}
+
+function jvNome(txt, padrao) {
+  const n = String(txt || '').trim().slice(0, 14);
+  return n || padrao;
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1163,7 +1269,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados', '/api/jogodavelha/criar', '/api/jogodavelha/entrar', '/api/jogodavelha/estado', '/api/jogodavelha/jogar', '/api/jogodavelha/revanche', '/api/jogodavelha/zerar', '/api/jogodavelha/sair']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/email/testar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/admin/conta', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -2244,6 +2350,164 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/financeiro/sw.js') {
     res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/financeiro/' });
     return res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
+  }
+
+  // ─── JOGO DA VELHA INFINITO (app separado, sem login, só por link direto) ──
+  if (req.method === 'GET' && (pathname === '/jogodavelha' || pathname === '/jogodavelha/' || pathname === '/jogodavelha/index.html')) {
+    fs.readFile(path.join(__dirname, 'jogodavelha', 'index.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+
+  // PWA próprio (dá pra instalar na tela inicial do celular)
+  if (req.method === 'GET' && pathname === '/jogodavelha/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify({
+      name: 'Jogo da Velha Infinito', short_name: 'Velha ∞',
+      description: 'Jogo da velha infinito de 4 peças para dois celulares',
+      start_url: '/jogodavelha/', scope: '/jogodavelha/', display: 'standalone',
+      background_color: '#0e1020', theme_color: '#0e1020', orientation: 'portrait',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }
+      ]
+    }));
+  }
+  if (req.method === 'GET' && pathname === '/jogodavelha/sw.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/jogodavelha/' });
+    return res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
+  }
+
+  // criar sala -> quem cria joga de X
+  if (req.method === 'POST' && pathname === '/api/jogodavelha/criar') {
+    jvLimpar();
+    const body = await readBody(req);
+    const sala = jvNovaSala(jvCodigo());
+    const token = crypto.randomBytes(12).toString('hex');
+    sala.jogadores.X = { token, nome: jvNome(body.nome, 'Jogador 1'), visto: Date.now() };
+    jvSalas.set(sala.codigo, sala);
+    return json(res, 200, { ok: true, codigo: sala.codigo, jogador: 'X', token, jogo: jvPublico(sala) });
+  }
+
+  // entrar numa sala pelo código (ou voltar pra ela, se o celular já era dali)
+  if (req.method === 'POST' && pathname === '/api/jogodavelha/entrar') {
+    const body = await readBody(req);
+    const codigo = String(body.codigo || '').trim().toUpperCase();
+    const sala = jvSalas.get(codigo);
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada. Confira o código.' });
+
+    let jogador = jvQuem(sala, body.token);
+    let token = body.token;
+    if (jogador) {
+      // reconexão: mesmo celular voltando pra partida
+      sala.jogadores[jogador].nome = jvNome(body.nome, sala.jogadores[jogador].nome);
+    } else {
+      jogador = !sala.jogadores.O ? 'O' : (!sala.jogadores.X ? 'X' : null);
+      if (!jogador) return json(res, 403, { error: 'Essa sala já tem dois jogadores.' });
+      token = crypto.randomBytes(12).toString('hex');
+      sala.jogadores[jogador] = { token, nome: jvNome(body.nome, jogador === 'X' ? 'Jogador 1' : 'Jogador 2'), visto: Date.now() };
+    }
+    jvMudou(sala);
+    return json(res, 200, { ok: true, codigo: sala.codigo, jogador, token, jogo: jvPublico(sala) });
+  }
+
+  // estado da sala — long-poll: só responde quando muda algo (ou depois de 25s)
+  if (req.method === 'GET' && pathname === '/api/jogodavelha/estado') {
+    const codigo = String(parsedUrl.query.codigo || '').trim().toUpperCase();
+    const sala = jvSalas.get(codigo);
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    jvQuem(sala, parsedUrl.query.token);
+    const visto = parseInt(parsedUrl.query.v, 10);
+    if (!(visto === sala.versao)) return json(res, 200, { ok: true, jogo: jvPublico(sala) });
+
+    const espera = { res, timer: null };
+    espera.timer = setTimeout(() => {
+      sala.esperando = sala.esperando.filter(w => w !== espera);
+      try { json(res, 200, { ok: true, jogo: jvPublico(sala) }); } catch (e) {}
+    }, JV_ESPERA_MS);
+    req.on('close', () => {
+      clearTimeout(espera.timer);
+      sala.esperando = sala.esperando.filter(w => w !== espera);
+    });
+    sala.esperando.push(espera);
+    return;
+  }
+
+  // jogar numa casa (0..8)
+  if (req.method === 'POST' && pathname === '/api/jogodavelha/jogar') {
+    const body = await readBody(req);
+    const sala = jvSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const j = jvQuem(sala, body.token);
+    if (!j) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (!sala.jogadores.X || !sala.jogadores.O) return json(res, 400, { error: 'Esperando o outro jogador entrar.' });
+    if (sala.vencedor) return json(res, 400, { error: 'A rodada já acabou.' });
+    if (sala.vez !== j) return json(res, 400, { error: 'Não é sua vez.' });
+    const casa = parseInt(body.casa, 10);
+    if (!(casa >= 0 && casa <= 8)) return json(res, 400, { error: 'Casa inválida.' });
+    if (sala.tab[casa]) return json(res, 400, { error: 'Essa casa já está ocupada.' });
+
+    // 5ª peça: a mais antiga desse jogador sai do tabuleiro
+    if (sala.ordem[j].length >= JV_MAX_PECAS) {
+      const antiga = sala.ordem[j].shift();
+      sala.tab[antiga] = null;
+    }
+    sala.tab[casa] = j;
+    sala.ordem[j].push(casa);
+
+    const linha = jvVitoria(sala.tab, j);
+    if (linha) {
+      sala.vencedor = j; sala.linha = linha; sala.placar[j]++;
+    } else {
+      sala.vez = (j === 'X') ? 'O' : 'X';
+    }
+    jvMudou(sala);
+    return json(res, 200, { ok: true, jogo: jvPublico(sala) });
+  }
+
+  // revanche: só começa a rodada nova quando os dois pedirem (quem perdeu começa)
+  if (req.method === 'POST' && pathname === '/api/jogodavelha/revanche') {
+    const body = await readBody(req);
+    const sala = jvSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const j = jvQuem(sala, body.token);
+    if (!j) return json(res, 403, { error: 'Você não está nessa partida.' });
+    if (!sala.vencedor) return json(res, 400, { error: 'A rodada ainda está rolando.' });
+    sala.revanche[j] = true;
+    if (sala.revanche.X && sala.revanche.O) jvNovaRodada(sala, sala.vencedor === 'X' ? 'O' : 'X');
+    jvMudou(sala);
+    return json(res, 200, { ok: true, jogo: jvPublico(sala) });
+  }
+
+  // zerar o placar (sem sair da sala)
+  if (req.method === 'POST' && pathname === '/api/jogodavelha/zerar') {
+    const body = await readBody(req);
+    const sala = jvSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 404, { error: 'Sala não encontrada.' });
+    const j = jvQuem(sala, body.token);
+    if (!j) return json(res, 403, { error: 'Você não está nessa partida.' });
+    sala.placar = { X: 0, O: 0 };
+    sala.rodada = 0;
+    jvNovaRodada(sala, 'X');
+    jvMudou(sala);
+    return json(res, 200, { ok: true, jogo: jvPublico(sala) });
+  }
+
+  // sair da sala (libera a vaga; se ficar vazia, a sala some)
+  if (req.method === 'POST' && pathname === '/api/jogodavelha/sair') {
+    const body = await readBody(req);
+    const sala = jvSalas.get(String(body.codigo || '').trim().toUpperCase());
+    if (!sala) return json(res, 200, { ok: true });
+    const j = jvQuem(sala, body.token);
+    if (j) {
+      sala.jogadores[j] = null;
+      jvMudou(sala);
+      if (!sala.jogadores.X && !sala.jogadores.O) jvSalas.delete(sala.codigo);
+    }
+    return json(res, 200, { ok: true });
   }
 
   // ─── LISTAR CORREÇÕES MANUAIS (admin) — endereços arrastados + CEPs corrigidos ──
