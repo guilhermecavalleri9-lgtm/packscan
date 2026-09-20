@@ -100,8 +100,15 @@ input{-webkit-user-select:text;user-select:text}
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .topo .chip .bl{width:11px;height:11px;border-radius:50%;flex:0 0 auto}
 .topo .chip .l2{font-size:11px;color:var(--txt3);font-weight:600;margin-top:1px}
-.tabwrap{flex:1;min-height:0;overflow:auto;border-radius:14px;background:#10132b;
-  border:1px solid var(--linha);position:relative;-webkit-overflow-scrolling:touch}
+/* a caixa abraça o tabuleiro (flex:0 1 auto) em vez de esticar: tabuleiro largo
+   e baixo não fica perdido no meio de um retângulo vazio. Com zoom ela encolhe
+   até o espaço que tem e rola por dentro. */
+.tabwrap{flex:0 1 auto;min-height:0;overflow:auto;border-radius:14px;background:#10132b;
+  border:1px solid var(--linha);position:relative;-webkit-overflow-scrolling:touch;display:flex;
+  margin:auto 0}
+/* margin:auto centraliza o tabuleiro sem cortar o começo quando dá zoom e ele
+   fica maior que a área visível (o align-items:center corta) */
+.tabwrap #jg-svg{margin:auto}
 .tabwrap svg{display:block}
 .zoom{display:flex;align-items:center;justify-content:flex-end;gap:6px;margin:8px 2px 2px}
 .zoom span{flex:1;font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px}
@@ -111,7 +118,7 @@ input{-webkit-user-select:text;user-select:text}
 .peao{transition:transform .16s linear}
 .peao.desliza{transition:transform .65s cubic-bezier(.4,0,.3,1)}
 
-.pe{margin-top:10px}
+.pe{padding-top:10px}
 .dados{display:flex;align-items:center;justify-content:center;gap:10px;min-height:56px}
 .dado{width:52px;height:52px;border-radius:12px;background:#f8fafc;box-shadow:0 4px 14px rgba(0,0,0,.4);
   display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:7px;gap:2px}
@@ -156,14 +163,14 @@ input{-webkit-user-select:text;user-select:text}
     <a class="voltar" href="/jogos">◀ jogos</a>
     <div class="marca">
       <h1>🐍 Cobras e Escadas 🪜</h1>
-      <p id="marca-sub">2 a 4 jogadores · 2 dados · 7 tabuleiros</p>
+      <p id="marca-sub">2 a 4 jogadores · 1 dado · 7 tabuleiros</p>
     </div>
     <div class="regra">
       <b>Como funciona</b>
       <ul>
-        <li>Rola os <b>dois dados</b> e anda a soma.</li>
+        <li>Rola <b>o dado</b> e anda o que tirar.</li>
         <li>Caiu no pé da escada, <b>sobe</b>. Caiu na cabeça da cobra, <b>escorrega</b>.</li>
-        <li>Tirou <b>dupla, joga de novo</b> — mas 3 duplas seguidas e perde a vez.</li>
+        <li>A chegada é <b>exata</b>: passou da última casa, volta o que sobrou.</li>
         <li>Cada um no seu celular (ou vários no mesmo, se estiverem juntos).</li>
       </ul>
     </div>
@@ -221,7 +228,7 @@ input{-webkit-user-select:text;user-select:text}
       </div>
       <div class="dados" id="jg-dados"></div>
       <div class="fala" id="jg-fala"></div>
-      <button class="btn btn-1" id="bt-rolar">Rolar os dados</button>
+      <button class="btn btn-1" id="bt-rolar">Rolar o dado</button>
       <div class="linha-info">
         <span class="sala" id="jg-sala"></span>
         <span class="acoes">
@@ -384,7 +391,7 @@ function renderLobby(){
   $('lb-tabs').innerHTML = jogo.tabuleiros.map(function(t){
     return '<button class="tabb'+(t.id===jogo.tab.id?' on':'')+'" data-tab="'+t.id+'"'+(dono?'':' disabled')+'>'+
       '<div class="n">'+esc(t.nome)+'</div>'+
-      '<div class="d">'+t.casas+' casas · '+t.cols+'×'+t.linhas+'<br>'+t.tempo+' · '+(t.exato?'chegada exata':'passou, chegou')+'</div></button>';
+      '<div class="d">'+t.casas+' casas · '+t.cols+'×'+t.linhas+'<br>'+t.tempo+'</div></button>';
   }).join('');
   Array.prototype.forEach.call($('lb-tabs').children, function(b){
     b.addEventListener('click', async function(){
@@ -410,8 +417,7 @@ function renderJogo(){
 
   if (!svgPronto) { svgPronto = montarSvg(jogo.tab); $('jg-svg').innerHTML = svgPronto; aplicarZoom(); }
   var jg = jogo.ultimaJogada;
-  $('jg-dados').innerHTML = jg ? (dadoHtml(jg.dados[0]) + dadoHtml(jg.dados[1]) +
-      '<span class="dado-soma">= '+(jg.dados[0]+jg.dados[1])+(jg.dupla?' 🎉':'')+'</span>') : '';
+  $('jg-dados').innerHTML = jg ? dadoHtml(jg.dado) : '';
   if (!animando) atualizarBotao();
 }
 
@@ -423,7 +429,7 @@ function atualizarBotao(){
   if (animando) { b.disabled = true; b.textContent = '…'; return; }
   if (minhaVez()) {
     b.disabled = false;
-    b.textContent = (eu.vagas.length > 1 ? 'Rolar — ' + (daVez ? daVez.nome : '') : 'Rolar os dados');
+    b.textContent = (eu.vagas.length > 1 ? 'Rolar — ' + (daVez ? daVez.nome : '') : 'Rolar o dado');
   } else {
     b.disabled = true;
     b.textContent = daVez ? 'Vez de ' + daVez.nome : 'Aguarde';
@@ -585,13 +591,13 @@ async function rolar(){
   if (enviando || animando || !minhaVez()) return;
   enviando = true;
   var b = $('bt-rolar'); b.disabled = true;
-  var d1 = $('jg-dados').children[0], d2 = $('jg-dados').children[1];
-  if (d1) d1.classList.add('rola'); if (d2) d2.classList.add('rola');
+  var dd = $('jg-dados').children[0];
+  if (dd) dd.classList.add('rola');
   vibra(15);
   try {
     var d = await api('rolar', { codigo: eu.codigo, token: vagaDaVez().token });
     aplicar(d.jogo);
-  } catch(e){ toast(e.message); if (d1) d1.classList.remove('rola'); if (d2) d2.classList.remove('rola'); atualizarBotao(); }
+  } catch(e){ toast(e.message); if (dd) dd.classList.remove('rola'); atualizarBotao(); }
   enviando = false;
 }
 async function comecar(){
