@@ -1268,6 +1268,7 @@ const CE_MAX_JOGADORES = 4;
 const CE_LIMPA_MS  = 6 * 60 * 60 * 1000;
 const CE_ESPERA_MS = 25000;
 const CE_ONLINE_MS = 45000;
+const CE_SOZINHO_MS = 10000;   // passou disso sem jogar, o servidor joga sozinho
 const CE_CORES = [
   { cor: '#22d3ee', nome: 'Ciano'   },
   { cor: '#fb7185', nome: 'Rosa'    },
@@ -1382,7 +1383,7 @@ function ceNovaSala(codigo, tabuleiroId) {
     tab: ceTabuleiro(tabuleiroId),
     jogadores: [], proximoId: 1, donoId: null,
     estado: 'lobby',            // lobby | jogando | fim
-    vezId: null,
+    vezId: null, prazo: 0, relogio: null, assinatura: null,
     ultimaJogada: null, seq: 0, log: [],
     esperando: []
   };
@@ -1407,6 +1408,7 @@ function cePublico(sala) {
       return { id:t.id, nome:t.nome, cols:t.cols, linhas:t.linhas, casas:t.cols*t.linhas, tempo:t.tempo };
     }),
     donoId: sala.donoId, vezId: sala.vezId,
+    prazoMs: sala.prazo ? Math.max(0, sala.prazo - Date.now()) : 0, sozinhoMs: CE_SOZINHO_MS,
     ultimaJogada: sala.ultimaJogada, seq: sala.seq, log: sala.log.slice(-12),
     jogadores: sala.jogadores.map(function(p){
       return { id:p.id, nome:p.nome, cor:p.cor, casa:p.casa, colocacao:p.colocacao,
@@ -1423,11 +1425,27 @@ function ceAcordar(sala) {
     try { json(fila[i].res, 200, { ok: true, jogo: cePublico(sala) }); } catch (e) {}
   }
 }
-function ceMudou(sala) { sala.versao++; sala.mexidoEm = Date.now(); ceAcordar(sala); }
+// Relógio da vez: quem enrolar mais de 10s leva uma jogada automática. Mora no
+// servidor porque é ele que sabe a hora certa mesmo com o celular dormindo, e
+// porque assim todo mundo vê a mesma contagem.
+function ceArmarRelogio(sala) {
+  var assinatura = (sala.estado === 'jogando' && sala.vezId) ? (sala.vezId + ':' + sala.seq) : null;
+  if (assinatura === sala.assinatura) return;   // mesma vez de antes: não reinicia a contagem
+  clearTimeout(sala.relogio);
+  sala.relogio = null; sala.assinatura = assinatura; sala.prazo = 0;
+  if (!assinatura) return;
+  sala.prazo = Date.now() + CE_SOZINHO_MS;
+  sala.relogio = setTimeout(function(){
+    if (sala.estado !== 'jogando') return;
+    ceJogada(sala, true);
+    ceMudou(sala);
+  }, CE_SOZINHO_MS);
+}
+function ceMudou(sala) { sala.versao++; sala.mexidoEm = Date.now(); ceArmarRelogio(sala); ceAcordar(sala); }
 function ceLimpar() {
   var agora = Date.now();
   ceSalas.forEach(function(sala, cod) {
-    if (agora - sala.mexidoEm > CE_LIMPA_MS) { ceAcordar(sala); ceSalas.delete(cod); }
+    if (agora - sala.mexidoEm > CE_LIMPA_MS) { clearTimeout(sala.relogio); ceAcordar(sala); ceSalas.delete(cod); }
   });
 }
 
@@ -1445,7 +1463,7 @@ function ceProximo(sala, id) {
 }
 
 // a jogada inteira: o dado, o caminho andado e o que aconteceu no fim
-function ceJogada(sala) {
+function ceJogada(sala, automatica) {
   var p = ceAchar(sala, sala.vezId);
   var total = sala.tab.total;
   var dado = 1 + crypto.randomInt(6);
@@ -1479,8 +1497,9 @@ function ceJogada(sala) {
     texto += ' — chegou em ' + p.colocacao + 'º!';
   }
 
+  if (automatica) texto += ' ⏱️';
   sala.seq++;
-  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado,
+  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, automatica: !!automatica,
                         passos:passos, seq:sala.seq, texto:texto };
   sala.log.push(texto);
   if (sala.log.length > 40) sala.log = sala.log.slice(-40);
@@ -1522,6 +1541,7 @@ const LU_MAX_JOGADORES = 4;
 const LU_LIMPA_MS  = 6 * 60 * 60 * 1000;
 const LU_ESPERA_MS = 25000;
 const LU_ONLINE_MS = 45000;
+const LU_SOZINHO_MS = 10000;   // passou disso sem jogar, o servidor joga sozinho
 const LU_PASSOS    = 56;   // passo final = chegada no meio
 const LU_PEOES     = 4;
 const LU_SEGURAS   = [0, 8, 13, 21, 26, 34, 39, 47]; // saídas + estrelas: não come ninguém aí
@@ -1554,6 +1574,7 @@ function luNovaSala(codigo) {
     jogadores: [], proximoId: 1, donoId: null,
     estado: 'lobby',              // lobby | jogando | fim
     vezId: null, fase: 'rolar',   // rolar | mover (quando dá pra escolher o peão)
+    prazo: 0, relogio: null, assinatura: null,
     dado: null, lances: [], seis: 0,
     ultimaJogada: null, seq: 0, log: [],
     esperando: []
@@ -1629,8 +1650,9 @@ function luAplicar(sala, p, peao) {
     texto = p.nome + ' levou os 4 peões pra chegada — ' + p.colocacao + 'º lugar! 🏆';
   }
 
+  if (sala.automatica) texto += ' ⏱️';
   sala.seq++;
-  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, peao:peao,
+  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, peao:peao, automatica: !!sala.automatica,
                         de:de, para:para, comeu:comeu, seq:sala.seq, texto:texto };
   sala.log.push(texto);
   if (sala.log.length > 40) sala.log = sala.log.slice(-40);
@@ -1663,8 +1685,8 @@ function luJogada(sala) {
 
   if (!podem.length) {                       // nada pra mexer: passa a vez
     sala.seq++;
-    var texto = p.nome + ' tirou ' + dado + ' — sem jogada possível';
-    sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, peao:null,
+    var texto = p.nome + ' tirou ' + dado + ' — sem jogada possível' + (sala.automatica ? ' ⏱️' : '');
+    sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, peao:null, automatica: !!sala.automatica,
                           de:null, para:null, comeu:[], seq:sala.seq, texto:texto };
     sala.log.push(texto);
     sala.seis = 0;
@@ -1675,7 +1697,7 @@ function luJogada(sala) {
 
   sala.fase = 'mover'; sala.lances = podem;   // escolhe o peão
   sala.seq++;
-  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, peao:null,
+  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado, peao:null, automatica: !!sala.automatica,
                         de:null, para:null, comeu:[], seq:sala.seq,
                         texto: p.nome + ' tirou ' + dado + ' — escolhendo o peão' };
 }
@@ -1701,6 +1723,7 @@ function luPublico(sala) {
     seguras: LU_SEGURAS, lados: LU_LADOS,
     donoId: sala.donoId, vezId: sala.vezId, fase: sala.fase,
     dado: sala.dado, lances: sala.lances,
+    prazoMs: sala.prazo ? Math.max(0, sala.prazo - Date.now()) : 0, sozinhoMs: LU_SOZINHO_MS,
     ultimaJogada: sala.ultimaJogada, seq: sala.seq, log: sala.log.slice(-12),
     jogadores: sala.jogadores.map(function(p){
       return { id:p.id, nome:p.nome, lado:p.lado, cor:p.cor, peoes:p.peoes.slice(),
@@ -1717,11 +1740,51 @@ function luAcordar(sala) {
     try { json(fila[i].res, 200, { ok: true, jogo: luPublico(sala) }); } catch (e) {}
   }
 }
-function luMudou(sala) { sala.versao++; sala.mexidoEm = Date.now(); luAcordar(sala); }
+// escolha automática quando o relógio estoura: chegar > comer > tirar da casa >
+// o peão mais adiantado
+function luEscolhaAuto(sala, p) {
+  var dado = sala.dado, melhor = sala.lances[0], nota = -1;
+  sala.lances.forEach(function(i){
+    var de = p.peoes[i], para = (de === -1) ? 0 : de + dado, n;
+    var casa = (para <= 50) ? (luLado(p.lado).inicio + para) % 52 : null;
+    var come = casa !== null && LU_SEGURAS.indexOf(casa) < 0 && sala.jogadores.some(function(o){
+      return o.id !== p.id && o.peoes.some(function(x){ return luCasaComum(o, x) === casa; });
+    });
+    if (para === LU_PASSOS) n = 100;
+    else if (come) n = 80;
+    else if (de === -1) n = 60;
+    else n = 10 + para / 10;
+    if (n > nota) { nota = n; melhor = i; }
+  });
+  return melhor;
+}
+
+// Relógio da vez: quem enrolar mais de 10s leva uma jogada automática. Mora no
+// servidor porque é ele que sabe a hora certa mesmo com o celular dormindo, e
+// porque assim todo mundo vê a mesma contagem.
+function luArmarRelogio(sala) {
+  var assinatura = (sala.estado === 'jogando' && sala.vezId) ? (sala.vezId + ':' + sala.fase + ':' + sala.seq) : null;
+  if (assinatura === sala.assinatura) return;
+  clearTimeout(sala.relogio);
+  sala.relogio = null; sala.assinatura = assinatura; sala.prazo = 0;
+  if (!assinatura) return;
+  sala.prazo = Date.now() + LU_SOZINHO_MS;
+  sala.relogio = setTimeout(function(){
+    if (sala.estado !== 'jogando') return;
+    var p = luAchar(sala, sala.vezId);
+    if (!p) return;
+    sala.automatica = true;
+    if (sala.fase === 'mover') luAplicar(sala, p, luEscolhaAuto(sala, p));
+    else luJogada(sala);
+    sala.automatica = false;
+    luMudou(sala);
+  }, LU_SOZINHO_MS);
+}
+function luMudou(sala) { sala.versao++; sala.mexidoEm = Date.now(); luArmarRelogio(sala); luAcordar(sala); }
 function luLimpar() {
   var agora = Date.now();
   luSalas.forEach(function(sala, cod) {
-    if (agora - sala.mexidoEm > LU_LIMPA_MS) { luAcordar(sala); luSalas.delete(cod); }
+    if (agora - sala.mexidoEm > LU_LIMPA_MS) { clearTimeout(sala.relogio); luAcordar(sala); luSalas.delete(cod); }
   });
 }
 
@@ -3170,7 +3233,7 @@ const server = http.createServer(async (req, res) => {
       sala.vezId = (proximo === p.id) ? (sala.jogadores[0] ? sala.jogadores[0].id : null) : proximo;
       if (sala.estado === 'jogando' && ceAtivos(sala).length <= 1) { sala.estado = 'fim'; sala.vezId = null; }
     });
-    if (!sala.jogadores.length) { ceAcordar(sala); ceSalas.delete(sala.codigo); return json(res, 200, { ok: true }); }
+    if (!sala.jogadores.length) { clearTimeout(sala.relogio); ceAcordar(sala); ceSalas.delete(sala.codigo); return json(res, 200, { ok: true }); }
     ceMudou(sala);
     return json(res, 200, { ok: true });
   }
@@ -3329,7 +3392,7 @@ const server = http.createServer(async (req, res) => {
       sala.fase = 'rolar'; sala.dado = null; sala.lances = [];
       if (sala.estado === 'jogando' && luAtivos(sala).length <= 1) { sala.estado = 'fim'; sala.vezId = null; }
     });
-    if (!sala.jogadores.length) { luAcordar(sala); luSalas.delete(sala.codigo); return json(res, 200, { ok: true }); }
+    if (!sala.jogadores.length) { clearTimeout(sala.relogio); luAcordar(sala); luSalas.delete(sala.codigo); return json(res, 200, { ok: true }); }
     luMudou(sala);
     return json(res, 200, { ok: true });
   }

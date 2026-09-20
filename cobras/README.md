@@ -7,8 +7,10 @@ pra quem estiver junto na mesma mesa.
 A tela de escolha entre os jogos fica em **`/jogos`**.
 
 ## Regras
-- Rola **um dado** e anda o que tirar. (Com dois dados a média era 7 casas por vez
-  e a partida acabava rápido demais.)
+- **Passa o dedo** na mesa e o dado rola (não tem botão); anda o que tirar.
+  (Com dois dados a média era 7 casas por vez e a partida acabava rápido demais.)
+- Enrolou mais de **10 segundos**? O servidor rola por você e passa a vez — a
+  barrinha embaixo do dado mostra o tempo.
 - Pé de escada **sobe**, cabeça de cobra **escorrega**.
 - Pra chegar tem que tirar o **número certinho**: se o dado passar da última casa,
   o peão **não sai do lugar**. A partir de 6 casas do fim o placar mostra quanto falta.
@@ -44,7 +46,7 @@ Nenhuma casa é ponta de duas coisas ao mesmo tempo, então não tem looping.
 | `GET /api/cobras/estado` | long-poll: segura a resposta até mudar algo (máx. 25s) |
 | `POST /api/cobras/tabuleiro` | dono troca o tabuleiro (só no lobby) |
 | `POST /api/cobras/comecar` | dono começa a partida (mínimo 2) |
-| `POST /api/cobras/rolar` | rola o dado (só na sua vez) |
+| `POST /api/cobras/rolar` | rola o dado (só na sua vez; o servidor também chama sozinho depois de 10s) |
 | `POST /api/cobras/revanche` | joga de novo com a mesma turma |
 | `POST /api/cobras/lobby` | volta pro lobby pra trocar de tabuleiro |
 | `POST /api/cobras/sair` | libera a vaga (aceita vários tokens separados por vírgula) |

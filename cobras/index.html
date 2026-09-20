@@ -126,6 +126,17 @@ input{-webkit-user-select:text;user-select:text}
 .dado.rola{animation:chacoalha .42s ease-in-out infinite}
 @keyframes chacoalha{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-7px) rotate(-11deg)}75%{transform:translateY(5px) rotate(13deg)}}
 .dado-soma{font-size:13px;font-weight:700;color:var(--txt2);align-self:center}
+/* mesa de rolar: passa o dedo por cima e o dado gira. touch-action:none pra o
+   arrasto não virar rolagem da página no celular. */
+.mesa{border:2px dashed var(--linha);border-radius:18px;padding:12px 14px 11px;
+  display:flex;flex-direction:column;align-items:center;gap:9px;touch-action:none;
+  transition:border-color .2s,background .2s}
+.mesa.minha{border-style:solid;border-color:var(--verde);background:rgba(52,211,153,.07)}
+.mesa-tx{font-size:13px;font-weight:700;color:var(--txt3);text-align:center;line-height:1.25}
+.mesa.minha .mesa-tx{color:var(--verde)}
+.relogio{width:100%;height:5px;border-radius:99px;background:var(--linha);overflow:hidden;visibility:hidden}
+.relogio .barra{height:100%;width:100%;background:var(--amarelo);border-radius:99px;transition:width .2s linear}
+.dado{transition:transform .12s ease-out}
 .fala{text-align:center;font-size:13px;color:var(--txt2);min-height:34px;margin-top:4px;
   display:flex;align-items:center;justify-content:center;padding:0 4px}
 .fala b{color:var(--txt)}
@@ -168,9 +179,10 @@ input{-webkit-user-select:text;user-select:text}
     <div class="regra">
       <b>Como funciona</b>
       <ul>
-        <li>Rola <b>o dado</b> e anda o que tirar.</li>
+        <li><b>Passa o dedo</b> na mesa e o dado rola; anda o que tirar.</li>
         <li>Caiu no pé da escada, <b>sobe</b>. Caiu na cabeça da cobra, <b>escorrega</b>.</li>
         <li>Pra chegar tem que tirar o <b>número certinho</b> — passou, fica onde está.</li>
+        <li>Demorou mais de <b>10 segundos</b>? O jogo rola por você.</li>
         <li>Cada um no seu celular (ou vários no mesmo, se estiverem juntos).</li>
       </ul>
     </div>
@@ -226,9 +238,12 @@ input{-webkit-user-select:text;user-select:text}
         <button id="bt-menos">−</button>
         <button id="bt-mais">+</button>
       </div>
-      <div class="dados" id="jg-dados"></div>
+      <div class="mesa" id="jg-mesa">
+        <div class="dados" id="jg-dados"></div>
+        <div class="mesa-tx" id="jg-mesa-tx">passe o dedo pra rolar</div>
+        <div class="relogio" id="jg-relogio"><div class="barra" id="jg-barra"></div></div>
+      </div>
       <div class="fala" id="jg-fala"></div>
-      <button class="btn btn-1" id="bt-rolar">Rolar o dado</button>
       <div class="linha-info">
         <span class="sala" id="jg-sala"></span>
         <span class="acoes">
@@ -258,6 +273,7 @@ var CHAVE = 'ce:sala';
 var eu = { codigo:null, vagas:[] };      // vagas = [{id, token}] deste celular
 var jogo = null, versaoVista = 0, laco = 0, seqVista = 0;
 var animando = false, enviando = false, zoom = 1, svgPronto = '';
+var prazoLocal = 0;   // quando o servidor joga sozinho, na hora deste celular
 var CORES_CASA = ['#f472b6','#facc15','#4ade80','#38bdf8','#c084fc','#fb923c'];
 var CORES_COBRA = ['#16a34a','#dc2626','#7c3aed','#0891b2','#ca8a04','#db2777'];
 
@@ -353,6 +369,7 @@ function conexao(ok){ $('conexao').classList.toggle('off', !ok); $('conexao-txt'
 function aplicar(novo){
   var antes = jogo;
   jogo = novo; versaoVista = novo.versao;
+  prazoLocal = novo.prazoMs ? Date.now() + novo.prazoMs : 0;
   if (!antes || antes.tab.id !== novo.tab.id || antes.tab.total !== novo.tab.total) svgPronto = '';
 
   if (novo.estado === 'lobby') { $('fim').classList.remove('on'); renderLobby(); tela('lobby'); return; }
@@ -420,24 +437,34 @@ function renderJogo(){
   if (!svgPronto) { svgPronto = montarSvg(jogo.tab); $('jg-svg').innerHTML = svgPronto; aplicarZoom(); }
   var jg = jogo.ultimaJogada;
   $('jg-dados').innerHTML = jg ? dadoHtml(jg.dado) : '';
-  if (!animando) atualizarBotao();
+  if (!animando) atualizarMesa();
 }
 
-function atualizarBotao(){
-  var b = $('bt-rolar'), fala = $('jg-fala');
-  if (jogo.estado === 'fim') { b.style.display = 'none'; return; }
-  b.style.display = '';
-  var daVez = jogo.jogadores.filter(function(p){ return p.id === jogo.vezId; })[0];
-  if (animando) { b.disabled = true; b.textContent = '…'; return; }
-  if (minhaVez()) {
-    b.disabled = false;
-    b.textContent = (eu.vagas.length > 1 ? 'Rolar — ' + (daVez ? daVez.nome : '') : 'Rolar o dado');
-  } else {
-    b.disabled = true;
-    b.textContent = daVez ? 'Vez de ' + daVez.nome : 'Aguarde';
-  }
-  fala.innerHTML = jogo.ultimaJogada ? esc(jogo.ultimaJogada.texto) : 'Boa sorte!';
+function podeRolar(){
+  return jogo && jogo.estado === 'jogando' && minhaVez() && !animando && !enviando;
 }
+function textoMesa(){
+  if (!jogo) return '';
+  if (jogo.estado === 'fim') return 'fim de jogo';
+  if (animando) return '…';
+  var daVez = jogo.jogadores.filter(function(p){ return p.id === jogo.vezId; })[0];
+  var resta = prazoLocal ? Math.max(0, prazoLocal - Date.now()) : 0;
+  var conta = (resta && resta <= 5000) ? ' · joga sozinho em ' + Math.ceil(resta/1000) + 's' : '';
+  if (minhaVez()) return (eu.vagas.length > 1 ? 'passe o dedo — ' + (daVez ? daVez.nome : '') : 'passe o dedo pra rolar') + conta;
+  return 'vez de ' + (daVez ? daVez.nome : '...') + conta;
+}
+function atualizarMesa(){
+  if (!jogo) return;
+  $('jg-mesa').classList.toggle('minha', !!podeRolar());
+  $('jg-mesa-tx').textContent = textoMesa();
+  var cx = $('jg-relogio'), total = jogo.sozinhoMs || 10000;
+  var resta = prazoLocal ? Math.max(0, prazoLocal - Date.now()) : 0;
+  cx.style.visibility = (jogo.estado === 'jogando' && resta) ? 'visible' : 'hidden';
+  $('jg-barra').style.width = (100 * resta / total) + '%';
+  $('jg-barra').style.background = resta <= 4000 ? 'var(--vermelho)' : 'var(--amarelo)';
+  $('jg-fala').innerHTML = jogo.ultimaJogada ? esc(jogo.ultimaJogada.texto) : 'Boa sorte!';
+}
+setInterval(atualizarMesa, 200);
 
 function dadoHtml(v){
   var pos = { 1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8] }[v] || [4];
@@ -544,12 +571,12 @@ function animarJogada(jog, depois){
   var idx = jogo.jogadores.map(function(p){ return p.id; }).indexOf(jog.id);
   var g = $('peao-'+idx);
   if (idx < 0 || !g) { depois(); return; }
-  animando = true; atualizarBotao();
+  animando = true; atualizarMesa();
   $('jg-fala').innerHTML = esc(jog.texto);
   var passos = jog.passos.slice();
 
   function proximoPasso(){
-    if (!passos.length) { animando = false; atualizarBotao(); depois(); return; }
+    if (!passos.length) { animando = false; atualizarMesa(); depois(); return; }
     var passo = passos.shift();
     if (passo.tipo === 'escada' || passo.tipo === 'cobra') {
       g.classList.add('desliza');
@@ -590,17 +617,17 @@ function fim(){
 
 // ── ações ──────────────────────────────────────────────────────────────────
 async function rolar(){
-  if (enviando || animando || !minhaVez()) return;
+  if (!podeRolar()) return;
   enviando = true;
-  var b = $('bt-rolar'); b.disabled = true;
   var dd = $('jg-dados').children[0];
   if (dd) dd.classList.add('rola');
   vibra(15);
   try {
     var d = await api('rolar', { codigo: eu.codigo, token: vagaDaVez().token });
     aplicar(d.jogo);
-  } catch(e){ toast(e.message); if (dd) dd.classList.remove('rola'); atualizarBotao(); }
+  } catch(e){ toast(e.message); if (dd) dd.classList.remove('rola'); }
   enviando = false;
+  atualizarMesa();
 }
 async function comecar(){
   try { aplicar((await api('comecar', { codigo:eu.codigo, token:eu.vagas[0].token })).jogo); }
@@ -647,7 +674,29 @@ $('bt-criar').addEventListener('click', criar);
 $('bt-entrar').addEventListener('click', function(){ entrar(); });
 $('bt-local').addEventListener('click', addLocal);
 $('bt-comecar').addEventListener('click', comecar);
-$('bt-rolar').addEventListener('click', rolar);
+// passar o dedo pela mesa rola o dado (o dado acompanha o dedo um pouquinho)
+var arrasto = null;
+function dadoNaTela(){ return $('jg-dados').firstElementChild; }
+$('jg-mesa').addEventListener('pointerdown', function(ev){
+  if (!podeRolar()) return;
+  arrasto = { x: ev.clientX, y: ev.clientY, feito: false };
+  try { this.setPointerCapture(ev.pointerId); } catch(e){}
+});
+$('jg-mesa').addEventListener('pointermove', function(ev){
+  if (!arrasto || arrasto.feito) return;
+  var dx = ev.clientX - arrasto.x, dy = ev.clientY - arrasto.y;
+  var d = Math.sqrt(dx*dx + dy*dy), dado = dadoNaTela();
+  if (dado) dado.style.transform = 'translate('+(dx*0.3)+'px,'+(dy*0.3)+'px) rotate('+(dx*0.8)+'deg)';
+  if (d > 38) {                       // arrastou o suficiente: rola
+    arrasto.feito = true;
+    if (dado) dado.style.transform = '';
+    rolar();
+  }
+});
+function soltouDado(){ var dado = dadoNaTela(); if (dado) dado.style.transform = ''; arrasto = null; }
+$('jg-mesa').addEventListener('pointerup', soltouDado);
+$('jg-mesa').addEventListener('pointercancel', soltouDado);
+$('jg-mesa').addEventListener('pointerleave', soltouDado);
 $('bt-revanche').addEventListener('click', revanche);
 $('bt-trocar').addEventListener('click', voltarLobby);
 $('bt-compartilhar').addEventListener('click', compartilhar);
