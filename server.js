@@ -1261,8 +1261,8 @@ function jvNome(txt, padrao) {
 
 // ─── COBRAS E ESCADAS ─────────────────────────────────────────────────────────
 // App separado (/cobras), sem login, de 2 a 4 jogadores, cada um no seu celular
-// (ou vários no mesmo aparelho). Dois dados: tirou dupla, joga de novo; três
-// duplas seguidas, perde a vez. Passou da última casa, volta o que sobrou.
+// (ou vários no mesmo aparelho). Um dado só — com dois a partida acabava rápido
+// demais. Passou da última casa: nos tabuleiros grandes volta o que sobrou.
 // As salas moram só na memória do servidor, igual as do jogo da velha.
 const CE_MAX_JOGADORES = 4;
 const CE_LIMPA_MS  = 6 * 60 * 60 * 1000;
@@ -1279,13 +1279,13 @@ const ceSalas = new Map();
 // Tabuleiros, do menorzinho ao maratona. `seed` deixa o sorteio de cobras e
 // escadas sempre igual: quem escolhe "Grandão" pega sempre o mesmo desenho.
 const CE_TABULEIROS = [
-  { id:'corrida',  nome:'Corridinha',   cols:5,  linhas:4,  seed:101, tempo:'~3 min',  exato:false },
-  { id:'rapido',   nome:'Rapidinho',    cols:6,  linhas:5,  seed:202, tempo:'~5 min',  exato:false },
-  { id:'meio',     nome:'Clássico 50',  cols:10, linhas:5,  seed:303, tempo:'~8 min',  exato:false },
-  { id:'classico', nome:'Clássico 100', cols:10, linhas:10, fixo:true, tempo:'~15 min', exato:true },
-  { id:'grandao',  nome:'Grandão 144',  cols:12, linhas:12, seed:505, tempo:'~25 min', exato:true },
-  { id:'epico',    nome:'Épico 225',    cols:15, linhas:15, seed:606, tempo:'~40 min', exato:true },
-  { id:'maratona', nome:'Maratona 400', cols:20, linhas:20, seed:707, tempo:'1 h+',    exato:true }
+  { id:'corrida',  nome:'Corridinha',   cols:5,  linhas:4,  seed:101, tempo:'~2 min',  exato:true },
+  { id:'rapido',   nome:'Rapidinho',    cols:6,  linhas:5,  seed:202, tempo:'~3 min',  exato:true },
+  { id:'meio',     nome:'Clássico 50',  cols:10, linhas:5,  seed:303, tempo:'~5 min',  exato:true },
+  { id:'classico', nome:'Clássico 100', cols:10, linhas:10, fixo:true, tempo:'~10 min', exato:true },
+  { id:'grandao',  nome:'Grandão 144',  cols:12, linhas:12, seed:505, tempo:'~15 min', exato:true },
+  { id:'epico',    nome:'Épico 225',    cols:15, linhas:15, seed:606, tempo:'~20 min', exato:true },
+  { id:'maratona', nome:'Maratona 400', cols:20, linhas:20, seed:707, tempo:'~40 min', exato:true }
 ];
 
 // o tabuleiro clássico de 100 casas, com o desenho tradicional
@@ -1382,7 +1382,7 @@ function ceNovaSala(codigo, tabuleiroId) {
     tab: ceTabuleiro(tabuleiroId),
     jogadores: [], proximoId: 1, donoId: null,
     estado: 'lobby',            // lobby | jogando | fim
-    vezId: null, duplas: 0,
+    vezId: null,
     ultimaJogada: null, seq: 0, log: [],
     esperando: []
   };
@@ -1406,7 +1406,7 @@ function cePublico(sala) {
     tabuleiros: CE_TABULEIROS.map(function(t){
       return { id:t.id, nome:t.nome, cols:t.cols, linhas:t.linhas, casas:t.cols*t.linhas, tempo:t.tempo, exato:!!t.exato };
     }),
-    donoId: sala.donoId, vezId: sala.vezId, duplas: sala.duplas,
+    donoId: sala.donoId, vezId: sala.vezId,
     ultimaJogada: sala.ultimaJogada, seq: sala.seq, log: sala.log.slice(-12),
     jogadores: sala.jogadores.map(function(p){
       return { id:p.id, nome:p.nome, cor:p.cor, casa:p.casa, colocacao:p.colocacao,
@@ -1444,24 +1444,19 @@ function ceProximo(sala, id) {
   return ativos[0].id;
 }
 
-// a jogada inteira: dois dados, o caminho andado e o que aconteceu no fim
+// a jogada inteira: o dado, o caminho andado e o que aconteceu no fim
 function ceJogada(sala) {
   var p = ceAchar(sala, sala.vezId);
   var total = sala.tab.total;
-  var d1 = 1 + crypto.randomInt(6), d2 = 1 + crypto.randomInt(6);
-  var soma = d1 + d2, dupla = d1 === d2;
-  var passos = [], partiu = p.casa, alvo = p.casa + soma;
-  var texto = p.nome + ' tirou ' + d1 + '+' + d2 + ' = ' + soma;
+  var dado = 1 + crypto.randomInt(6);
+  var passos = [], partiu = p.casa, alvo = p.casa + dado;
+  var texto = p.nome + ' tirou ' + dado;
 
-  if (alvo > total && sala.tab.exato) {     // tabuleiro grande: anda até o fim e volta o que passou
+  if (alvo > total) {                       // chegada exata: anda até o fim e volta o que passou
     passos.push({ tipo:'anda',  de:partiu, para:total });
     passos.push({ tipo:'volta', de:total,  para:total - (alvo - total) });
     p.casa = total - (alvo - total);
     texto += ', passou da chegada e voltou pra ' + p.casa;
-  } else if (alvo > total) {                // tabuleiro pequeno: passou, chegou
-    passos.push({ tipo:'anda', de:partiu, para:total });
-    p.casa = total;
-    texto += ', passou da chegada e chegou';
   } else {
     passos.push({ tipo:'anda', de:partiu, para:alvo });
     p.casa = alvo;
@@ -1486,15 +1481,9 @@ function ceJogada(sala) {
     texto += ' — chegou em ' + p.colocacao + 'º!';
   }
 
-  // dupla joga de novo, mas três seguidas perde a vez
-  if (dupla && !terminou) sala.duplas++; else sala.duplas = 0;
-  var deNovo = dupla && !terminou && sala.duplas < 3;
-  if (dupla && !terminou && !deNovo) texto += ' — 3 duplas seguidas, perdeu a vez!';
-  else if (deNovo) texto += ' — dupla, joga de novo!';
-
   sala.seq++;
-  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dados:[d1,d2], dupla:dupla,
-                        passos:passos, seq:sala.seq, deNovo:deNovo, texto:texto };
+  sala.ultimaJogada = { id:p.id, nome:p.nome, cor:p.cor, dado:dado,
+                        passos:passos, seq:sala.seq, texto:texto };
   sala.log.push(texto);
   if (sala.log.length > 40) sala.log = sala.log.slice(-40);
 
@@ -1505,8 +1494,7 @@ function ceJogada(sala) {
     sala.vezId = null;
     sala.log.push('Fim de jogo!');
   } else {
-    sala.vezId = deNovo ? p.id : ceProximo(sala, p.id);
-    if (!deNovo) sala.duplas = 0;
+    sala.vezId = ceProximo(sala, p.id);
   }
 }
 
@@ -1515,7 +1503,7 @@ function ceReiniciar(sala, tabuleiroId) {
   sala.jogadores.forEach(function(p){ p.casa = 0; p.colocacao = 0; });
   sala.estado = 'jogando';
   sala.vezId = sala.jogadores.length ? sala.jogadores[0].id : null;
-  sala.duplas = 0; sala.ultimaJogada = null; sala.seq = 0;
+  sala.ultimaJogada = null; sala.seq = 0;
   sala.log = ['Partida nova no tabuleiro ' + sala.tab.nome + '!'];
 }
 
@@ -2805,7 +2793,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' });
     return res.end(JSON.stringify({
       name: 'Cobras e Escadas', short_name: 'Cobras',
-      description: 'Cobras e escadas com 2 dados, de 2 a 4 jogadores',
+      description: 'Cobras e escadas com 1 dado, de 2 a 4 jogadores',
       start_url: '/cobras/', scope: '/cobras/', display: 'standalone',
       background_color: '#0e1020', theme_color: '#0e1020', orientation: 'portrait',
       icons: [

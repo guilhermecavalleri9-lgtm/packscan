@@ -1,29 +1,31 @@
 # Cobras e Escadas
 
 App separado dentro do PackScan (`/cobras`), sem login, só por link direto.
-De **2 a 4 jogadores**, cada um no seu celular — ou vários no mesmo aparelho,
+De **2 a 4 jogadores**, um dado, cada um no seu celular — ou vários no mesmo aparelho,
 pra quem estiver junto na mesma mesa.
 
 A tela de escolha entre os jogos fica em **`/jogos`**.
 
 ## Regras
-- Rola **dois dados** e anda a soma.
+- Rola **um dado** e anda o que tirar. (Com dois dados a média era 7 casas por vez
+  e a partida acabava rápido demais.)
 - Pé de escada **sobe**, cabeça de cobra **escorrega**.
-- **Dupla joga de novo** — mas 3 duplas seguidas perde a vez.
-- Tabuleiro pequeno: passou da chegada, chegou. Tabuleiro grande: **chegada exata**,
-  passou volta o que sobrou.
+- **Chegada exata**: passou da última casa, volta o que sobrou.
 - O jogo segue até todo mundo terminar (🥇🥈🥉); quem sobra por último fica em último.
 
 ## Tabuleiros
-| Tabuleiro | Casas | Grade | Chegada |
+| Tabuleiro | Casas | Grade | Tempo |
 |---|---|---|---|
-| Corridinha | 20 | 5×4 | passou, chegou |
-| Rapidinho | 30 | 6×5 | passou, chegou |
-| Clássico 50 | 50 | 10×5 | passou, chegou |
-| Clássico 100 | 100 | 10×10 | exata |
-| Grandão 144 | 144 | 12×12 | exata |
-| Épico 225 | 225 | 15×15 | exata |
-| Maratona 400 | 400 | 20×20 | exata |
+| Corridinha | 20 | 5×4 | ~2 min |
+| Rapidinho | 30 | 6×5 | ~3 min |
+| Clássico 50 | 50 | 10×5 | ~5 min |
+| Clássico 100 | 100 | 10×10 | ~10 min |
+| Grandão 144 | 144 | 12×12 | ~15 min |
+| Épico 225 | 225 | 15×15 | ~20 min |
+| Maratona 400 | 400 | 20×20 | ~40 min |
+
+Os tempos saíram de partidas simuladas de 4 jogadores (mediana de 5 partidas por
+tabuleiro, contando uma jogada a cada 5 segundos).
 
 O Clássico 100 usa o desenho tradicional (escada do 1 pro 38, cobra do 98 pro 78…).
 Os outros são sorteados com semente fixa — "Grandão" é sempre o mesmo tabuleiro —
@@ -41,11 +43,11 @@ Nenhuma casa é ponta de duas coisas ao mesmo tempo, então não tem looping.
 | `GET /api/cobras/estado` | long-poll: segura a resposta até mudar algo (máx. 25s) |
 | `POST /api/cobras/tabuleiro` | dono troca o tabuleiro (só no lobby) |
 | `POST /api/cobras/comecar` | dono começa a partida (mínimo 2) |
-| `POST /api/cobras/rolar` | rola os dois dados (só na sua vez) |
+| `POST /api/cobras/rolar` | rola o dado (só na sua vez) |
 | `POST /api/cobras/revanche` | joga de novo com a mesma turma |
 | `POST /api/cobras/lobby` | volta pro lobby pra trocar de tabuleiro |
 | `POST /api/cobras/sair` | libera a vaga (aceita vários tokens separados por vírgula) |
 
-Os dados são rolados **no servidor** (`crypto.randomInt`), junto com a validação de
+O dado é rolado **no servidor** (`crypto.randomInt`), junto com a validação de
 vez, o caminho andado, escada/cobra e a colocação — o celular só desenha e anima.
 As salas ficam só na memória e somem depois de 6h paradas.
