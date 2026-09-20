@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e1020">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/ludo/manifest.json">
+<link rel="icon" href="/icon-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<title>Ludo</title>
+<style>
+:root{
+  --bg:#0e1020; --bg2:#151834; --card:#1b1f3d; --linha:#2a2f56;
+  --txt:#f2f3fb; --txt2:#a6abd4; --txt3:#6b719e;
+  --verde:#34d399; --amarelo:#facc15; --vermelho:#f87171; --ciano:#22d3ee;
+  --r:16px; --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{font-family:var(--sans);color:var(--txt);font-size:15px;line-height:1.45;
+  background:radial-gradient(120% 80% at 50% 0%,#1b2050 0%,var(--bg) 60%) fixed,var(--bg);
+  -webkit-font-smoothing:antialiased;overscroll-behavior:none;user-select:none}
+button,input{font-family:inherit;font-size:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+input{-webkit-user-select:text;user-select:text}
+#app{max-width:520px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top) + 10px) 14px calc(env(safe-area-inset-bottom) + 12px)}
+.tela{display:none;flex:1;flex-direction:column;min-height:0}
+.tela.on{display:flex;animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+.voltar{display:inline-flex;align-items:center;gap:6px;color:var(--txt3);font-size:13px;
+  font-weight:700;padding:6px 2px;align-self:flex-start;text-decoration:none}
+.marca{text-align:center;margin:14px 0 4px}
+.marca h1{font-size:32px;font-weight:800;letter-spacing:-.8px}
+.marca p{color:var(--txt2);font-size:14px;margin-top:6px}
+.regra{background:var(--card);border:1px solid var(--linha);border-radius:var(--r);
+  padding:13px 15px;margin:16px 0 2px;color:var(--txt2);font-size:13.5px}
+.regra b{color:var(--txt)}
+.regra ul{margin:7px 0 0 16px}
+.regra li{margin-top:4px}
+
+.campo{margin-top:14px}
+.campo label{display:block;font-size:12px;font-weight:700;color:var(--txt3);
+  text-transform:uppercase;letter-spacing:.6px;margin:0 2px 6px}
+.campo input{width:100%;background:var(--bg2);border:1px solid var(--linha);border-radius:14px;
+  padding:13px 15px;font-size:16px;outline:none}
+.campo input:focus{border-color:var(--ciano)}
+.campo input.cod{text-align:center;letter-spacing:10px;font-weight:800;font-size:25px;
+  text-transform:uppercase;padding-left:25px}
+.btn{width:100%;border-radius:14px;padding:14px;font-size:16px;font-weight:700;margin-top:12px;
+  transition:transform .1s,opacity .15s}
+.btn:active{transform:scale(.98)}
+.btn[disabled]{opacity:.4}
+.btn-1{background:linear-gradient(135deg,#f87171,#dc2626);color:#2b0505}
+.btn-2{background:linear-gradient(135deg,#facc15,#f59e0b);color:#2e1c00}
+.btn-ghost{background:var(--card);border:1px solid var(--linha);color:var(--txt)}
+.ou{display:flex;align-items:center;gap:12px;color:var(--txt3);font-size:12px;font-weight:700;
+  margin:18px 0 2px;text-transform:uppercase;letter-spacing:1px}
+.ou::before,.ou::after{content:'';flex:1;height:1px;background:var(--linha)}
+.erro{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.35);color:#fecaca;
+  border-radius:12px;padding:10px 13px;font-size:13.5px;margin-top:12px;display:none}
+.erro.on{display:block}
+
+.cod-linha{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--card);border:1px solid var(--linha);border-radius:var(--r);padding:12px 16px;margin-top:10px}
+.cod-linha .lb{font-size:11px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.6px}
+.cod-linha .cd{font-size:30px;font-weight:800;letter-spacing:7px;color:var(--ciano);line-height:1.1}
+.cod-linha button{background:rgba(34,211,238,.14);color:var(--ciano);font-weight:700;font-size:13px;
+  border-radius:12px;padding:10px 14px;white-space:nowrap}
+.sec{font-size:12px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.6px;margin:18px 2px 8px}
+.gente{display:flex;flex-direction:column;gap:8px}
+.pess{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--linha);
+  border-radius:14px;padding:11px 13px}
+.pess .bola{width:22px;height:22px;border-radius:50%;flex:0 0 auto;border:2px solid rgba(255,255,255,.25)}
+.pess .nm{flex:1;font-weight:600;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pess .tag{font-size:10.5px;font-weight:700;color:var(--txt3);text-transform:uppercase;letter-spacing:.5px}
+.vazio{border-style:dashed;color:var(--txt3);font-size:13px;justify-content:center}
+.addlocal{display:flex;gap:8px;margin-top:8px}
+.addlocal input{flex:1;background:var(--bg2);border:1px solid var(--linha);border-radius:14px;padding:12px 14px;font-size:15px;outline:none;min-width:0}
+.addlocal button{background:var(--card);border:1px solid var(--linha);border-radius:14px;padding:0 16px;font-weight:700;font-size:14px;white-space:nowrap}
+.dica{color:var(--txt3);font-size:12px;margin-top:10px;padding:0 2px}
+
+/* ── jogo ── */
+.topo{display:flex;align-items:stretch;gap:6px;margin-bottom:8px}
+.topo .chip{flex:1;background:var(--card);border:1px solid var(--linha);border-radius:12px;
+  padding:7px 8px;min-width:0;transition:border-color .2s,background .2s}
+.topo .chip.vez{border-color:currentColor;background:rgba(255,255,255,.05);box-shadow:0 0 0 1px currentColor inset}
+.topo .chip .l1{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:var(--txt);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.topo .chip .bl{width:11px;height:11px;border-radius:50%;flex:0 0 auto}
+.topo .chip .l2{font-size:11px;color:var(--txt3);font-weight:600;margin-top:1px}
+.tabwrap{flex:0 1 auto;min-height:0;overflow:hidden;border-radius:14px;display:flex;margin:auto 0}
+.tabwrap #jg-svg{margin:auto;width:100%}
+.tabwrap svg{display:block;width:100%;height:auto}
+.peao{transition:transform .13s linear;cursor:default}
+.peao.desliza{transition:transform .5s cubic-bezier(.4,0,.3,1)}
+.peao.pode{cursor:pointer}
+.peao.pode .anel{animation:chama 1.1s ease-in-out infinite}
+@keyframes chama{0%,100%{opacity:.25;r:44}50%{opacity:.9;r:52}}
+
+.pe{padding-top:8px}
+.dados{display:flex;align-items:center;justify-content:center;gap:10px;min-height:56px}
+.dado{width:52px;height:52px;border-radius:12px;background:#f8fafc;box-shadow:0 4px 14px rgba(0,0,0,.4);
+  display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);padding:7px;gap:2px}
+.dado i{border-radius:50%;background:#1b1f3d;width:9px;height:9px;align-self:center;justify-self:center}
+.dado.rola{animation:chacoalha .42s ease-in-out infinite}
+@keyframes chacoalha{0%,100%{transform:translateY(0) rotate(0)}25%{transform:translateY(-7px) rotate(-11deg)}75%{transform:translateY(5px) rotate(13deg)}}
+.fala{text-align:center;font-size:13px;color:var(--txt2);min-height:34px;margin-top:4px;
+  display:flex;align-items:center;justify-content:center;padding:0 4px}
+.linha-info{display:flex;align-items:center;justify-content:space-between;margin-top:8px;color:var(--txt3);font-size:11px;font-weight:600}
+.linha-info .sala{letter-spacing:2px;font-weight:800;color:var(--txt2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.linha-info .acoes{display:flex;gap:10px;flex:0 0 auto;padding:0 8px}
+.linha-info .acoes button{color:var(--txt3);font-size:11px;font-weight:700;text-decoration:underline;padding:2px}
+.linha-info .acoes button.confirma{color:var(--amarelo);text-decoration:none}
+.conexao{display:inline-flex;align-items:center;gap:5px}
+.conexao i{width:7px;height:7px;border-radius:50%;background:var(--verde)}
+.conexao.off i{background:var(--vermelho);animation:pisca 1s infinite}
+@keyframes pisca{0%,100%{opacity:.25}50%{opacity:1}}
+
+.fim{position:fixed;inset:0;background:rgba(8,9,22,.88);backdrop-filter:blur(3px);z-index:30;
+  display:none;align-items:center;justify-content:center;padding:20px}
+.fim.on{display:flex}
+.fim .cx{background:var(--card);border:1px solid var(--linha);border-radius:22px;padding:22px;width:100%;max-width:380px}
+.fim h2{font-size:22px;font-weight:800;text-align:center;margin-bottom:14px}
+.fim .pos{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--linha)}
+.fim .pos:last-of-type{border-bottom:none}
+.fim .pos .md{font-size:19px;width:28px;text-align:center}
+.fim .pos .bola{width:18px;height:18px;border-radius:50%;flex:0 0 auto}
+.fim .pos .nm{flex:1;font-weight:600}
+.fim .pos .tag{font-size:11px;color:var(--txt3);font-weight:700}
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 20px);transform:translateX(-50%);
+  background:#2b3160;color:#fff;border-radius:999px;padding:10px 18px;font-size:13.5px;font-weight:600;
+  box-shadow:0 10px 30px rgba(0,0,0,.45);opacity:0;pointer-events:none;transition:opacity .2s;z-index:50}
+.toast.on{opacity:1}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ── início ── -->
+  <section class="tela on" id="tela-inicio">
+    <a class="voltar" href="/jogos">◀ jogos</a>
+    <div class="marca">
+      <h1>Ludo</h1>
+      <p id="marca-sub">2 a 4 jogadores · 4 peões cada</p>
+    </div>
+    <div class="regra">
+      <b>Como funciona</b>
+      <ul>
+        <li>Precisa tirar <b>6</b> pra botar um peão na pista.</li>
+        <li>Tirou 6, <b>joga de novo</b> — três seguidos perde a vez.</li>
+        <li>Parou em cima de peão adversário, <b>manda ele pra casa</b> (menos nas casas marcadas ★).</li>
+        <li>Pra entrar no meio tem que tirar o <b>número certinho</b>.</li>
+        <li>Ganha quem levar os <b>4 peões</b> pra chegada primeiro.</li>
+      </ul>
+    </div>
+    <div class="campo">
+      <label for="in-nome">Seu nome</label>
+      <input id="in-nome" maxlength="14" placeholder="Como você aparece no jogo" autocomplete="nickname">
+    </div>
+    <button class="btn btn-1" id="bt-criar">Criar sala</button>
+    <div class="ou">ou</div>
+    <div class="campo">
+      <label for="in-cod">Código da sala</label>
+      <input id="in-cod" class="cod" maxlength="4" placeholder="----" inputmode="text"
+             autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <button class="btn btn-2" id="bt-entrar">Entrar na sala</button>
+    <div class="erro" id="erro-inicio"></div>
+  </section>
+
+  <!-- ── lobby ── -->
+  <section class="tela" id="tela-lobby">
+    <div class="cod-linha">
+      <div>
+        <div class="lb">Código da sala</div>
+        <div class="cd" id="lb-cod">----</div>
+      </div>
+      <button id="bt-compartilhar">Compartilhar</button>
+    </div>
+    <div class="sec">Jogadores <span id="lb-conta"></span></div>
+    <div class="gente" id="lb-gente"></div>
+    <div class="addlocal">
+      <input id="in-local" maxlength="14" placeholder="Outro jogador neste celular">
+      <button id="bt-local">Adicionar</button>
+    </div>
+    <div class="dica" id="lb-dica"></div>
+    <button class="btn btn-1" id="bt-comecar">Começar partida</button>
+    <button class="btn btn-ghost" id="bt-sair-lobby">Sair da sala</button>
+    <div class="erro" id="erro-lobby"></div>
+  </section>
+
+  <!-- ── jogo ── -->
+  <section class="tela" id="tela-jogo">
+    <div class="topo" id="jg-topo"></div>
+    <div class="tabwrap" id="jg-wrap"><div id="jg-svg"></div></div>
+    <div class="pe">
+      <div class="dados" id="jg-dados"></div>
+      <div class="fala" id="jg-fala"></div>
+      <button class="btn btn-1" id="bt-rolar">Rolar o dado</button>
+      <div class="linha-info">
+        <span class="sala" id="jg-sala"></span>
+        <span class="acoes"><button id="bt-sair-jogo">sair</button></span>
+        <span class="conexao" id="conexao"><i></i> <span id="conexao-txt">conectado</span></span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="fim" id="fim"><div class="cx">
+  <h2 id="fim-tit">Fim de jogo!</h2>
+  <div id="fim-lista"></div>
+  <button class="btn btn-1" id="bt-revanche">Jogar de novo</button>
+  <button class="btn btn-ghost" id="bt-sair-fim">Sair da sala</button>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+'use strict';
+
+var CHAVE = 'lu:sala';
+var eu = { codigo:null, vagas:[] };
+var jogo = null, versaoVista = 0, laco = 0, seqVista = 0;
+var animando = false, enviando = false, svgPronto = false;
+
+var $ = function(id){ return document.getElementById(id); };
+function esc(t){ return String(t==null?'':t).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function tela(q){ var l=document.querySelectorAll('.tela'); for(var i=0;i<l.length;i++) l[i].classList.toggle('on', l[i].id==='tela-'+q); }
+var tt; function toast(m){ var t=$('toast'); t.textContent=m; t.classList.add('on'); clearTimeout(tt); tt=setTimeout(function(){ t.classList.remove('on'); },2300); }
+function erro(qual,msg){ var e=$('erro-'+qual); if(!msg){ e.classList.remove('on'); return; } e.textContent=msg; e.classList.add('on'); }
+function vibra(m){ try { if (navigator.vibrate) navigator.vibrate(m); } catch(e){} }
+function salvar(){ try { localStorage.setItem(CHAVE, JSON.stringify(eu)); } catch(e){} }
+function esquecer(){ try { localStorage.removeItem(CHAVE); } catch(e){} }
+function tokens(){ return eu.vagas.map(function(v){ return v.token; }).join(','); }
+function souDono(){ return jogo && eu.vagas.some(function(v){ return v.id === jogo.donoId; }); }
+function minhaVez(){ return jogo && jogo.vezId && eu.vagas.some(function(v){ return v.id === jogo.vezId; }); }
+function vagaDaVez(){ return eu.vagas.filter(function(v){ return v.id === jogo.vezId; })[0]; }
+
+async function api(rota, corpo){
+  var r = await fetch('/api/ludo/'+rota, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(corpo||{}) });
+  var d = await r.json().catch(function(){ return {}; });
+  if (!r.ok) throw new Error(d.error || 'Deu ruim na conexão. Tenta de novo.');
+  return d;
+}
+async function manterAcordado(){ try { if ('wakeLock' in navigator) await navigator.wakeLock.request('screen'); } catch(e){} }
+document.addEventListener('visibilitychange', function(){ if (document.visibilityState==='visible'){ manterAcordado(); if (eu.codigo){ laco++; puxarSempre(laco); } } });
+
+// ── geometria do tabuleiro (15x15 casas de 100) ────────────────────────────
+var PERCURSO = (function(){
+  var p = [], c, r;
+  for (c=1;c<=5;c++)  p.push([c,6]);
+  for (r=5;r>=0;r--)  p.push([6,r]);
+  p.push([7,0]);
+  for (r=0;r<=5;r++)  p.push([8,r]);
+  for (c=9;c<=14;c++) p.push([c,6]);
+  p.push([14,7]);
+  for (c=14;c>=9;c--) p.push([c,8]);
+  for (r=9;r<=14;r++) p.push([8,r]);
+  p.push([7,14]);
+  for (r=14;r>=9;r--) p.push([6,r]);
+  for (c=5;c>=0;c--)  p.push([c,8]);
+  p.push([0,7]);
+  p.push([0,6]);
+  return p;
+})();
+var LADOS = {
+  vermelho:{ inicio:0,  base:[0,0], reta:[[1,7],[2,7],[3,7],[4,7],[5,7]] },
+  verde:   { inicio:13, base:[9,0], reta:[[7,1],[7,2],[7,3],[7,4],[7,5]] },
+  amarelo: { inicio:26, base:[9,9], reta:[[13,7],[12,7],[11,7],[10,7],[9,7]] },
+  azul:    { inicio:39, base:[0,9], reta:[[7,13],[7,12],[7,11],[7,10],[7,9]] }
+};
+function meio(cel){ return { x: cel[0]*100+50, y: cel[1]*100+50 }; }
+function vagaBase(lado, i){
+  var b = LADOS[lado].base;
+  return { x: b[0]*100 + (i%2 ? 420 : 180), y: b[1]*100 + (i>1 ? 420 : 180) };
+}
+// onde o peão fica, dado o passo (-1 casa, 0..50 pista, 51..55 reta, 56 chegada)
+function ondeFica(lado, passo, peao){
+  if (passo === -1) return vagaBase(lado, peao);
+  if (passo === 56) {
+    var c = meio([7,7]), giro = { vermelho:180, verde:270, amarelo:0, azul:90 }[lado] * Math.PI/180;
+    return { x: c.x + Math.cos(giro)*52, y: c.y + Math.sin(giro)*52 };
+  }
+  if (passo >= 51) return meio(LADOS[lado].reta[passo-51]);
+  return meio(PERCURSO[(LADOS[lado].inicio + passo) % 52]);
+}
+function chaveCasa(lado, passo){
+  if (passo === -1 || passo === 56) return null;
+  if (passo >= 51) return lado + ':' + passo;
+  return 'p' + ((LADOS[lado].inicio + passo) % 52);
+}
+
+function montarSvg(){
+  var s = '<svg id="svgtab" viewBox="0 0 1500 1500" xmlns="http://www.w3.org/2000/svg">';
+  s += '<rect width="1500" height="1500" rx="30" fill="#f1f5f9"/>';
+  var ordem = ['vermelho','verde','amarelo','azul'];
+  var cores = {};
+  (jogo.lados || []).forEach(function(l){ cores[l.id] = l.cor; });
+
+  // bases dos quatro cantos
+  ordem.forEach(function(id){
+    var b = LADOS[id].base, x = b[0]*100, y = b[1]*100, cor = cores[id];
+    s += '<rect x="'+x+'" y="'+y+'" width="600" height="600" rx="34" fill="'+cor+'"/>';
+    s += '<rect x="'+(x+70)+'" y="'+(y+70)+'" width="460" height="460" rx="24" fill="#f8fafc"/>';
+    for (var i=0;i<4;i++){
+      var v = vagaBase(id, i);
+      s += '<circle cx="'+v.x+'" cy="'+v.y+'" r="56" fill="#fff" stroke="'+cor+'" stroke-width="9"/>';
+    }
+  });
+
+  // as 52 casas do percurso
+  var seguras = jogo.seguras || [];
+  var saidas = {};
+  ordem.forEach(function(id){ saidas[LADOS[id].inicio] = cores[id]; });
+  PERCURSO.forEach(function(cel, i){
+    var fundo = saidas[i] || '#ffffff';
+    s += '<rect x="'+(cel[0]*100+4)+'" y="'+(cel[1]*100+4)+'" width="92" height="92" rx="10" fill="'+fundo+'" stroke="#94a3b8" stroke-width="3"/>';
+    if (seguras.indexOf(i) >= 0 && !saidas[i]) {
+      var m = meio(cel);
+      s += '<text x="'+m.x+'" y="'+(m.y+16)+'" text-anchor="middle" font-size="46" fill="#94a3b8">★</text>';
+    }
+  });
+
+  // retas finais
+  ordem.forEach(function(id){
+    LADOS[id].reta.forEach(function(cel){
+      s += '<rect x="'+(cel[0]*100+4)+'" y="'+(cel[1]*100+4)+'" width="92" height="92" rx="10" fill="'+cores[id]+'" stroke="#94a3b8" stroke-width="3" opacity=".92"/>';
+    });
+  });
+
+  // miolo: um triângulo por cor, apontando pro centro
+  s += '<polygon points="600,600 900,600 750,750" fill="'+cores.verde+'"/>';
+  s += '<polygon points="900,600 900,900 750,750" fill="'+cores.amarelo+'"/>';
+  s += '<polygon points="900,900 600,900 750,750" fill="'+cores.azul+'"/>';
+  s += '<polygon points="600,900 600,600 750,750" fill="'+cores.vermelho+'"/>';
+  s += '<g id="peoes"></g></svg>';
+  return s;
+}
+
+// ── peões ──────────────────────────────────────────────────────────────────
+function idPeao(j, i){ return 'peao-' + j + '-' + i; }
+function montarPeoes(){
+  var g = '';
+  jogo.jogadores.forEach(function(p){
+    for (var i=0;i<4;i++) {
+      g += '<g class="peao" id="'+idPeao(p.id,i)+'" data-j="'+p.id+'" data-p="'+i+'">'+
+             '<circle class="anel" r="46" fill="'+p.cor+'" opacity="0"/>'+
+             '<circle r="36" fill="'+p.cor+'" stroke="#fff" stroke-width="7"/>'+
+             '<circle r="13" cy="-6" fill="rgba(255,255,255,.75)"/>'+
+           '</g>';
+    }
+  });
+  $('peoes').innerHTML = g;
+}
+function posicionarPeoes(instant){
+  if (!jogo || !$('peoes')) return;
+  // quem divide casa fica lado a lado
+  var grupos = {};
+  jogo.jogadores.forEach(function(p){
+    p.peoes.forEach(function(passo, i){
+      var k = chaveCasa(p.lado, passo);
+      if (!k) return;
+      (grupos[k] = grupos[k] || []).push(p.id + ':' + i);
+    });
+  });
+  jogo.jogadores.forEach(function(p){
+    p.peoes.forEach(function(passo, i){
+      var g = $(idPeao(p.id, i));
+      if (!g) return;
+      var pos = ondeFica(p.lado, passo, i), dx = 0;
+      var k = chaveCasa(p.lado, passo);
+      if (k && grupos[k].length > 1) {
+        var idx = grupos[k].indexOf(p.id + ':' + i);
+        dx = (idx - (grupos[k].length - 1) / 2) * 34;
+      }
+      g.classList.toggle('desliza', !instant);
+      g.setAttribute('transform', 'translate('+(pos.x+dx)+','+pos.y+')');
+    });
+  });
+  marcarPodem();
+}
+function marcarPodem(){
+  var podeEscolher = jogo && jogo.estado === 'jogando' && jogo.fase === 'mover' && minhaVez() && !animando;
+  document.querySelectorAll('.peao').forEach(function(g){
+    var meu = podeEscolher && +g.dataset.j === jogo.vezId && jogo.lances.indexOf(+g.dataset.p) >= 0;
+    g.classList.toggle('pode', !!meu);
+    g.querySelector('.anel').setAttribute('opacity', meu ? '.5' : '0');
+  });
+}
+
+// ── render ─────────────────────────────────────────────────────────────────
+function aplicar(novo){
+  var antes = jogo;
+  jogo = novo; versaoVista = novo.versao;
+  if (novo.estado === 'lobby') { $('fim').classList.remove('on'); svgPronto = false; renderLobby(); tela('lobby'); return; }
+  tela('jogo');
+  renderJogo(!antes || antes.estado === 'lobby');
+  var jg = novo.ultimaJogada;
+  if (jg && jg.seq > seqVista) {
+    var primeiro = !antes || !antes.ultimaJogada;
+    seqVista = jg.seq;
+    if (primeiro || jg.peao === null) { posicionarPeoes(true); fim(); }
+    else animarJogada(jg, function(){ posicionarPeoes(false); fim(); });  // peão comido volta deslizando
+  } else { posicionarPeoes(true); fim(); }
+}
+
+function renderLobby(){
+  $('lb-cod').textContent = eu.codigo;
+  $('lb-conta').textContent = '(' + jogo.jogadores.length + '/' + jogo.maxJogadores + ')';
+  var meus = eu.vagas.map(function(v){ return v.id; });
+  var html = jogo.jogadores.map(function(p){
+    var tags = [];
+    if (p.id === jogo.donoId) tags.push('dono');
+    if (meus.indexOf(p.id) >= 0) tags.push('você');
+    return '<div class="pess"><span class="bola" style="background:'+p.cor+'"></span>'+
+           '<span class="nm">'+esc(p.nome)+'</span>'+
+           (tags.length ? '<span class="tag">'+tags.join(' · ')+'</span>' : '')+'</div>';
+  }).join('');
+  for (var i = jogo.jogadores.length; i < jogo.maxJogadores; i++) html += '<div class="pess vazio">vaga livre</div>';
+  $('lb-gente').innerHTML = html;
+  $('bt-local').disabled = jogo.jogadores.length >= jogo.maxJogadores;
+  $('in-local').disabled = jogo.jogadores.length >= jogo.maxJogadores;
+  $('lb-dica').textContent = jogo.jogadores.length === 2
+    ? 'Com 2 jogadores vocês jogam em cantos opostos (vermelho e amarelo).'
+    : 'As cores são sorteadas quando a partida começa.';
+  var dono = souDono();
+  $('bt-comecar').style.display = dono ? '' : 'none';
+  $('bt-comecar').disabled = jogo.jogadores.length < 2;
+  $('bt-comecar').textContent = jogo.jogadores.length < 2 ? 'Precisa de 2 jogadores' : 'Começar partida';
+}
+
+function renderJogo(remontar){
+  $('jg-topo').innerHTML = jogo.jogadores.map(function(p){
+    var vez = p.id === jogo.vezId;
+    var naChegada = p.peoes.filter(function(x){ return x === jogo.passos; }).length;
+    var naPista = p.peoes.filter(function(x){ return x >= 0 && x < jogo.passos; }).length;
+    // com 4 jogadores o chip é estreito: texto curtinho pra não quebrar em 3 linhas
+    var onde = p.colocacao ? (['🥇','🥈','🥉','🏁'][p.colocacao-1] || (p.colocacao+'º'))
+             : ('🏁 ' + naChegada + '/4' + (naPista ? ' · 🏃 ' + naPista : ''));
+    return '<div class="chip'+(vez?' vez':'')+'" style="color:'+p.cor+'">'+
+      '<div class="l1"><span class="bl" style="background:'+p.cor+'"></span>'+esc(p.nome)+'</div>'+
+      '<div class="l2">'+onde+'</div></div>';
+  }).join('');
+  $('jg-sala').textContent = 'SALA ' + jogo.codigo;
+  if (!svgPronto || remontar) { $('jg-svg').innerHTML = montarSvg(); montarPeoes(); svgPronto = true; }
+  var jg = jogo.ultimaJogada;
+  $('jg-dados').innerHTML = jg ? dadoHtml(jg.dado) : (jogo.dado ? dadoHtml(jogo.dado) : '');
+  if (!animando) atualizarBotao();
+}
+
+function atualizarBotao(){
+  var b = $('bt-rolar'), fala = $('jg-fala');
+  if (jogo.estado === 'fim') { b.style.display = 'none'; return; }
+  var daVez = jogo.jogadores.filter(function(p){ return p.id === jogo.vezId; })[0];
+  if (jogo.fase === 'mover' && minhaVez()) {
+    b.style.display = 'none';
+    fala.innerHTML = '<b>Toque no peão que quer mexer</b>';
+    marcarPodem();
+    return;
+  }
+  b.style.display = '';
+  if (animando) { b.disabled = true; b.textContent = '…'; return; }
+  if (minhaVez()) {
+    b.disabled = false;
+    b.textContent = eu.vagas.length > 1 ? 'Rolar — ' + (daVez ? daVez.nome : '') : 'Rolar o dado';
+  } else {
+    b.disabled = true;
+    b.textContent = daVez ? 'Vez de ' + daVez.nome : 'Aguarde';
+  }
+  fala.innerHTML = jogo.ultimaJogada ? esc(jogo.ultimaJogada.texto) : 'Precisa de 6 pra sair da casa. Boa sorte!';
+}
+
+function dadoHtml(v){
+  if (!v) return '';
+  var pos = { 1:[4], 2:[0,8], 3:[0,4,8], 4:[0,2,6,8], 5:[0,2,4,6,8], 6:[0,2,3,5,6,8] }[v] || [4];
+  var c = '';
+  for (var i=0;i<9;i++) c += pos.indexOf(i) >= 0 ? '<i></i>' : '<span></span>';
+  return '<div class="dado">'+c+'</div>';
+}
+
+// ── animação ───────────────────────────────────────────────────────────────
+function animarJogada(jg, depois){
+  var p = jogo.jogadores.filter(function(x){ return x.id === jg.id; })[0];
+  var g = p && $(idPeao(jg.id, jg.peao));
+  if (!g) { depois(); return; }
+  animando = true; atualizarBotao(); marcarPodem();
+  $('jg-fala').innerHTML = esc(jg.texto);
+
+  function poe(passo, desliza){
+    var pos = ondeFica(p.lado, passo, jg.peao);
+    g.classList.toggle('desliza', !!desliza);
+    g.setAttribute('transform', 'translate('+pos.x+','+pos.y+')');
+  }
+  function fimDaAnimacao(){
+    animando = false;
+    if (jg.comeu && jg.comeu.length) vibra([25,50,25]);
+    atualizarBotao();
+    depois();
+  }
+  if (jg.de === -1) { poe(0, true); vibra(20); setTimeout(fimDaAnimacao, 400); return; }
+
+  var passo = jg.de, espera = (jg.para - jg.de) > 6 ? 80 : 150;
+  (function anda(){
+    if (passo >= jg.para) { setTimeout(fimDaAnimacao, 160); return; }
+    passo++;
+    poe(passo, false);
+    setTimeout(anda, espera);
+  })();
+}
+
+// ── fim ────────────────────────────────────────────────────────────────────
+function fim(){
+  if (!jogo || jogo.estado !== 'fim') { $('fim').classList.remove('on'); return; }
+  var ordem = jogo.jogadores.slice().sort(function(a,b){ return (a.colocacao||9)-(b.colocacao||9); });
+  var meus = eu.vagas.map(function(v){ return v.id; });
+  $('fim-tit').textContent = meus.indexOf(ordem[0].id) >= 0 ? 'Você ganhou! 🎉' : (ordem[0].nome + ' ganhou! 🎉');
+  $('fim-lista').innerHTML = ordem.map(function(p){
+    var chegou = p.peoes.filter(function(x){ return x === jogo.passos; }).length;
+    return '<div class="pos"><span class="md">'+(['🥇','🥈','🥉','🏁'][p.colocacao-1]||'🏁')+'</span>'+
+      '<span class="bola" style="background:'+p.cor+'"></span><span class="nm">'+esc(p.nome)+'</span>'+
+      '<span class="tag">'+chegou+'/4 na chegada</span></div>';
+  }).join('');
+  $('fim').classList.add('on');
+  vibra([30,60,30]);
+}
+
+// ── ações ──────────────────────────────────────────────────────────────────
+function nomeDigitado(){ var n=$('in-nome').value.trim(); try{ localStorage.setItem('lu:nome',n); }catch(e){} return n; }
+
+async function criar(){
+  erro('inicio',''); $('bt-criar').disabled = true;
+  try {
+    var d = await api('criar', { nome: nomeDigitado() });
+    eu = { codigo: d.codigo, vagas: [{ id:d.id, token:d.token }] };
+    assumir(d.jogo);
+  } catch(e){ erro('inicio', e.message); }
+  $('bt-criar').disabled = false;
+}
+async function entrar(codigo){
+  erro('inicio','');
+  codigo = (codigo || $('in-cod').value).trim().toUpperCase();
+  if (codigo.length !== 4) { erro('inicio','O código tem 4 letras/números.'); return; }
+  $('bt-entrar').disabled = true;
+  try {
+    var guardado = null;
+    try { guardado = JSON.parse(localStorage.getItem(CHAVE)||'null'); } catch(e){}
+    var antigas = (guardado && guardado.codigo === codigo) ? guardado.vagas : [];
+    var vagas = [], ultima = null;
+    for (var i=0;i<antigas.length;i++){
+      try { var r = await api('entrar', { codigo: codigo, token: antigas[i].token, nome: i ? null : nomeDigitado() });
+            vagas.push({ id:r.id, token:r.token }); ultima = r; } catch(e){}
+    }
+    if (!vagas.length) { var n = await api('entrar', { codigo: codigo, nome: nomeDigitado() }); vagas.push({ id:n.id, token:n.token }); ultima = n; }
+    eu = { codigo: codigo, vagas: vagas };
+    assumir(ultima.jogo);
+  } catch(e){ erro('inicio', e.message); }
+  $('bt-entrar').disabled = false;
+}
+async function addLocal(){
+  erro('lobby','');
+  try {
+    var d = await api('entrar', { codigo: eu.codigo, nome: $('in-local').value.trim() });
+    eu.vagas.push({ id:d.id, token:d.token }); salvar();
+    $('in-local').value = '';
+    aplicar(d.jogo);
+  } catch(e){ erro('lobby', e.message); }
+}
+function assumir(estado){ salvar(); aplicar(estado); manterAcordado(); laco++; puxarSempre(laco); }
+
+async function puxarSempre(meuLaco){
+  while (meuLaco === laco && eu.codigo) {
+    try {
+      var r = await fetch('/api/ludo/estado?codigo='+encodeURIComponent(eu.codigo)+'&v='+versaoVista+'&token='+encodeURIComponent(tokens()));
+      if (r.status === 404) { toast('A sala expirou.'); sair(true); return; }
+      var d = await r.json();
+      if (meuLaco !== laco) return;
+      conexao(true);
+      if (d.jogo) aplicar(d.jogo);
+    } catch(e) {
+      if (meuLaco !== laco) return;
+      conexao(false);
+      await new Promise(function(ok){ setTimeout(ok, 1500); });
+    }
+  }
+}
+function conexao(ok){ $('conexao').classList.toggle('off', !ok); $('conexao-txt').textContent = ok ? 'conectado' : 'reconectando…'; }
+
+async function rolar(){
+  if (enviando || animando || !minhaVez() || jogo.fase !== 'rolar') return;
+  enviando = true;
+  $('bt-rolar').disabled = true;
+  var dd = $('jg-dados').children[0];
+  if (dd) dd.classList.add('rola');
+  vibra(15);
+  try { aplicar((await api('rolar', { codigo: eu.codigo, token: vagaDaVez().token })).jogo); }
+  catch(e){ toast(e.message); if (dd) dd.classList.remove('rola'); atualizarBotao(); }
+  enviando = false;
+}
+async function mover(peao){
+  if (enviando || animando) return;
+  enviando = true;
+  try { aplicar((await api('mover', { codigo: eu.codigo, token: vagaDaVez().token, peao: peao })).jogo); }
+  catch(e){ toast(e.message); }
+  enviando = false;
+}
+async function comecar(){
+  try { seqVista = 0; svgPronto = false; aplicar((await api('comecar', { codigo:eu.codigo, token:eu.vagas[0].token })).jogo); }
+  catch(e){ erro('lobby', e.message); }
+}
+async function revanche(){
+  try { seqVista = 0; svgPronto = false; aplicar((await api('revanche', { codigo:eu.codigo, token:eu.vagas[0].token })).jogo); }
+  catch(e){ toast(e.message); }
+}
+async function sair(silencioso){
+  var antigo = eu; laco++;
+  eu = { codigo:null, vagas:[] }; jogo = null; versaoVista = 0; seqVista = 0; svgPronto = false; animando = false;
+  esquecer();
+  $('fim').classList.remove('on'); $('jg-svg').innerHTML = '';
+  tela('inicio');
+  if (!silencioso && antigo.codigo) {
+    try { await api('sair', { codigo: antigo.codigo, token: antigo.vagas.map(function(v){ return v.token; }).join(',') }); } catch(e){}
+  }
+}
+async function compartilhar(){
+  var texto = 'Bora jogar Ludo? Sala ' + eu.codigo + ': ' + location.origin + '/ludo?sala=' + eu.codigo;
+  try {
+    if (navigator.share) { await navigator.share({ title:'Ludo', text: texto }); return; }
+    await navigator.clipboard.writeText(texto); toast('Link copiado!');
+  } catch(e){ if (e && e.name === 'AbortError') return; toast('Copia o código: ' + eu.codigo); }
+}
+
+function doisToques(btn, texto, acao){
+  var armado = false, volta;
+  btn.addEventListener('click', function(){
+    if (armado) { clearTimeout(volta); armado = false; btn.textContent = texto; btn.classList.remove('confirma'); acao(); return; }
+    armado = true; btn.textContent = 'confirma?'; btn.classList.add('confirma');
+    volta = setTimeout(function(){ armado = false; btn.textContent = texto; btn.classList.remove('confirma'); }, 3000);
+  });
+}
+
+// ── liga tudo ──────────────────────────────────────────────────────────────
+$('bt-criar').addEventListener('click', criar);
+$('bt-entrar').addEventListener('click', function(){ entrar(); });
+$('bt-local').addEventListener('click', addLocal);
+$('bt-comecar').addEventListener('click', comecar);
+$('bt-rolar').addEventListener('click', rolar);
+$('bt-revanche').addEventListener('click', revanche);
+$('bt-compartilhar').addEventListener('click', compartilhar);
+$('bt-sair-lobby').addEventListener('click', function(){ sair(false); });
+$('bt-sair-fim').addEventListener('click', function(){ sair(false); });
+doisToques($('bt-sair-jogo'), 'sair', function(){ sair(false); });
+$('jg-svg').addEventListener('click', function(ev){
+  var g = ev.target.closest ? ev.target.closest('.peao') : null;
+  if (!g || !g.classList.contains('pode')) return;
+  mover(+g.dataset.p);
+});
+$('in-cod').addEventListener('input', function(){ this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,4); if (this.value.length===4) this.blur(); });
+$('in-cod').addEventListener('keydown', function(e){ if (e.key==='Enter') entrar(); });
+$('in-local').addEventListener('keydown', function(e){ if (e.key==='Enter') addLocal(); });
+
+(function inicio(){
+  try { $('in-nome').value = localStorage.getItem('lu:nome') || ''; } catch(e){}
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/ludo/sw.js').catch(function(){});
+  var daUrl = (new URLSearchParams(location.search).get('sala')||'').trim().toUpperCase();
+  var guardado = null;
+  try { guardado = JSON.parse(localStorage.getItem(CHAVE)||'null'); } catch(e){}
+  if (daUrl) {
+    $('in-cod').value = daUrl;
+    if ($('in-nome').value.trim()) entrar(daUrl);
+    else {
+      $('marca-sub').textContent = 'Sala ' + daUrl + ' — põe seu nome pra entrar';
+      $('bt-entrar').textContent = 'Entrar na sala ' + daUrl;
+      setTimeout(function(){ $('in-nome').focus(); }, 300);
+    }
+  }
+  else if (guardado && guardado.codigo) entrar(guardado.codigo);
+})();
+
+})();
+</script>
+</body>
+</html>
