@@ -1155,10 +1155,10 @@ function aplicarCorrecoesNome(endereco, lista) {
 // ─── SERVER ───────────────────────────────────────────────────────────────────
 // ─── JOGO DA VELHA INFINITO ───────────────────────────────────────────────────
 // App separado (/jogodavelha), sem login, dois celulares na mesma sala.
-// Regra: cada jogador só pode ter 4 peças no tabuleiro. Ao colocar a 5ª, a peça
+// Regra: cada jogador só pode ter 3 peças no tabuleiro. Ao colocar a 4ª, a peça
 // mais antiga dele some — por isso nunca dá "velha", o jogo é infinito.
 // O estado das salas mora só na memória do servidor (partida é coisa passageira).
-const JV_MAX_PECAS  = 4;
+const JV_MAX_PECAS  = 3;
 const JV_LIMPA_MS   = 3 * 60 * 60 * 1000; // salas paradas há 3h somem
 const JV_ESPERA_MS  = 25000;              // long-poll: segura a resposta até 25s
 const JV_ONLINE_MS  = 45000;              // sem dar sinal nesse tempo = offline
@@ -2367,7 +2367,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' });
     return res.end(JSON.stringify({
       name: 'Jogo da Velha Infinito', short_name: 'Velha ∞',
-      description: 'Jogo da velha infinito de 4 peças para dois celulares',
+      description: 'Jogo da velha infinito de 3 peças para dois celulares',
       start_url: '/jogodavelha/', scope: '/jogodavelha/', display: 'standalone',
       background_color: '#0e1020', theme_color: '#0e1020', orientation: 'portrait',
       icons: [
@@ -2450,7 +2450,7 @@ const server = http.createServer(async (req, res) => {
     if (!(casa >= 0 && casa <= 8)) return json(res, 400, { error: 'Casa inválida.' });
     if (sala.tab[casa]) return json(res, 400, { error: 'Essa casa já está ocupada.' });
 
-    // 5ª peça: a mais antiga desse jogador sai do tabuleiro
+    // peça além do limite: a mais antiga desse jogador sai do tabuleiro
     if (sala.ordem[j].length >= JV_MAX_PECAS) {
       const antiga = sala.ordem[j].shift();
       sala.tab[antiga] = null;
