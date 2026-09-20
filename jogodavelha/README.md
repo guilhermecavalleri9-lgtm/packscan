@@ -1,11 +1,11 @@
-# Velha ∞ — jogo da velha infinito (4 peças)
+# Velha ∞ — jogo da velha infinito (3 peças)
 
 App separado dentro do PackScan, igual `escala` e `financeiro`: **sem login, só por link direto**.
 Feito pra dois celulares na mesma sala, cada um com sua tela.
 
 ## Regra
-- Cada jogador só pode ter **4 peças** no tabuleiro.
-- Ao colocar a 5ª, a **peça mais antiga dele some** (ela fica piscando com contorno tracejado antes de sair).
+- Cada jogador só pode ter **3 peças** no tabuleiro.
+- Ao colocar a 4ª, a **peça mais antiga dele some** (ela fica piscando com contorno tracejado antes de sair).
 - Ganha quem fizer 3 em linha. Como as peças se reciclam, **nunca dá velha** — o jogo é infinito.
 - A revanche só começa quando os dois pedirem; quem perdeu começa a rodada seguinte.
 
