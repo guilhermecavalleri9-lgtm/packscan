@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0f1117">
+<title>Scanner Spoke</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1117;--bg2:#1a1d27;--bg3:#22263a;--border:#2a2f45;
+  --text:#e8eaf0;--text2:#9ba3c0;--text3:#555e7a;
+  --accent:#6c8ef5;--green:#4ade80;--red:#f87171;--amber:#fbbf24;
+  --radius:12px;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+html,body{background:var(--bg)}
+body{color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh;padding-bottom:40px}
+.header{background:var(--bg2);border-bottom:1px solid var(--border);padding:12px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
+.logo{font-size:15px;font-weight:700;letter-spacing:1px}
+.logo span{color:var(--accent)}
+.hdr-info{margin-left:auto;font-size:12px;color:var(--text2);font-family:var(--mono)}
+.wrap{max-width:640px;margin:0 auto;padding:12px 16px}
+.step{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:14px;margin-bottom:12px}
+.step.done{border-color:#2f5e40}
+.step-hd{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.step-n{width:26px;height:26px;border-radius:50%;background:var(--bg3);color:var(--text2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0}
+.step.done .step-n{background:var(--green);color:#0f1117}
+.step-t{font-size:15px;font-weight:600}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:13px;border-radius:10px;border:1px solid var(--border);background:var(--bg3);color:var(--text);font-size:15px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-p{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn-r{background:#3a1f25;border-color:#6b2a33;color:var(--red)}
+.btn-sm{width:auto;padding:6px 10px;font-size:12px;font-weight:500}
+.msg{font-size:13px;color:var(--text2);margin-top:8px;line-height:1.45}
+.msg .ok{color:var(--green)}.msg .err{color:var(--red)}.msg .warn{color:var(--amber)}
+.file-name{font-size:12px;color:var(--text3);font-family:var(--mono);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:12px;margin-top:10px}
+th{text-align:left;color:var(--text3);font-weight:500;padding:6px 4px;border-bottom:1px solid var(--border);font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+td{padding:7px 4px;border-bottom:1px solid #1e2235;vertical-align:top;color:var(--text2)}
+td.n{font-family:var(--mono);color:var(--text);white-space:nowrap}
+td.p{font-family:var(--mono);color:var(--accent);font-size:11px}
+.prev{max-height:320px;overflow:auto;margin-top:6px}
+.warnbox{background:#2d2614;border:1px solid #5a4a1c;color:var(--amber);border-radius:10px;padding:10px;font-size:12px;margin-top:10px;line-height:1.5}
+.warnbox ul{margin:4px 0 0 18px}
+.cam-wrap{position:relative;background:#000;border-radius:10px;overflow:hidden;margin-bottom:10px}
+.cam-wrap video{width:100%;display:block}
+.cam-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.cam-frame{width:70%;height:90px;border:2px solid var(--accent);border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.35)}
+.result{text-align:center;padding:16px 8px 12px;min-height:130px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.r-top{font-size:15px;color:var(--text2);font-family:var(--mono);letter-spacing:1px;min-height:18px}
+.r-num{font-size:22px;font-weight:800;font-family:var(--mono);line-height:1.05;color:var(--text3);letter-spacing:2px;margin:4px 0}
+.r-sub{font-size:13px;color:var(--text2);max-width:420px;line-height:1.4}
+.prog{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin:4px 0 10px}
+.prog > div{height:100%;background:var(--green);width:0;transition:width .3s}
+.manual{display:flex;gap:8px;margin-top:10px}
+.manual input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:10px;padding:10px 12px;font-size:15px;font-family:var(--mono)}
+.hist-it{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #1e2235;font-size:12px}
+.hist-b{font-weight:700;font-family:var(--mono);white-space:nowrap;min-width:92px}
+.hist-i{flex:1;min-width:0}
+.hist-i div{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hist-i .t{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.hist-h{font-size:10px;color:var(--text3);flex-shrink:0}
+.foot{display:flex;justify-content:flex-end;margin-top:4px}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">PACK<span>SCAN</span> · spoke</div>
+  <div class="hdr-info" id="hdr-info"></div>
+</div>
+
+<div class="wrap">
+
+  <!-- 1. Excel -->
+  <div class="step" id="st-excel">
+    <div class="step-hd"><div class="step-n">1</div><div class="step-t">Anexar Excel (planilha com os códigos)</div></div>
+    <input type="file" id="fi-excel" accept=".xlsx,.xls,.csv" style="display:none" onchange="anexarExcel(this)">
+    <button class="btn" onclick="document.getElementById('fi-excel').click()">📄 Selecionar Excel</button>
+    <div class="file-name" id="excel-nome"></div>
+    <div class="msg" id="excel-msg"></div>
+  </div>
+
+  <!-- 2. Spoke -->
+  <div class="step" id="st-spoke">
+    <div class="step-hd"><div class="step-n">2</div><div class="step-t">Anexar Spoke (PDF com a ordem)</div></div>
+    <input type="file" id="fi-spoke" accept=".pdf" style="display:none" onchange="anexarSpoke(this)">
+    <button class="btn" onclick="document.getElementById('fi-spoke').click()">🗺 Selecionar PDF do Spoke</button>
+    <div class="file-name" id="spoke-nome"></div>
+    <div class="msg" id="spoke-msg"></div>
+  </div>
+
+  <!-- 3. Planilha pronta -->
+  <div class="step" id="st-baixar">
+    <div class="step-hd"><div class="step-n">3</div><div class="step-t">Baixar planilha pronta</div></div>
+    <button class="btn btn-p" id="btn-baixar" onclick="baixarPlanilha()" disabled>⬇ Baixar planilha</button>
+    <div class="msg" id="junta-msg">Anexe o Excel e o PDF do Spoke.</div>
+    <div id="junta-avisos"></div>
+    <div class="prev" id="junta-prev"></div>
+  </div>
+
+  <!-- 4. Câmera -->
+  <div class="step" id="st-cam">
+    <div class="step-hd"><div class="step-n">4</div><div class="step-t">Bipar pela câmera</div></div>
+    <div class="prog"><div id="bip-prog"></div></div>
+    <div class="cam-wrap" id="cam-wrap" style="display:none">
+      <div id="reader"></div>
+      <div class="cam-overlay"><div class="cam-frame"></div></div>
+    </div>
+    <button class="btn btn-p" id="btn-cam" onclick="camToggle()">📷 Ativar câmera</button>
+    <div class="result">
+      <div class="r-top" id="r-top"></div>
+      <div class="r-num" id="r-num">aguardando leitura</div>
+      <div class="r-sub" id="r-sub"></div>
+    </div>
+    <div class="manual">
+      <input id="cod-manual" placeholder="digitar código" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key==='Enter')biparManual()">
+      <button class="btn btn-sm" onclick="biparManual()">Bipar</button>
+    </div>
+    <div id="hist" style="margin-top:8px"></div>
+    <div class="foot"><button class="btn btn-sm" onclick="zerarBipagem()">Zerar bipagem</button></div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════════
+// ESTADO — excel (pacotes), spoke (paradas), bipados; salvo no aparelho
+// ═══════════════════════════════════════════════════════════════════════════════
+var LS_CHAVE = 'packscan_scanner_spoke';
+var pacotes = [];      // {tracking, tracking2, endereco, bairro, cep, cidade}
+var paradas = [];      // {pos, endereco, cidade, uf, cep}  (como veio do Spoke)
+var excelNome = '', spokeNome = '';
+var bipados = {};      // tracking -> true
+var junta = null;      // resultado de juntar(): {grupos, porTracking, semParada, paradasVazias}
+
+function salvar() {
+  try {
+    localStorage.setItem(LS_CHAVE, JSON.stringify({ pacotes:pacotes, paradas:paradas, excelNome:excelNome, spokeNome:spokeNome, bipados:bipados }));
+  } catch(e) {}
+}
+function restaurar() {
+  try {
+    var s = JSON.parse(localStorage.getItem(LS_CHAVE) || 'null');
+    if (!s) return;
+    pacotes = s.pacotes || []; paradas = s.paradas || [];
+    excelNome = s.excelNome || ''; spokeNome = s.spokeNome || '';
+    bipados = s.bipados || {};
+  } catch(e) {}
+}
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; });
+}
+function norm(s) {
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+}
+function formatarCep(cep) {
+  cep = String(cep||'').replace(/\D/g,'');
+  return cep.length===8 ? cep.slice(0,5)+'-'+cep.slice(5) : cep;
+}
+function pNum(n) { return 'P' + String(n).padStart(3,'0'); }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 1. EXCEL — mesma detecção de colunas do PackScan
+// ═══════════════════════════════════════════════════════════════════════════════
+function acharColuna(hdrs, want, avoid) {
+  var melhor = -1, melhorPts = 0;
+  hdrs.forEach(function(h, i) {
+    var t = String(h||'').toLowerCase();
+    if (!want.some(function(k){ return t.indexOf(k) !== -1; })) return;
+    var pts = 1;
+    if (/destin/.test(t)) pts += 3;                                         // prefere destino/destinatário
+    if (avoid.some(function(a){ return t.indexOf(a) !== -1; })) pts -= 10;  // foge de origem
+    if (pts > melhorPts) { melhorPts = pts; melhor = i; }
+  });
+  return melhor;
+}
+
+function lerLinhasExcel(file) {
+  return new Promise(function(resolve, reject) {
+    var ext = file.name.split('.').pop().toLowerCase();
+    var reader = new FileReader();
+    reader.onerror = function(){ reject(new Error('não consegui ler o arquivo')); };
+    reader.onload = function(e) {
+      try {
+        var aoa;
+        if (ext === 'csv') {
+          aoa = e.target.result.split('\n').filter(function(l){ return l.trim(); })
+            .map(function(l){ return l.split(/[,;\t]/).map(function(v){ return v.trim().replace(/"/g,''); }); });
+        } else {
+          var wb = XLSX.read(e.target.result, { type:'binary' });
+          aoa = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header:1, defval:'' });
+        }
+        resolve(aoa);
+      } catch(err) { reject(err); }
+    };
+    if (ext === 'csv') reader.readAsText(file, 'UTF-8'); else reader.readAsBinaryString(file);
+  });
+}
+
+function pacotesDoAoa(aoa) {
+  var hdrs = (aoa[0] || []).map(function(h){ return String(h); });
+  var c = {
+    tracking:  acharColuna(hdrs, ['pedido','tracking','cod','jms'], []),
+    endereco:  acharColuna(hdrs, ['complemento','endereco','endereço','address','logr'], []),
+    bairro:    acharColuna(hdrs, ['distrito','bairro','neigh'], ['origem']),
+    cep:       acharColuna(hdrs, ['cep','postal','zip'], ['origem']),
+    cidade:    acharColuna(hdrs, ['cidade','city','munic'], ['origem']),
+    tracking2: acharColuna(hdrs, ['terceiro','pedidos terceiros','pedido terceiro','codigo 2','cod2','2o codigo','2º codigo'], [])
+  };
+  if (c.tracking < 0) throw new Error('não achei a coluna do código (pedido / tracking)');
+  function v(row, i) { return i < 0 ? '' : String(row[i] == null ? '' : row[i]).trim(); }
+  var vistos = {}, lista = [];
+  aoa.slice(1).forEach(function(row) {
+    var t = v(row, c.tracking);
+    if (!t || vistos[t.toUpperCase()]) return;
+    vistos[t.toUpperCase()] = 1;
+    lista.push({ tracking:t, tracking2:v(row,c.tracking2), endereco:v(row,c.endereco), bairro:v(row,c.bairro),
+      cep:v(row,c.cep).replace(/\D/g,''), cidade:v(row,c.cidade) });
+  });
+  return lista;
+}
+
+async function anexarExcel(inp) {
+  var f = inp.files[0]; inp.value = ''; if (!f) return;
+  var msg = document.getElementById('excel-msg');
+  msg.innerHTML = 'Lendo…';
+  try {
+    var lista = pacotesDoAoa(await lerLinhasExcel(f));
+    if (!lista.length) throw new Error('a planilha não tem pacotes');
+    pacotes = lista; excelNome = f.name; bipados = {};
+    salvar(); renderTudo();
+  } catch(e) { msg.innerHTML = '<span class="err">✗ ' + esc(e.message) + '</span>'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 2. SPOKE (PDF) — lê as paradas na ordem, mantendo o endereço como veio
+// ═══════════════════════════════════════════════════════════════════════════════
+async function lerPdfPaginas(file) {
+  if (!window.pdfjsLib) throw new Error('leitor de PDF não carregou (sem internet?)');
+  var pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  var paginas = [];
+  for (var i = 1; i <= pdf.numPages; i++) {
+    var tc = await (await pdf.getPage(i)).getTextContent();
+    paginas.push(tc.items.map(function(it){ return it.str; }).join(' '));
+  }
+  return paginas;
+}
+
+// Junta as duas cópias do endereço que o Spoke imprime ("A, A, cidade"). O PDF
+// quebra a linha no meio da palavra ("Sant os"), então um espaço só é de verdade
+// quando aparece nas DUAS cópias — as quebras quase nunca caem no mesmo lugar.
+function juntarCopias(a, b) {
+  function espacos(s) {
+    var chars = [], esp = [];
+    for (var i = 0; i < s.length; i++) {
+      if (/\s/.test(s[i])) { if (chars.length) esp[chars.length-1] = true; }
+      else chars.push(s[i]);
+    }
+    return { chars:chars, esp:esp };
+  }
+  var x = espacos(a), y = espacos(b), out = '';
+  x.chars.forEach(function(ch, i) {
+    out += ch;
+    if (i < x.chars.length-1 && x.esp[i] && y.esp[i]) out += ' ';
+  });
+  return out;
+}
+
+function limparEnderecoSpoke(bruto) {
+  var s = String(bruto||'').replace(/\s+/g,' ').replace(/[\s,]+$/,'').trim();
+  var uf = '', cidade = '';
+  var mUf = s.match(/,\s*([A-Z]{2})$/);
+  if (mUf) { uf = mUf[1]; s = s.slice(0, mUf.index).trim(); }
+  var corpo = s;
+  var iCid = s.lastIndexOf(',');
+  if (mUf && iCid > 0) { cidade = s.slice(iCid+1).trim(); corpo = s.slice(0, iCid).trim(); }
+  // "A, A": procura a vírgula que divide o texto em duas cópias iguais (sem espaços)
+  var semEsp = function(t){ return t.replace(/\s/g,''); };
+  for (var k = corpo.indexOf(','); k > 0; k = corpo.indexOf(',', k+1)) {
+    var a = corpo.slice(0, k), b = corpo.slice(k+1);
+    if (semEsp(a) && semEsp(a) === semEsp(b)) return { endereco: juntarCopias(a, b).trim(), cidade:cidade, uf:uf };
+  }
+  return { endereco: corpo, cidade:cidade, uf:uf };
+}
+
+// cada parada: "<nº> <endereço> <CEP> <hora>". O destino final (sem nº) fica de fora.
+function parseSpoke(paginas) {
+  var re = /(?:^|\s)(\d{1,4})\s+(\S.*?)\s*,?\s*(\d{5}-?\d{3})\s+(\d{1,2}:\d{2})(?!\d)/g;
+  var stops = [], ultima = 0;
+  paginas.forEach(function(txt) {
+    var t = String(txt||'').replace(/\s+/g,' ');
+    // pula o cabeçalho (título tem data/hora e números que confundiriam a leitura)
+    var cab = t.match(/Estimated\s+Arrival\s+Time\s+Notes|Hor[aá]rio\s+(estimado|previsto)[^#]*?Notas?/i);
+    if (cab) t = t.slice(cab.index + cab[0].length);
+    var m;
+    re.lastIndex = 0;
+    while ((m = re.exec(t))) {
+      var pos = parseInt(m[1], 10);
+      // as paradas vêm em sequência (1, 2, 3…); um número fora disso é o nº de
+      // alguma casa (ex.: o endereço do destino final, que não tem nº de parada)
+      if (pos <= ultima || pos > ultima + 5) { re.lastIndex = m.index + 1; continue; }
+      ultima = pos;
+      var e = limparEnderecoSpoke(m[2]);
+      stops.push({ pos:pos, endereco:e.endereco, cidade:e.cidade, uf:e.uf, cep:m[3].replace(/\D/g,'') });
+    }
+  });
+  stops.sort(function(a,b){ return a.pos - b.pos; });
+  return stops;
+}
+
+async function anexarSpoke(inp) {
+  var f = inp.files[0]; inp.value = ''; if (!f) return;
+  var msg = document.getElementById('spoke-msg');
+  msg.innerHTML = 'Lendo o PDF…';
+  try {
+    var stops = parseSpoke(await lerPdfPaginas(f));
+    if (!stops.length) throw new Error('não encontrei paradas no PDF. É o PDF do Spoke/Circuit?');
+    paradas = stops; spokeNome = f.name; bipados = {};
+    salvar(); renderTudo();
+  } catch(e) { msg.innerHTML = '<span class="err">✗ ' + esc(e.message) + '</span>'; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 3. JUNTAR — ordem do Spoke, paradas duplicadas viram uma, códigos do Excel
+// ═══════════════════════════════════════════════════════════════════════════════
+function numeroCasa(end) { var m = String(end||'').match(/\d{1,6}/); return m ? m[0] : ''; }
+
+// quanto o pacote do Excel "bate" com a parada do Spoke
+function pontuar(p, g) {
+  var pts = 0;
+  var endP = norm(p.endereco);
+  if (endP && (' ' + g.chaveTexto + ' ').indexOf(' ' + endP + ' ') !== -1) pts += 5;
+  if (p.cep && p.cep === g.cep) pts += 2;
+  var n = numeroCasa(p.endereco);
+  if (n && (' ' + g.chaveTexto + ' ').indexOf(' ' + n + ' ') !== -1) pts += 2;
+  return pts;
+}
+
+function juntar() {
+  // 1) paradas com o mesmo endereço viram uma só, na posição da primeira
+  var grupos = [], porChave = {};
+  paradas.forEach(function(s) {
+    var chave = norm(s.endereco) + '|' + s.cep;
+    var g = porChave[chave];
+    if (!g) {
+      g = porChave[chave] = { parada:grupos.length+1, posSpoke:[], endereco:s.endereco, cidade:s.cidade, uf:s.uf, cep:s.cep,
+        chaveTexto:norm(s.endereco + ' ' + s.cidade), pkgs:[] };
+      grupos.push(g);
+    }
+    g.posSpoke.push(s.pos);
+  });
+  // 2) cada pacote vai pra parada que mais bate (empate: a que vem primeiro)
+  var semParada = [];
+  pacotes.forEach(function(p) {
+    var melhor = null, melhorPts = 0;
+    grupos.forEach(function(g) {
+      var pts = pontuar(p, g);
+      if (pts > melhorPts) { melhorPts = pts; melhor = g; }
+    });
+    if (melhor && melhorPts >= 4) melhor.pkgs.push(p); else semParada.push(p);
+  });
+  // 3) numera os pacotes na ordem das paradas (P001, P002…), igual ao PackScan
+  var porTracking = {}, n = 0;
+  grupos.forEach(function(g) {
+    g.nums = g.pkgs.map(function(p) {
+      n++;
+      porTracking[p.tracking.toUpperCase()] = { pkg:p, num:n, grupo:g };
+      if (p.tracking2) porTracking[p.tracking2.toUpperCase()] = porTracking[p.tracking2.toUpperCase()] || { pkg:p, num:n, grupo:g };
+      return pNum(n);
+    });
+  });
+  semParada.forEach(function(p) {
+    porTracking[p.tracking.toUpperCase()] = { pkg:p, num:null, grupo:null };
+    if (p.tracking2) porTracking[p.tracking2.toUpperCase()] = porTracking[p.tracking2.toUpperCase()] || { pkg:p, num:null, grupo:null };
+  });
+  return {
+    grupos: grupos, porTracking: porTracking, semParada: semParada, total: n,
+    paradasVazias: grupos.filter(function(g){ return !g.pkgs.length; }),
+    duplicadas: paradas.length - grupos.length
+  };
+}
+
+// mesmas colunas da planilha do motorista do PackScan
+var XLSX_HEADER_ROTA = ['AT ID','Destination Address','Bairro','City','Zipcode/Postal code','Latitude','Longitude','Address Line 2','Pacotes na Parada'];
+var XLSX_COLS_ROTA = [{wch:18},{wch:38},{wch:16},{wch:14},{wch:14},{wch:12},{wch:12},{wch:24},{wch:18}];
+
+function linhasPlanilha(j) {
+  return j.grupos.map(function(g) {
+    var bairro = (g.pkgs[0] && g.pkgs[0].bairro) || '';
+    return ['R01', g.endereco, bairro, g.cidade, formatarCep(g.cep), '', '', '', g.nums.join(', ')];
+  });
+}
+
+function baixarPlanilha() {
+  if (!junta) return;
+  var ws = XLSX.utils.aoa_to_sheet([XLSX_HEADER_ROTA].concat(linhasPlanilha(junta)));
+  ws['!cols'] = XLSX_COLS_ROTA;
+  var wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Rota');
+  XLSX.writeFile(wb, 'Rota_Spoke_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TELA
+// ═══════════════════════════════════════════════════════════════════════════════
+function renderTudo() {
+  var okExcel = pacotes.length > 0, okSpoke = paradas.length > 0;
+  document.getElementById('st-excel').classList.toggle('done', okExcel);
+  document.getElementById('st-spoke').classList.toggle('done', okSpoke);
+  document.getElementById('excel-nome').textContent = excelNome;
+  document.getElementById('spoke-nome').textContent = spokeNome;
+  document.getElementById('excel-msg').innerHTML = okExcel ? '<span class="ok">✓ ' + pacotes.length + ' pacote(s)</span>' : '';
+  document.getElementById('spoke-msg').innerHTML = okSpoke ? '<span class="ok">✓ ' + paradas.length + ' parada(s) na ordem do Spoke</span>' : '';
+
+  junta = (okExcel && okSpoke) ? juntar() : null;
+  document.getElementById('st-baixar').classList.toggle('done', !!junta);
+  document.getElementById('btn-baixar').disabled = !junta;
+  var jm = document.getElementById('junta-msg'), av = document.getElementById('junta-avisos'), pv = document.getElementById('junta-prev');
+  if (!junta) {
+    jm.textContent = !okExcel && !okSpoke ? 'Anexe o Excel e o PDF do Spoke.' : (!okExcel ? 'Falta anexar o Excel.' : 'Falta anexar o PDF do Spoke.');
+    av.innerHTML = ''; pv.innerHTML = '';
+  } else {
+    jm.innerHTML = '<span class="ok">✓ ' + junta.grupos.length + ' parada(s) · ' + junta.total + ' pacote(s) numerados</span>'
+      + (junta.duplicadas ? ' · ' + junta.duplicadas + ' parada(s) duplicada(s) juntada(s)' : '');
+    var avisos = '';
+    if (junta.semParada.length) {
+      avisos += '<div class="warnbox">⚠ <strong>' + junta.semParada.length + ' pacote(s) do Excel não casaram com nenhuma parada</strong> (ficam fora da planilha):<ul>'
+        + junta.semParada.slice(0, 30).map(function(p){ return '<li>' + esc(p.tracking) + ' — ' + esc(p.endereco) + '</li>'; }).join('')
+        + (junta.semParada.length > 30 ? '<li>… +' + (junta.semParada.length-30) + '</li>' : '') + '</ul></div>';
+    }
+    if (junta.paradasVazias.length) {
+      avisos += '<div class="warnbox">⚠ <strong>' + junta.paradasVazias.length + ' parada(s) do Spoke sem código</strong> (saem na planilha sem pacote):<ul>'
+        + junta.paradasVazias.slice(0, 30).map(function(g){ return '<li>Parada ' + g.parada + ' — ' + esc(g.endereco) + '</li>'; }).join('') + '</ul></div>';
+    }
+    av.innerHTML = avisos;
+    pv.innerHTML = '<table><thead><tr><th>#</th><th>Endereço (Spoke)</th><th>Pacotes</th></tr></thead><tbody>'
+      + junta.grupos.map(function(g) {
+          return '<tr><td class="n">' + g.parada + '</td><td>' + esc(g.endereco) + '<br><span style="color:var(--text3)">' + esc(g.cidade) + ' · ' + esc(formatarCep(g.cep)) + '</span></td>'
+            + '<td class="p">' + (g.nums.length ? esc(g.nums.join(', ')) : '<span style="color:var(--amber)">—</span>') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+  }
+  renderProgresso();
+}
+
+function renderProgresso() {
+  var total = junta ? junta.total : 0;
+  var feitos = 0;
+  if (junta) junta.grupos.forEach(function(g){ g.pkgs.forEach(function(p){ if (bipados[p.tracking]) feitos++; }); });
+  document.getElementById('bip-prog').style.width = total ? Math.round(feitos/total*100) + '%' : '0';
+  document.getElementById('hdr-info').textContent = total ? feitos + '/' + total + ' bipados' : '';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// 4. BIPAR — mesma leitura do PackScan: BarcodeDetector nativo, senão html5-qrcode
+// ═══════════════════════════════════════════════════════════════════════════════
+var camAtiva = false, camStream = null, camLoop = null, camDetector = null, camH5q = null;
+var ultCod = '', ultTs = 0, hist = [], audioCtx = null;
+
+function camToggle() { camAtiva ? camParar() : camIniciar(); }
+function camBotao(parar) {
+  var b = document.getElementById('btn-cam');
+  b.textContent = parar ? '⏹ Parar câmera' : '📷 Ativar câmera';
+  b.className = 'btn ' + (parar ? 'btn-r' : 'btn-p');
+}
+
+async function camIniciar() {
+  document.getElementById('cam-wrap').style.display = 'block';
+  camBotao(true); camAtiva = true;
+  if ('BarcodeDetector' in window) {
+    try { await camIniciarNativo(); return; } catch(e) { console.warn('BarcodeDetector falhou, usando fallback', e); }
+  }
+  camIniciarFallback();
+}
+
+async function camIniciarNativo() {
+  var desejados = ['qr_code','code_128','code_39','ean_13','ean_8','upc_a','upc_e','itf','data_matrix'];
+  var suportados = await BarcodeDetector.getSupportedFormats();
+  var formatos = desejados.filter(function(f){ return suportados.indexOf(f) !== -1; });
+  camDetector = new BarcodeDetector({ formats: formatos.length ? formatos : suportados });
+  var reader = document.getElementById('reader');
+  reader.innerHTML = '<video id="cam-video" playsinline autoplay muted></video>';
+  var video = document.getElementById('cam-video');
+  camStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode:'environment', width:{ideal:1280}, height:{ideal:720} } });
+  video.srcObject = camStream;
+  await video.play();
+  var loop = async function() {
+    if (!camAtiva || !camDetector) return;
+    try { var cods = await camDetector.detect(video); if (cods.length) onLeitura(cods[0].rawValue); } catch(e) {}
+    camLoop = requestAnimationFrame(loop);
+  };
+  camLoop = requestAnimationFrame(loop);
+}
+
+function camIniciarFallback() {
+  if (typeof Html5Qrcode === 'undefined') { alert('Câmera não suportada neste navegador.'); camParar(); return; }
+  document.getElementById('reader').innerHTML = '';
+  camH5q = new Html5Qrcode('reader');
+  var F = Html5QrcodeSupportedFormats;
+  camH5q.start({ facingMode:'environment' },
+    { fps:20, qrbox:{ width:280, height:140 }, formatsToSupport:[F.QR_CODE,F.CODE_128,F.CODE_39,F.EAN_13,F.EAN_8,F.UPC_A,F.UPC_E,F.ITF] },
+    onLeitura, function(){}
+  ).catch(function(err) {
+    document.getElementById('r-sub').textContent = 'Erro ao acessar câmera: ' + err;
+    camParar();
+  });
+}
+
+function camParar() {
+  camAtiva = false;
+  if (camLoop) { cancelAnimationFrame(camLoop); camLoop = null; }
+  camDetector = null;
+  if (camStream) { camStream.getTracks().forEach(function(t){ t.stop(); }); camStream = null; }
+  if (camH5q) { var h = camH5q; camH5q = null; h.stop().catch(function(){}).finally(function(){ try{ h.clear(); }catch(e){} }); }
+  document.getElementById('reader').innerHTML = '';
+  document.getElementById('cam-wrap').style.display = 'none';
+  camBotao(false);
+}
+
+function bipSom(tipo) {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    var o = audioCtx.createOscillator(), g = audioCtx.createGain(), t = audioCtx.currentTime;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.type = 'square';
+    o.frequency.value = tipo === 'err' ? 200 : (tipo === 'warn' ? 520 : 900);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + (tipo === 'err' ? 0.32 : 0.14));
+    o.start(t); o.stop(t + (tipo === 'err' ? 0.34 : 0.16));
+  } catch(e) {}
+}
+
+function registrar(codigo) {
+  var cod = String(codigo||'').trim();
+  if (!junta) return { tipo:'err', codigo:cod, motivo:'Anexe o Excel e o Spoke primeiro.' };
+  var achado = junta.porTracking[cod.toUpperCase()];
+  if (!achado) return { tipo:'err', codigo:cod, motivo:'não está no Excel' };
+  if (!achado.num) return { tipo:'err', codigo:cod, motivo:'sem parada no Spoke · ' + achado.pkg.endereco, achado:achado };
+  var ja = !!bipados[achado.pkg.tracking];
+  bipados[achado.pkg.tracking] = true;
+  salvar(); renderProgresso();
+  return { tipo: ja ? 'warn' : 'ok', codigo:cod, achado:achado };
+}
+
+function mostrar(r) {
+  var top = document.getElementById('r-top'), num = document.getElementById('r-num'), sub = document.getElementById('r-sub');
+  if (r.tipo === 'err') {
+    top.textContent = '';
+    num.style.color = 'var(--red)'; num.style.fontSize = '32px';
+    num.textContent = r.achado ? 'SEM PARADA' : 'NÃO ENCONTRADO';
+    sub.textContent = r.codigo + ' · ' + r.motivo;
+    return;
+  }
+  var g = r.achado.grupo;
+  top.textContent = 'PARADA ' + g.parada + (g.pkgs.length > 1 ? ' · ' + g.pkgs.length + ' pacotes' : '');
+  num.style.color = r.tipo === 'warn' ? 'var(--amber)' : 'var(--green)';
+  num.style.fontSize = '64px';
+  num.textContent = pNum(r.achado.num);
+  sub.textContent = (r.tipo === 'warn' ? '⚠ já tinha sido bipado · ' : '') + g.endereco;
+}
+
+function adicionarHist(r) {
+  var hora = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+  var it = r.tipo === 'err'
+    ? { badge:'??', cor:'var(--red)', info:r.motivo, cod:r.codigo }
+    : { badge:'#' + r.achado.grupo.parada + ' · ' + pNum(r.achado.num), cor: r.tipo === 'warn' ? 'var(--amber)' : 'var(--green)', info:r.achado.grupo.endereco, cod:r.codigo };
+  it.hora = hora;
+  hist.unshift(it);
+  if (hist.length > 10) hist.pop();
+  document.getElementById('hist').innerHTML = hist.map(function(h) {
+    return '<div class="hist-it"><span class="hist-b" style="color:' + h.cor + '">' + esc(h.badge) + '</span>'
+      + '<div class="hist-i"><div>' + esc(h.info) + '</div><div class="t">' + esc(h.cod) + '</div></div>'
+      + '<span class="hist-h">' + h.hora + '</span></div>';
+  }).join('');
+}
+
+function onLeitura(codigo) {
+  var agora = Date.now();
+  if (codigo === ultCod && agora - ultTs < 2000) return;  // mesma leitura repetida pela câmera
+  ultCod = codigo; ultTs = agora;
+  if (navigator.vibrate) navigator.vibrate(60);
+  var r = registrar(codigo);
+  bipSom(r.tipo); mostrar(r); adicionarHist(r);
+}
+
+function biparManual() {
+  var el = document.getElementById('cod-manual');
+  var v = el.value.trim(); el.value = '';
+  if (!v) return;
+  var r = registrar(v);
+  bipSom(r.tipo); mostrar(r); adicionarHist(r);
+}
+
+function zerarBipagem() {
+  if (!confirm('Zerar todas as bipagens? Os arquivos anexados continuam.')) return;
+  bipados = {}; hist = [];
+  document.getElementById('hist').innerHTML = '';
+  salvar(); renderProgresso();
+}
+
+restaurar();
+renderTudo();
+</script>
+</body>
+</html>
