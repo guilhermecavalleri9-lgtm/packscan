@@ -2793,9 +2793,9 @@ const server = http.createServer(async (req, res) => {
     return res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
   }
 
-  // página scanner (câmera mobile)
-  if (req.method === 'GET' && pathname === '/scanner') {
-    fs.readFile(path.join(__dirname, 'scanner.html'), (err, data) => {
+  // ─── SCANNER (app separado, sem login): junta Excel + PDF do Spoke e bipa ──
+  if (req.method === 'GET' && (pathname === '/scanner' || pathname === '/scanner/' || pathname === '/scanner/index.html')) {
+    fs.readFile(path.join(__dirname, 'scanner', 'index.html'), (err, data) => {
       if (err) { res.writeHead(404); res.end('Not found'); return; }
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
       res.end(data);
