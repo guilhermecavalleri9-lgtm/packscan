@@ -2793,6 +2793,24 @@ const server = http.createServer(async (req, res) => {
     return res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
   }
 
+  // scanner instalável na tela inicial (igual ao ludo/cobras)
+  if (req.method === 'GET' && pathname === '/scanner/manifest.json') {
+    res.writeHead(200, { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-cache' });
+    return res.end(JSON.stringify({
+      name: 'Scanner Spoke', short_name: 'Scanner', description: 'Junta o Excel com o PDF do Spoke e bipa os pacotes',
+      start_url: '/scanner/', scope: '/scanner', display: 'standalone',
+      background_color: '#0f1117', theme_color: '#0f1117', orientation: 'portrait',
+      icons: [
+        { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+        { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' }
+      ]
+    }));
+  }
+  if (req.method === 'GET' && pathname === '/scanner/sw.js') {
+    res.writeHead(200, { 'Content-Type': 'application/javascript', 'Cache-Control': 'no-cache', 'Service-Worker-Allowed': '/scanner' });
+    return res.end("self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(self.clients.claim()));self.addEventListener('fetch',()=>{});");
+  }
+
   // ─── SCANNER (app separado, sem login): junta Excel + PDF do Spoke e bipa ──
   if (req.method === 'GET' && (pathname === '/scanner' || pathname === '/scanner/' || pathname === '/scanner/index.html')) {
     fs.readFile(path.join(__dirname, 'scanner', 'index.html'), (err, data) => {
