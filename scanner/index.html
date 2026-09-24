@@ -135,7 +135,7 @@ td.p{font-family:var(--mono);color:var(--accent);font-size:11px}
 // ═══════════════════════════════════════════════════════════════════════════════
 // muda a versão quando a leitura dos arquivos muda: o que foi lido pela versão
 // antiga fica pra trás e o usuário anexa de novo
-var LS_CHAVE = 'packscan_scanner_spoke_v2';
+var LS_CHAVE = 'packscan_scanner_spoke_v3';
 var pacotes = [];      // {tracking, tracking2, endereco, bairro, cep, cidade}
 var paradas = [];      // {pos, endereco, cidade, uf, cep}  (como veio do Spoke)
 var excelNome = '', spokeNome = '', excelCols = '';
@@ -269,7 +269,7 @@ async function lerPdfPaginas(file) {
   var paginas = [];
   for (var i = 1; i <= pdf.numPages; i++) {
     var tc = await (await pdf.getPage(i)).getTextContent();
-    paginas.push(tc.items.map(function(it){ return it.str; }).join(' '));
+    paginas.push(tc.items.map(function(it){ return { str:it.str, x:it.transform[4], y:it.transform[5] }; }));
   }
   return paginas;
 }
@@ -297,8 +297,8 @@ function juntarCopias(a, b) {
 function limparEnderecoSpoke(bruto) {
   var s = String(bruto||'').replace(/\s+/g,' ').replace(/[\s,]+$/,'').trim();
   var uf = '', cidade = '';
-  var mUf = s.match(/,\s*([A-Z]{2})$/);
-  if (mUf) { uf = mUf[1]; s = s.slice(0, mUf.index).trim(); }
+  var mUf = s.match(/,\s*([A-Z])\s?([A-Z])$/);   // "SC" às vezes vem quebrado ("S C")
+  if (mUf) { uf = mUf[1] + mUf[2]; s = s.slice(0, mUf.index).trim(); }
   var corpo = s;
   var iCid = s.lastIndexOf(',');
   if (mUf && iCid > 0) { cidade = s.slice(iCid+1).trim(); corpo = s.slice(0, iCid).trim(); }
@@ -312,7 +312,52 @@ function limparEnderecoSpoke(bruto) {
 }
 
 // cada parada: "<nº> <endereço> <CEP> <hora>". O destino final (sem nº) fica de fora.
+// Lê a tabela pela posição de cada texto na página: cada horário (coluna da
+// direita) é uma linha; o nº da parada (coluna da esquerda) e os pedaços de
+// endereço vão pra linha do horário mais próximo na altura. Assim uma parada
+// sem CEP ou com o texto quebrado não se mistura com a vizinha.
 function parseSpoke(paginas) {
+  var stops = [], ultima = 0;
+  paginas.forEach(function(itens) {
+    var cab = itens.filter(function(it){ return it.str.trim() === '#' && it.x < 40; })[0];
+    var corpo = itens.filter(function(it){ return it.str.trim() && (!cab || it.y < cab.y - 3); });
+    var horas = corpo.filter(function(it){ return /^\d{1,2}:\d{2}$/.test(it.str.trim()) && it.x > 300; });
+    if (!horas.length) return;
+    var xHora = Math.min.apply(null, horas.map(function(h){ return h.x; }));
+    var linhas = horas.map(function(h){ return { y:h.y, pos:0, partes:[] }; });
+    function maisPerto(y) {
+      var m = null;
+      linhas.forEach(function(l){ if (!m || Math.abs(l.y - y) < Math.abs(m.y - y)) m = l; });
+      return m;
+    }
+    corpo.forEach(function(it) {
+      var t = it.str.trim();
+      if (it.x < 40) {
+        if (/^\d{1,4}$/.test(t)) { var l = maisPerto(it.y); if (Math.abs(l.y - it.y) < 12) l.pos = parseInt(t, 10); }
+      } else if (it.x < xHora - 5) {
+        maisPerto(it.y).partes.push(it);
+      }
+    });
+    linhas.forEach(function(l) {
+      if (!l.pos || l.pos <= ultima) return;   // sem nº = destino final
+      ultima = l.pos;
+      var txt = l.partes.sort(function(a,b){ return (b.y - a.y) || (a.x - b.x); })
+        .map(function(it){ return it.str; }).join(' ').replace(/\s+/g,' ').trim();
+      var cep = '';
+      // CEP no fim; às vezes vem quebrado na virada da linha ("881075 03")
+      var mCep = txt.match(/,?\s*((?:\d\s?){5}-?\s?(?:\d\s?){2}\d)\s*$/);
+      if (mCep) { cep = mCep[1].replace(/\D/g,''); txt = txt.slice(0, mCep.index); }
+      var e = limparEnderecoSpoke(txt);
+      stops.push({ pos:l.pos, endereco:e.endereco, cidade:e.cidade, uf:e.uf, cep:cep });
+    });
+  });
+  if (!stops.length) stops = parseSpokeTexto(paginas.map(function(itens){ return itens.map(function(it){ return it.str; }).join(' '); }));
+  stops.sort(function(a,b){ return a.pos - b.pos; });
+  return stops;
+}
+
+// leitura antiga, só pelo texto — reserva pra PDF com outro layout
+function parseSpokeTexto(paginas) {
   var re = /(?:^|\s)(\d{1,4})\s+(\S.*?)\s*,?\s*(\d{5}-?\d{3})\s+(\d{1,2}:\d{2})(?!\d)/g;
   var stops = [], ultima = 0;
   paginas.forEach(function(txt) {
@@ -351,35 +396,53 @@ async function anexarSpoke(inp) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 3. JUNTAR — ordem do Spoke, paradas duplicadas viram uma, códigos do Excel
 // ═══════════════════════════════════════════════════════════════════════════════
-var RUA_GENERICA = { rua:1, avenida:1, estrada:1, travessa:1, servidao:1, rodovia:1, alameda:1, dos:1, das:1, casa:1 };
-function numeroCasa(end) { var m = String(end||'').match(/\d{1,6}/); return m ? m[0] : ''; }
+// palavras que não identificam a rua (tipo de via e complemento)
+var RUA_GENERICA = { rua:1, avenida:1, estrada:1, travessa:1, servidao:1, rodovia:1, alameda:1, dos:1, das:1, del:1,
+  casa:1, apto:1, apt:1, aprt:1, apartamento:1, bloco:1, blc:1, fundos:1, lote:1, quadra:1, sobrado:1, loja:1, sala:1,
+  forquilhas:1, sao:1, jose:1, lot:1, res:1, residencial:1, cond:1, condominio:1, predio:1, edificio:1, perto:1, frente:1 };
+var COMPLEMENTO_NUM = /^(casa|ap|apto|apt|aprt|apartamento|bloco|bl|blc|lote|lt|quadra|qd|sala|loja|torre|kitnet|kit)$/;
+
+// números que podem ser o nº da casa: tira os que vêm depois de "casa", "ap",
+// "bloco"… ("Rua X Casa 1 62" → 62). Zeros à esquerda não contam ("02" = "2").
+function numerosCasa(endN) {
+  var toks = endN.split(' '), nums = [];
+  toks.forEach(function(t, i) {
+    if (/^\d{1,6}$/.test(t) && !(i > 0 && COMPLEMENTO_NUM.test(toks[i-1]))) nums.push(String(parseInt(t, 10)));
+  });
+  return nums;
+}
 
 // quanto o pacote do Excel "bate" com a parada do Spoke (0 = não é essa parada).
-// Na planilha da J&T o endereço vem no "Complemento", que às vezes é só "CASA":
-// texto curto/sem número nunca casa sozinho, e número da casa diferente descarta.
+// Na planilha da J&T o endereço vem no "Complemento", que às vezes é só "CASA"
+// ou só "260": texto genérico nunca casa sozinho e nº da casa diferente descarta.
 function pontuar(p, g) {
   var texto = ' ' + g.chaveTexto + ' ';
   var endP = norm(p.endereco);
-  var n = numeroCasa(p.endereco);
-  var numOk = !!n && texto.indexOf(' ' + n + ' ') !== -1;
-  if (n && !numOk) return 0;
+  if (!g.nums) g.nums = ' ' + g.chaveTexto.split(' ').filter(function(t){ return /^\d+$/.test(t); })
+    .map(function(t){ return String(parseInt(t, 10)); }).join(' ') + ' ';
+  var nums = numerosCasa(endP);
+  var numOk = nums.some(function(n){ return g.nums.indexOf(' ' + n + ' ') !== -1; });
+  if (nums.length && !numOk) return 0;
   var cepOk = !!p.cep && p.cep === g.cep;
-  var endOk = endP.length >= 8 && /[a-z]/.test(endP) && /\d/.test(endP) && texto.indexOf(' ' + endP + ' ') !== -1;
-  var pts = endOk && cepOk ? 10 : endOk ? 7 : (cepOk && numOk) ? 6 : 0;
+  var rua = endP.split(' ').filter(function(t){ return t.length >= 3 && /^[a-z]+$/.test(t) && !RUA_GENERICA[t]; });
+  var ruaHit = rua.filter(function(t){ return texto.indexOf(' ' + t + ' ') !== -1; }).length;
+  var ruaOk = rua.length > 0 && ruaHit * 2 >= rua.length;
+  // o complemento inteiro aparece no endereço do Spoke
+  var contido = endP.length >= 8 && texto.indexOf(' ' + endP + ' ') !== -1;
+  var endOk = contido && (/\d/.test(endP) ? true : (cepOk && ruaHit >= 2));
+  var pts = 0;
+  if (endOk) pts = cepOk ? 10 : 7;
+  else if (numOk && ruaOk) pts = cepOk ? 9 : 8;               // rua + nº (CEP pode vir diferente/ausente)
+  else if (cepOk && numOk && !rua.length) pts = 6;            // só nº no Excel ("3147 apto 203")
+  else if (cepOk && ruaHit === rua.length && rua.length && !nums.length) pts = 5;  // só rua ("Rua Narciso Casa 02") — ver juntar()
   if (!pts) return 0;
-  // CEP + nº só vale se o nome da rua também bater (um CEP cobre várias ruas).
-  // Quando o Excel não traz a rua (ex.: complemento "3147 apto 203"), vale só CEP + nº.
-  if (!endOk) {
-    var rua = (endP.split(/\s\d/)[0] || '').split(' ').filter(function(t){ return t.length >= 3 && !RUA_GENERICA[t]; });
-    if (rua.length) {
-      var na = rua.filter(function(t){ return texto.indexOf(' ' + t + ' ') !== -1; }).length;
-      if (na * 2 < rua.length) return 0;
-    }
-  }
   // desempate entre paradas parecidas (mesmo CEP e nº, complemento diferente)
-  var toks = endP.split(' ').filter(Boolean), achou = 0;
-  toks.forEach(function(t){ if (texto.indexOf(' ' + t + ' ') !== -1) achou++; });
-  return pts + (toks.length ? achou / toks.length : 0);
+  // (e, se ainda empatar, a parada com menos texto que não está no Excel)
+  var toks = endP.split(' ').filter(Boolean), achou = 0, doPacote = {};
+  toks.forEach(function(t){ doPacote[t] = 1; if (texto.indexOf(' ' + t + ' ') !== -1) achou++; });
+  var sobra = {};
+  g.chaveTexto.split(' ').forEach(function(t){ if (t && !doPacote[t]) sobra[t] = 1; });
+  return pts + (toks.length ? achou / toks.length : 0) - Object.keys(sobra).length * 0.001;
 }
 
 function juntar() {
@@ -395,15 +458,28 @@ function juntar() {
     }
     g.posSpoke.push(s.pos);
   });
-  // 2) cada pacote vai pra parada que mais bate (empate: a que vem primeiro)
-  var semParada = [];
+  // 2) cada pacote vai pra parada que mais bate (empate: a que vem primeiro).
+  //    Casamento fraco (só rua sem nº, ou só o CEP) fica pra depois e só vale
+  //    pra parada que ficou sem nenhum pacote.
+  var semParada = [], pendentes = [];
   pacotes.forEach(function(p) {
-    var melhor = null, melhorPts = 0;
+    var melhor = null, melhorPts = 0, soRua = [];
     grupos.forEach(function(g) {
       var pts = pontuar(p, g);
+      if (pts >= 5 && pts < 6) soRua.push(g);
       if (pts > melhorPts) { melhorPts = pts; melhor = g; }
     });
-    if (melhor) melhor.pkgs.push(p); else semParada.push(p);
+    if (melhor && melhorPts >= 6) melhor.pkgs.push(p);
+    else pendentes.push({ p:p, soRua:soRua });
+  });
+  pendentes.forEach(function(x) {
+    var p = x.p, vazia = function(g){ return !g.pkgs.length; };
+    // só pelo nome da rua (sem nº): uma única parada vazia com essa rua
+    var cands = x.soRua.filter(vazia);
+    // senão, o Excel só traz o CEP ("Casa"): uma única parada vazia com esse CEP
+    if (!x.soRua.length && p.cep && !numerosCasa(norm(p.endereco)).length)
+      cands = grupos.filter(function(g){ return g.cep === p.cep && vazia(g); });
+    if (cands.length === 1) cands[0].pkgs.push(p); else semParada.push(p);
   });
   // 3) só ficam as paradas que casaram com o Excel, renumeradas na ordem do Spoke;
   //    todos os pacotes do mesmo endereço levam o mesmo número: o da parada
@@ -442,7 +518,8 @@ var XLSX_COLS_ROTA = [{wch:18},{wch:38},{wch:16},{wch:14},{wch:14},{wch:12},{wch
 function linhasPlanilha(j) {
   return j.grupos.map(function(g) {
     var bairro = (g.pkgs[0] && g.pkgs[0].bairro) || '';
-    return ['R01', g.endereco, bairro, g.cidade, formatarCep(g.cep), '', '', '', g.nums.join(', ')];
+    var cidade = g.cidade || (g.pkgs[0] && g.pkgs[0].cidade) || '';
+    return ['R01', g.endereco, bairro, cidade, formatarCep(g.cep), '', '', '', g.nums.join(', ')];
   });
 }
 
