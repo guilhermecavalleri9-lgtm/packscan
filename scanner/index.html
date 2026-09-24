@@ -378,7 +378,12 @@ function juntar() {
     });
     if (melhor) melhor.pkgs.push(p); else semParada.push(p);
   });
-  // 3) todos os pacotes do mesmo endereço levam o mesmo número: o da parada
+  // 3) só ficam as paradas que casaram com o Excel, renumeradas na ordem do Spoke;
+  //    todos os pacotes do mesmo endereço levam o mesmo número: o da parada
+  var paradasVazias = grupos.filter(function(g){ return !g.pkgs.length; });
+  var todas = grupos.length;
+  grupos = grupos.filter(function(g){ return g.pkgs.length; });
+  grupos.forEach(function(g, i){ g.parada = i + 1; });
   var porTracking = {}, n = 0;
   grupos.forEach(function(g) {
     g.nums = g.pkgs.length ? [pNum(g.parada) + (g.pkgs.length > 1 ? ' (' + g.pkgs.length + ' pacotes)' : '')] : [];
@@ -394,8 +399,8 @@ function juntar() {
   });
   return {
     grupos: grupos, porTracking: porTracking, semParada: semParada, total: n,
-    paradasVazias: grupos.filter(function(g){ return !g.pkgs.length; }),
-    duplicadas: paradas.length - grupos.length
+    paradasVazias: paradasVazias,
+    duplicadas: paradas.length - todas
   };
 }
 
@@ -453,8 +458,8 @@ function renderTudo() {
         + (junta.semParada.length > 30 ? '<li>… +' + (junta.semParada.length-30) + '</li>' : '') + '</ul></div>';
     }
     if (junta.paradasVazias.length) {
-      avisos += '<div class="warnbox">⚠ <strong>' + junta.paradasVazias.length + ' parada(s) do Spoke sem código</strong> (saem na planilha sem pacote):<ul>'
-        + junta.paradasVazias.slice(0, 30).map(function(g){ return '<li>Parada ' + g.parada + ' — ' + esc(g.endereco) + '</li>'; }).join('') + '</ul></div>';
+      avisos += '<div class="warnbox">⚠ <strong>' + junta.paradasVazias.length + ' parada(s) do Spoke sem pacote no Excel</strong> (ficaram fora da planilha):<ul>'
+        + junta.paradasVazias.slice(0, 30).map(function(g){ return '<li>Spoke #' + g.posSpoke[0] + ' — ' + esc(g.endereco) + '</li>'; }).join('') + '</ul></div>';
     }
     av.innerHTML = avisos;
     pv.innerHTML = '<table><thead><tr><th>#</th><th>Endereço (Spoke)</th><th>Pacotes</th></tr></thead><tbody>'
