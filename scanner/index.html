@@ -133,7 +133,9 @@ td.p{font-family:var(--mono);color:var(--accent);font-size:11px}
 // ═══════════════════════════════════════════════════════════════════════════════
 // ESTADO — excel (pacotes), spoke (paradas), bipados; salvo no aparelho
 // ═══════════════════════════════════════════════════════════════════════════════
-var LS_CHAVE = 'packscan_scanner_spoke';
+// muda a versão quando a leitura dos arquivos muda: o que foi lido pela versão
+// antiga fica pra trás e o usuário anexa de novo
+var LS_CHAVE = 'packscan_scanner_spoke_v2';
 var pacotes = [];      // {tracking, tracking2, endereco, bairro, cep, cidade}
 var paradas = [];      // {pos, endereco, cidade, uf, cep}  (como veio do Spoke)
 var excelNome = '', spokeNome = '', excelCols = '';
