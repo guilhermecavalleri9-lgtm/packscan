@@ -136,13 +136,13 @@ td.p{font-family:var(--mono);color:var(--accent);font-size:11px}
 var LS_CHAVE = 'packscan_scanner_spoke';
 var pacotes = [];      // {tracking, tracking2, endereco, bairro, cep, cidade}
 var paradas = [];      // {pos, endereco, cidade, uf, cep}  (como veio do Spoke)
-var excelNome = '', spokeNome = '';
+var excelNome = '', spokeNome = '', excelCols = '';
 var bipados = {};      // tracking -> true
 var junta = null;      // resultado de juntar(): {grupos, porTracking, semParada, paradasVazias}
 
 function salvar() {
   try {
-    localStorage.setItem(LS_CHAVE, JSON.stringify({ pacotes:pacotes, paradas:paradas, excelNome:excelNome, spokeNome:spokeNome, bipados:bipados }));
+    localStorage.setItem(LS_CHAVE, JSON.stringify({ pacotes:pacotes, paradas:paradas, excelNome:excelNome, excelCols:excelCols, spokeNome:spokeNome, bipados:bipados }));
   } catch(e) {}
 }
 function restaurar() {
@@ -150,7 +150,7 @@ function restaurar() {
     var s = JSON.parse(localStorage.getItem(LS_CHAVE) || 'null');
     if (!s) return;
     pacotes = s.pacotes || []; paradas = s.paradas || [];
-    excelNome = s.excelNome || ''; spokeNome = s.spokeNome || '';
+    excelNome = s.excelNome || ''; excelCols = s.excelCols || ''; spokeNome = s.spokeNome || '';
     bipados = s.bipados || {};
   } catch(e) {}
 }
@@ -225,6 +225,9 @@ function pacotesDoAoa(aoa) {
     lista.push({ tracking:t, tracking2:v(row,c.tracking2), endereco:v(row,c.endereco), bairro:v(row,c.bairro),
       cep:v(row,c.cep).replace(/\D/g,''), cidade:v(row,c.cidade) });
   });
+  var nomes = { tracking:'Código', endereco:'Endereço', cep:'CEP', bairro:'Bairro' };
+  lista.colunas = Object.keys(nomes).filter(function(k){ return c[k] >= 0; })
+    .map(function(k){ return nomes[k] + ': ' + hdrs[c[k]]; }).join(' · ');
   return lista;
 }
 
@@ -235,7 +238,7 @@ async function anexarExcel(inp) {
   try {
     var lista = pacotesDoAoa(await lerLinhasExcel(f));
     if (!lista.length) throw new Error('a planilha não tem pacotes');
-    pacotes = lista; excelNome = f.name; bipados = {};
+    pacotes = lista; excelNome = f.name; excelCols = lista.colunas; bipados = {};
     salvar(); renderTudo();
   } catch(e) { msg.innerHTML = '<span class="err">✗ ' + esc(e.message) + '</span>'; }
 }
@@ -333,15 +336,23 @@ async function anexarSpoke(inp) {
 // ═══════════════════════════════════════════════════════════════════════════════
 function numeroCasa(end) { var m = String(end||'').match(/\d{1,6}/); return m ? m[0] : ''; }
 
-// quanto o pacote do Excel "bate" com a parada do Spoke
+// quanto o pacote do Excel "bate" com a parada do Spoke (0 = não é essa parada).
+// Na planilha da J&T o endereço vem no "Complemento", que às vezes é só "CASA":
+// texto curto/sem número nunca casa sozinho, e número da casa diferente descarta.
 function pontuar(p, g) {
-  var pts = 0;
+  var texto = ' ' + g.chaveTexto + ' ';
   var endP = norm(p.endereco);
-  if (endP && (' ' + g.chaveTexto + ' ').indexOf(' ' + endP + ' ') !== -1) pts += 5;
-  if (p.cep && p.cep === g.cep) pts += 2;
   var n = numeroCasa(p.endereco);
-  if (n && (' ' + g.chaveTexto + ' ').indexOf(' ' + n + ' ') !== -1) pts += 2;
-  return pts;
+  var numOk = !!n && texto.indexOf(' ' + n + ' ') !== -1;
+  if (n && !numOk) return 0;
+  var cepOk = !!p.cep && p.cep === g.cep;
+  var endOk = endP.length >= 8 && /[a-z]/.test(endP) && /\d/.test(endP) && texto.indexOf(' ' + endP + ' ') !== -1;
+  var pts = endOk && cepOk ? 10 : endOk ? 7 : (cepOk && numOk) ? 6 : 0;
+  if (!pts) return 0;
+  // desempate entre paradas parecidas (mesmo CEP e nº, complemento diferente)
+  var toks = endP.split(' ').filter(Boolean), achou = 0;
+  toks.forEach(function(t){ if (texto.indexOf(' ' + t + ' ') !== -1) achou++; });
+  return pts + (toks.length ? achou / toks.length : 0);
 }
 
 function juntar() {
@@ -365,7 +376,7 @@ function juntar() {
       var pts = pontuar(p, g);
       if (pts > melhorPts) { melhorPts = pts; melhor = g; }
     });
-    if (melhor && melhorPts >= 4) melhor.pkgs.push(p); else semParada.push(p);
+    if (melhor) melhor.pkgs.push(p); else semParada.push(p);
   });
   // 3) numera os pacotes na ordem das paradas (P001, P002…), igual ao PackScan
   var porTracking = {}, n = 0;
@@ -417,7 +428,8 @@ function renderTudo() {
   document.getElementById('st-spoke').classList.toggle('done', okSpoke);
   document.getElementById('excel-nome').textContent = excelNome;
   document.getElementById('spoke-nome').textContent = spokeNome;
-  document.getElementById('excel-msg').innerHTML = okExcel ? '<span class="ok">✓ ' + pacotes.length + ' pacote(s)</span>' : '';
+  document.getElementById('excel-msg').innerHTML = okExcel ? '<span class="ok">✓ ' + pacotes.length + ' pacote(s)</span>'
+    + (excelCols ? '<br><span style="color:var(--text3);font-size:11px">Colunas lidas — ' + esc(excelCols) + '</span>' : '') : '';
   document.getElementById('spoke-msg').innerHTML = okSpoke ? '<span class="ok">✓ ' + paradas.length + ' parada(s) na ordem do Spoke</span>' : '';
 
   junta = (okExcel && okSpoke) ? juntar() : null;
@@ -431,6 +443,10 @@ function renderTudo() {
     jm.innerHTML = '<span class="ok">✓ ' + junta.grupos.length + ' parada(s) · ' + junta.total + ' pacote(s) numerados</span>'
       + (junta.duplicadas ? ' · ' + junta.duplicadas + ' parada(s) duplicada(s) juntada(s)' : '');
     var avisos = '';
+    if (junta.total * 2 < Math.min(pacotes.length, paradas.length)) {
+      avisos += '<div class="warnbox" style="color:var(--red);border-color:#6b2a33;background:#2d171b">✗ <strong>Quase nada casou</strong> (' + junta.total + ' de ' + pacotes.length
+        + ' pacotes). Confira se o Excel e o PDF do Spoke são da <strong>mesma rota e do mesmo dia</strong>.</div>';
+    }
     if (junta.semParada.length) {
       avisos += '<div class="warnbox">⚠ <strong>' + junta.semParada.length + ' pacote(s) do Excel não casaram com nenhuma parada</strong> (ficam fora da planilha):<ul>'
         + junta.semParada.slice(0, 30).map(function(p){ return '<li>' + esc(p.tracking) + ' — ' + esc(p.endereco) + '</li>'; }).join('')
