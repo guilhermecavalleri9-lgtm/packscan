@@ -3477,17 +3477,21 @@ function linhasExcelRota(pkgs, atId) {
     var key = temNumeroCasa(endereco)
       ? (chaveEnderecoBase(endereco)+'|'+p.cep+'|'+(p.cidade||''))
       : ('__sn__|'+(p.tracking||p.id||p.numNaRota));
-    if (!mapa[key]) { mapa[key]={ nums:[], endereco:endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'', lat:p.lat, lng:p.lng, precisao:p.precisao }; grupos.push(mapa[key]); }
+    if (!mapa[key]) { mapa[key]={ nums:[], cods:[], cods2:[], endereco:endereco, bairro:p.bairro, cep:p.cep, cidade:p.cidade||'', lat:p.lat, lng:p.lng, precisao:p.precisao }; grupos.push(mapa[key]); }
     mapa[key].nums.push('P'+String(p.numNaRota).padStart(3,'0'));
+    // código de barras do pacote (o mesmo que o motorista bipa) — quando há mais
+    // de um pacote na parada, todos os códigos aparecem na mesma linha
+    if (p.tracking) mapa[key].cods.push(String(p.tracking));
+    if (p.tracking2) mapa[key].cods2.push(String(p.tracking2));
   });
   return grupos.map(function(g){
     var temCoordConfiavel = g.precisao==='MANUAL'||g.precisao==='CEP_MANUAL';
-    return [atId, g.endereco, g.bairro, g.cidade, formatarCep(g.cep), temCoordConfiavel&&g.lat?g.lat.toFixed(6):'', temCoordConfiavel&&g.lng?g.lng.toFixed(6):'', '', g.nums.join(', ')];
+    return [atId, g.endereco, g.bairro, g.cidade, formatarCep(g.cep), temCoordConfiavel&&g.lat?g.lat.toFixed(6):'', temCoordConfiavel&&g.lng?g.lng.toFixed(6):'', '', g.nums.join(', '), g.cods.join(', '), g.cods2.join(', ')];
   });
 }
 
-var XLSX_HEADER_ROTA = ['AT ID','Destination Address','Bairro','City','Zipcode/Postal code','Latitude','Longitude','Address Line 2','Pacotes na Parada'];
-var XLSX_COLS_ROTA = [{wch:18},{wch:38},{wch:16},{wch:14},{wch:14},{wch:12},{wch:12},{wch:24},{wch:18}];
+var XLSX_HEADER_ROTA = ['AT ID','Destination Address','Bairro','City','Zipcode/Postal code','Latitude','Longitude','Address Line 2','Pacotes na Parada','Código de barras','Código 2'];
+var XLSX_COLS_ROTA = [{wch:18},{wch:38},{wch:16},{wch:14},{wch:14},{wch:12},{wch:12},{wch:24},{wch:18},{wch:30},{wch:24}];
 
 function atIdRota(r) { return 'R'+String(r.id).padStart(2,'0'); }
 
