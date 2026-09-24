@@ -173,9 +173,10 @@ function pNum(n) { return 'P' + String(n).padStart(3,'0'); }
 function acharColuna(hdrs, want, avoid) {
   var melhor = -1, melhorPts = 0;
   hdrs.forEach(function(h, i) {
-    var t = String(h||'').toLowerCase();
+    var t = String(h||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
     if (!want.some(function(k){ return t.indexOf(k) !== -1; })) return;
     var pts = 1;
+    if (/barra/.test(t)) pts += 2;                                          // "Código de barras
     if (/destin/.test(t)) pts += 3;                                         // prefere destino/destinatário
     if (avoid.some(function(a){ return t.indexOf(a) !== -1; })) pts -= 10;  // foge de origem
     if (pts > melhorPts) { melhorPts = pts; melhor = i; }
@@ -215,17 +216,31 @@ function pacotesDoAoa(aoa) {
     cidade:    acharColuna(hdrs, ['cidade','city','munic'], ['origem']),
     tracking2: acharColuna(hdrs, ['terceiro','pedidos terceiros','pedido terceiro','codigo 2','cod2','2o codigo','2º codigo'], [])
   };
+  if (c.tracking2 === c.tracking) c.tracking2 = -1;
   if (c.tracking < 0) throw new Error('não achei a coluna do código (pedido / tracking)');
   function v(row, i) { return i < 0 ? '' : String(row[i] == null ? '' : row[i]).trim(); }
+  function codigos(txt) { return txt.split(/[,;\s]+/).filter(Boolean); }
   var vistos = {}, lista = [];
-  aoa.slice(1).forEach(function(row) {
-    var t = v(row, c.tracking);
-    if (!t || vistos[t.toUpperCase()]) return;
-    vistos[t.toUpperCase()] = 1;
-    lista.push({ tracking:t, tracking2:v(row,c.tracking2), endereco:v(row,c.endereco), bairro:v(row,c.bairro),
-      cep:v(row,c.cep).replace(/\D/g,''), cidade:v(row,c.cidade) });
+  // uma linha pode ter vários pacotes (planilha do motorista do PackScan:
+  // "999…, 888…" na mesma célula); o Código 2 vem na mesma ordem quando todos
+  // têm, senão fica valendo pra linha toda
+  aoa.slice(1).forEach(function(row, iLinha) {
+    var cods = codigos(v(row, c.tracking)), cods2 = codigos(v(row, c.tracking2));
+    var alinhado = cods2.length === cods.length;
+    var base = { endereco:v(row,c.endereco), bairro:v(row,c.bairro), cep:v(row,c.cep).replace(/\D/g,''), cidade:v(row,c.cidade) };
+    var daLinha = [];
+    cods.forEach(function(t, i) {
+      if (vistos[t.toUpperCase()]) return;
+      vistos[t.toUpperCase()] = 1;
+      var p = Object.assign({ tracking:t, tracking2: alinhado ? cods2[i] : '' }, base);
+      lista.push(p); daLinha.push(p);
+    });
+    if (!alinhado && cods2.length && daLinha.length) {
+      daLinha.forEach(function(p){ p.linha = iLinha; });
+      daLinha[0].extras = cods2;
+    }
   });
-  var nomes = { tracking:'Código', endereco:'Endereço', cep:'CEP', bairro:'Bairro' };
+  var nomes = { tracking:'Código', tracking2:'Código 2', endereco:'Endereço', cep:'CEP', bairro:'Bairro' };
   lista.colunas = Object.keys(nomes).filter(function(k){ return c[k] >= 0; })
     .map(function(k){ return nomes[k] + ': ' + hdrs[c[k]]; }).join(' · ');
   return lista;
@@ -334,6 +349,7 @@ async function anexarSpoke(inp) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // 3. JUNTAR — ordem do Spoke, paradas duplicadas viram uma, códigos do Excel
 // ═══════════════════════════════════════════════════════════════════════════════
+var RUA_GENERICA = { rua:1, avenida:1, estrada:1, travessa:1, servidao:1, rodovia:1, alameda:1, dos:1, das:1, casa:1 };
 function numeroCasa(end) { var m = String(end||'').match(/\d{1,6}/); return m ? m[0] : ''; }
 
 // quanto o pacote do Excel "bate" com a parada do Spoke (0 = não é essa parada).
@@ -349,6 +365,15 @@ function pontuar(p, g) {
   var endOk = endP.length >= 8 && /[a-z]/.test(endP) && /\d/.test(endP) && texto.indexOf(' ' + endP + ' ') !== -1;
   var pts = endOk && cepOk ? 10 : endOk ? 7 : (cepOk && numOk) ? 6 : 0;
   if (!pts) return 0;
+  // CEP + nº só vale se o nome da rua também bater (um CEP cobre várias ruas).
+  // Quando o Excel não traz a rua (ex.: complemento "3147 apto 203"), vale só CEP + nº.
+  if (!endOk) {
+    var rua = (endP.split(/\s\d/)[0] || '').split(' ').filter(function(t){ return t.length >= 3 && !RUA_GENERICA[t]; });
+    if (rua.length) {
+      var na = rua.filter(function(t){ return texto.indexOf(' ' + t + ' ') !== -1; }).length;
+      if (na * 2 < rua.length) return 0;
+    }
+  }
   // desempate entre paradas parecidas (mesmo CEP e nº, complemento diferente)
   var toks = endP.split(' ').filter(Boolean), achou = 0;
   toks.forEach(function(t){ if (texto.indexOf(' ' + t + ' ') !== -1) achou++; });
@@ -391,6 +416,10 @@ function juntar() {
       n++;
       porTracking[p.tracking.toUpperCase()] = { pkg:p, num:g.parada, grupo:g };
       if (p.tracking2) porTracking[p.tracking2.toUpperCase()] = porTracking[p.tracking2.toUpperCase()] || { pkg:p, num:g.parada, grupo:g };
+      (p.extras || []).forEach(function(x) {
+        var linha = g.pkgs.filter(function(q){ return q.linha === p.linha; });
+        porTracking[x.toUpperCase()] = porTracking[x.toUpperCase()] || { pkg:p, linha:linha, num:g.parada, grupo:g };
+      });
     });
   });
   semParada.forEach(function(p) {
@@ -566,6 +595,15 @@ function registrar(codigo) {
   var achado = junta.porTracking[cod.toUpperCase()];
   if (!achado) return { tipo:'err', codigo:cod, motivo:'não está no Excel' };
   if (!achado.num) return { tipo:'err', codigo:cod, motivo:'sem parada no Spoke · ' + achado.pkg.endereco, achado:achado };
+  if (achado.linha) {
+    // Código 2 sem par definido (na linha tem pacote sem Código 2): marca o
+    // próximo pacote ainda não bipado e lembra dele, pra não contar duas vezes
+    var chaveX = 'x:' + cod.toUpperCase();
+    var pkgX = achado.linha.filter(function(q){ return q.tracking === bipados[chaveX]; })[0]
+      || achado.linha.filter(function(q){ return !bipados[q.tracking]; })[0] || achado.pkg;
+    if (!bipados[chaveX]) bipados[chaveX] = pkgX.tracking;
+    achado = Object.assign({}, achado, { pkg: pkgX });
+  }
   var ja = !!bipados[achado.pkg.tracking];
   bipados[achado.pkg.tracking] = true;
   salvar(); renderProgresso();
