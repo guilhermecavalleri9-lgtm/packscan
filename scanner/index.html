@@ -52,9 +52,9 @@ td.p{font-family:var(--mono);color:var(--accent);font-size:11px}
 .cam-wrap video{width:100%;display:block}
 .cam-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
 .cam-frame{width:70%;height:90px;border:2px solid var(--accent);border-radius:8px;box-shadow:0 0 0 9999px rgba(0,0,0,.35)}
-.result{text-align:center;padding:16px 8px 12px;min-height:130px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.result{text-align:center;padding:14px 10px;margin-bottom:10px;min-height:120px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);scroll-margin-top:64px;display:flex;flex-direction:column;align-items:center;justify-content:center}
 .r-top{font-size:15px;color:var(--text2);font-family:var(--mono);letter-spacing:1px;min-height:18px}
-.r-num{font-size:22px;font-weight:800;font-family:var(--mono);line-height:1.05;color:var(--text3);letter-spacing:2px;margin:4px 0}
+.r-num{font-size:44px;font-weight:800;font-family:var(--mono);line-height:1.05;color:var(--text3);letter-spacing:2px;margin:4px 0}
 .r-sub{font-size:13px;color:var(--text2);max-width:420px;line-height:1.4}
 .prog{height:6px;background:var(--bg3);border-radius:3px;overflow:hidden;margin:4px 0 10px}
 .prog > div{height:100%;background:var(--green);width:0;transition:width .3s}
@@ -109,16 +109,16 @@ td.p{font-family:var(--mono);color:var(--accent);font-size:11px}
   <div class="step" id="st-cam">
     <div class="step-hd"><div class="step-n">4</div><div class="step-t">Bipar pela câmera</div></div>
     <div class="prog"><div id="bip-prog"></div></div>
+    <div class="result" id="result">
+      <div class="r-top" id="r-top"></div>
+      <div class="r-num" id="r-num">aguardando</div>
+      <div class="r-sub" id="r-sub"></div>
+    </div>
     <div class="cam-wrap" id="cam-wrap" style="display:none">
       <div id="reader"></div>
       <div class="cam-overlay"><div class="cam-frame"></div></div>
     </div>
     <button class="btn btn-p" id="btn-cam" onclick="camToggle()">📷 Ativar câmera</button>
-    <div class="result">
-      <div class="r-top" id="r-top"></div>
-      <div class="r-num" id="r-num">aguardando leitura</div>
-      <div class="r-sub" id="r-sub"></div>
-    </div>
     <div class="manual">
       <input id="cod-manual" placeholder="digitar código" autocomplete="off" autocapitalize="characters" onkeydown="if(event.key==='Enter')biparManual()">
       <button class="btn btn-sm" onclick="biparManual()">Bipar</button>
@@ -619,6 +619,11 @@ function camBotao(parar) {
 async function camIniciar() {
   document.getElementById('cam-wrap').style.display = 'block';
   camBotao(true); camAtiva = true;
+  // resultado em cima e câmera logo abaixo, os dois na tela (o espaço extra no
+  // fim deixa rolar até lá mesmo com pouca coisa embaixo da câmera)
+  document.body.style.paddingBottom = '70vh';
+  var rolar = function(){ try { document.getElementById('result').scrollIntoView({ block:'start' }); } catch(e) {} };
+  rolar(); setTimeout(rolar, 800);
   if ('BarcodeDetector' in window) {
     try { await camIniciarNativo(); return; } catch(e) { console.warn('BarcodeDetector falhou, usando fallback', e); }
   }
@@ -666,6 +671,7 @@ function camParar() {
   if (camH5q) { var h = camH5q; camH5q = null; h.stop().catch(function(){}).finally(function(){ try{ h.clear(); }catch(e){} }); }
   document.getElementById('reader').innerHTML = '';
   document.getElementById('cam-wrap').style.display = 'none';
+  document.body.style.paddingBottom = '';
   camBotao(false);
 }
 
