@@ -412,6 +412,18 @@ function numerosCasa(endN) {
   return nums;
 }
 
+// "rua + nº da casa" de um endereço do Spoke: "Rua Vidal Vicente Andrade 1171
+// Bloco 8, Apto 302" → "vidal vicente andrade|1171". Vazio se não achar os dois.
+function chaveRuaNumero(end) {
+  var toks = norm(end).split(' ');
+  for (var i = 0; i < toks.length; i++) {
+    if (!/^\d{1,6}$/.test(toks[i]) || (i > 0 && COMPLEMENTO_NUM.test(toks[i-1]))) continue;
+    var rua = toks.slice(0, i).filter(function(t){ return t.length >= 3 && /^[a-z]+$/.test(t) && !RUA_GENERICA[t]; });
+    return rua.length ? rua.slice(0, 3).join(' ') + '|' + parseInt(toks[i], 10) : '';
+  }
+  return '';
+}
+
 // quanto o pacote do Excel "bate" com a parada do Spoke (0 = não é essa parada).
 // Na planilha da J&T o endereço vem no "Complemento", que às vezes é só "CASA"
 // ou só "260": texto genérico nunca casa sozinho e nº da casa diferente descarta.
@@ -446,15 +458,19 @@ function pontuar(p, g) {
 }
 
 function juntar() {
-  // 1) paradas com o mesmo endereço viram uma só, na posição da primeira
+  // 1) paradas do mesmo endereço (mesma rua + mesmo nº, qualquer bloco/apto/casa)
+  //    viram uma só, na posição da primeira vez que o endereço aparece
   var grupos = [], porChave = {};
   paradas.forEach(function(s) {
-    var chave = norm(s.endereco) + '|' + s.cep;
+    var chave = chaveRuaNumero(s.endereco) || (norm(s.endereco) + '|' + s.cep);
     var g = porChave[chave];
     if (!g) {
       g = porChave[chave] = { parada:grupos.length+1, posSpoke:[], endereco:s.endereco, cidade:s.cidade, uf:s.uf, cep:s.cep,
         chaveTexto:norm(s.endereco + ' ' + s.cidade), pkgs:[] };
       grupos.push(g);
+    } else {
+      g.chaveTexto += ' ' + norm(s.endereco);   // o pacote pode casar com qualquer uma das juntadas
+      if (!g.cep) g.cep = s.cep;
     }
     g.posSpoke.push(s.pos);
   });
