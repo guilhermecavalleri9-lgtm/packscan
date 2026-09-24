@@ -6,6 +6,10 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0f1117">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Scanner">
+<link rel="manifest" href="/scanner/manifest.json">
+<link rel="apple-touch-icon" href="/icon-180.png">
 <title>Scanner Spoke</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -770,6 +774,7 @@ function zerarBipagem() {
 
 restaurar();
 renderTudo();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/scanner/sw.js', { scope:'/scanner' }).catch(function(){});
 </script>
 </body>
 </html>
