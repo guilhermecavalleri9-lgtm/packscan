@@ -378,14 +378,14 @@ function juntar() {
     });
     if (melhor) melhor.pkgs.push(p); else semParada.push(p);
   });
-  // 3) numera os pacotes na ordem das paradas (P001, P002…), igual ao PackScan
+  // 3) todos os pacotes do mesmo endereço levam o mesmo número: o da parada
   var porTracking = {}, n = 0;
   grupos.forEach(function(g) {
-    g.nums = g.pkgs.map(function(p) {
+    g.nums = g.pkgs.length ? [pNum(g.parada) + (g.pkgs.length > 1 ? ' (' + g.pkgs.length + ' pacotes)' : '')] : [];
+    g.pkgs.forEach(function(p) {
       n++;
-      porTracking[p.tracking.toUpperCase()] = { pkg:p, num:n, grupo:g };
-      if (p.tracking2) porTracking[p.tracking2.toUpperCase()] = porTracking[p.tracking2.toUpperCase()] || { pkg:p, num:n, grupo:g };
-      return pNum(n);
+      porTracking[p.tracking.toUpperCase()] = { pkg:p, num:g.parada, grupo:g };
+      if (p.tracking2) porTracking[p.tracking2.toUpperCase()] = porTracking[p.tracking2.toUpperCase()] || { pkg:p, num:g.parada, grupo:g };
     });
   });
   semParada.forEach(function(p) {
@@ -577,7 +577,8 @@ function mostrar(r) {
     return;
   }
   var g = r.achado.grupo;
-  top.textContent = 'PARADA ' + g.parada + (g.pkgs.length > 1 ? ' · ' + g.pkgs.length + ' pacotes' : '');
+  var feitos = g.pkgs.filter(function(p){ return bipados[p.tracking]; }).length;
+  top.textContent = g.pkgs.length > 1 ? g.pkgs.length + ' pacotes neste endereço · ' + feitos + ' bipado(s)' : '';
   num.style.color = r.tipo === 'warn' ? 'var(--amber)' : 'var(--green)';
   num.style.fontSize = '64px';
   num.textContent = pNum(r.achado.num);
@@ -588,7 +589,7 @@ function adicionarHist(r) {
   var hora = new Date().toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
   var it = r.tipo === 'err'
     ? { badge:'??', cor:'var(--red)', info:r.motivo, cod:r.codigo }
-    : { badge:'#' + r.achado.grupo.parada + ' · ' + pNum(r.achado.num), cor: r.tipo === 'warn' ? 'var(--amber)' : 'var(--green)', info:r.achado.grupo.endereco, cod:r.codigo };
+    : { badge:pNum(r.achado.num), cor: r.tipo === 'warn' ? 'var(--amber)' : 'var(--green)', info:r.achado.grupo.endereco, cod:r.codigo };
   it.hora = hora;
   hist.unshift(it);
   if (hist.length > 10) hist.pop();
