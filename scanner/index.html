@@ -130,6 +130,9 @@ td.p{font-family:var(--mono);color:var(--accent);font-size:11px}
     <div id="hist" style="margin-top:8px"></div>
     <div class="foot"><button class="btn btn-sm" onclick="zerarBipagem()">Zerar bipagem</button></div>
   </div>
+  <div style="text-align:center;font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px">versão 25/09
+
+  </div>
 
 </div>
 
@@ -422,10 +425,19 @@ function chaveRuaNumero(end) {
   var toks = norm(end).split(' ');
   for (var i = 0; i < toks.length; i++) {
     if (!/^\d{1,6}$/.test(toks[i]) || (i > 0 && COMPLEMENTO_NUM.test(toks[i-1]))) continue;
-    var rua = toks.slice(0, i).filter(function(t){ return t.length >= 3 && /^[a-z]+$/.test(t) && !RUA_GENERICA[t]; });
+    var sig = function(t){ return t.length >= 3 && /^[a-z]+$/.test(t) && !RUA_GENERICA[t]; };
+    var rua = toks.slice(0, i).filter(sig);
+    // "Forquilhas 1171 Rua Vidal Vicente Andrade": a rua vem depois do número
+    if (!rua.length) { var depois = toks.slice(i + 1), fim = depois.findIndex(function(t){ return /^\d/.test(t); });
+      rua = (fim < 0 ? depois : depois.slice(0, fim)).filter(sig); }
     return rua.length ? rua.slice(0, 3).join(' ') + '|' + parseInt(toks[i], 10) : '';
   }
   return '';
+}
+
+function pontuarNum(nums, g) {
+  var t = ' ' + g.chaveTexto.split(' ').filter(function(x){ return /^\d+$/.test(x); }).map(function(x){ return String(parseInt(x, 10)); }).join(' ') + ' ';
+  return nums.some(function(n){ return t.indexOf(' ' + n + ' ') !== -1; });
 }
 
 // quanto o pacote do Excel "bate" com a parada do Spoke (0 = não é essa parada).
@@ -475,6 +487,9 @@ function juntar() {
     } else {
       g.chaveTexto += ' ' + norm(s.endereco);   // o pacote pode casar com qualquer uma das juntadas
       if (!g.cep) g.cep = s.cep;
+      // mostra o endereço mais "limpo" (começando pela rua), sem mudar a posição
+      var limpo = /^(rua|r|avenida|av|travessa|servidao|estrada|rodovia|alameda)\b/;
+      if (!limpo.test(norm(g.endereco)) && limpo.test(norm(s.endereco))) { g.endereco = s.endereco; g.cidade = s.cidade || g.cidade; }
     }
     g.posSpoke.push(s.pos);
   });
@@ -496,9 +511,14 @@ function juntar() {
     var p = x.p, vazia = function(g){ return !g.pkgs.length; };
     // só pelo nome da rua (sem nº): uma única parada vazia com essa rua
     var cands = x.soRua.filter(vazia);
+    var numsP = numerosCasa(norm(p.endereco));
     // senão, o Excel só traz o CEP ("Casa"): uma única parada vazia com esse CEP
-    if (!x.soRua.length && p.cep && !numerosCasa(norm(p.endereco)).length)
+    if (!x.soRua.length && p.cep && !numsP.length)
       cands = grupos.filter(function(g){ return g.cep === p.cep && vazia(g); });
+    // ou só o nº ("66 Casa 01") e a parada do Spoke veio sem CEP: uma única
+    // parada vazia, sem CEP, com esse número
+    if (!cands.length && numsP.length)
+      cands = grupos.filter(function(g){ return vazia(g) && !g.cep && pontuarNum(numsP, g); });
     if (cands.length === 1) cands[0].pkgs.push(p); else semParada.push(p);
   });
   // 3) só ficam as paradas que casaram com o Excel, renumeradas na ordem do Spoke;
