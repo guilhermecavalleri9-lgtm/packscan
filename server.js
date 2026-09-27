@@ -727,6 +727,19 @@ function ipDoRequest(req) {
   const xff = (req.headers['x-forwarded-for'] || '').split(',')[0].trim();
   return xff || (req.socket && req.socket.remoteAddress) || 'ip-desconhecido';
 }
+// IA do /presidente: rota pública (o jogo não tem login), então tem teto de uso
+// por IP e por dia pra ninguém torrar a chave. Em memória, zera no restart.
+const PRES_IA_POR_IP_HORA = 60, PRES_IA_POR_DIA = 1500, PRES_IA_MAX_CHARS = 24000;
+const presIaUso = { dia: '', total: 0, ips: {} }; // ips: ip -> [timestamps da última hora]
+function presIaPermitir(ip) {
+  const agora = Date.now(), hoje = new Date().toISOString().slice(0, 10);
+  if (presIaUso.dia !== hoje) { presIaUso.dia = hoje; presIaUso.total = 0; presIaUso.ips = {}; }
+  if (presIaUso.total >= PRES_IA_POR_DIA) return false;
+  const lista = (presIaUso.ips[ip] || []).filter(t => agora - t < 3600000);
+  if (lista.length >= PRES_IA_POR_IP_HORA) { presIaUso.ips[ip] = lista; return false; }
+  lista.push(agora); presIaUso.ips[ip] = lista; presIaUso.total++;
+  return true;
+}
 function loginBloqueadoAte(chave) {
   const rec = loginFalhas[chave];
   if (!rec || !rec.bloqueadoAte) return 0;
@@ -1798,7 +1811,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados', '/api/jogodavelha/criar', '/api/jogodavelha/entrar', '/api/jogodavelha/estado', '/api/jogodavelha/jogar', '/api/jogodavelha/revanche', '/api/jogodavelha/zerar', '/api/jogodavelha/sair', '/api/cobras/criar', '/api/cobras/entrar', '/api/cobras/estado', '/api/cobras/tabuleiro', '/api/cobras/comecar', '/api/cobras/rolar', '/api/cobras/revanche', '/api/cobras/lobby', '/api/cobras/sair', '/api/ludo/criar', '/api/ludo/entrar', '/api/ludo/estado', '/api/ludo/comecar', '/api/ludo/rolar', '/api/ludo/mover', '/api/ludo/revanche', '/api/ludo/sair']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados', '/api/jogodavelha/criar', '/api/jogodavelha/entrar', '/api/jogodavelha/estado', '/api/jogodavelha/jogar', '/api/jogodavelha/revanche', '/api/jogodavelha/zerar', '/api/jogodavelha/sair', '/api/cobras/criar', '/api/cobras/entrar', '/api/cobras/estado', '/api/cobras/tabuleiro', '/api/cobras/comecar', '/api/cobras/rolar', '/api/cobras/revanche', '/api/cobras/lobby', '/api/cobras/sair', '/api/ludo/criar', '/api/ludo/entrar', '/api/ludo/estado', '/api/ludo/comecar', '/api/ludo/rolar', '/api/ludo/mover', '/api/ludo/revanche', '/api/ludo/sair', '/api/presidente/ia', '/api/presidente/ia/status']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/email/testar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/admin/conta', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -3055,6 +3068,45 @@ const server = http.createServer(async (req, res) => {
       if (!sala.jogadores.X && !sala.jogadores.O) jvSalas.delete(sala.codigo);
     }
     return json(res, 200, { ok: true });
+  }
+
+  // ─── MANDATO PRESIDENCIAL (simulador, HTML único, sem login) ──────────────
+  if (req.method === 'GET' && (pathname === '/presidente' || pathname === '/presidente/' || pathname === '/presidente/index.html')) {
+    fs.readFile(path.join(__dirname, 'presidente', 'index.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+
+  // IA do jogo (manchetes, Casa Civil, ministros, cidadãos) com a chave do servidor
+  if (req.method === 'GET' && pathname === '/api/presidente/ia/status') {
+    return json(res, 200, { ok: !!ANTHROPIC_KEY });
+  }
+  if (req.method === 'POST' && pathname === '/api/presidente/ia') {
+    if (!ANTHROPIC_KEY) return json(res, 503, { code: 'sampling_disabled', error: 'IA não configurada' });
+    const body = await readBody(req);
+    const msgs = Array.isArray(body.messages) ? body.messages.slice(-12) : [];
+    const valido = msgs.length && msgs.every(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
+      && msgs[0].role === 'user' && msgs.reduce((t, m) => t + m.content.length, 0) <= PRES_IA_MAX_CHARS;
+    if (!valido) return json(res, 400, { code: 'bad_request', error: 'Mensagens inválidas' });
+    if (!presIaPermitir(ipDoRequest(req))) return json(res, 429, { code: 'rate_limited', error: 'Limite de uso da IA atingido' });
+    try {
+      const r = await httpsPost('api.anthropic.com', '/v1/messages',
+        { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+        JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: body.json ? 2000 : 700, messages: msgs.map(m => ({ role: m.role, content: m.content })) })
+      );
+      if (r.error) { console.error('[presidente-ia]', r.error.message || r.error.type); return json(res, 502, { code: 'upstream', error: 'A IA não respondeu' }); }
+      logGoogleCall('presidente', null, 'anthropic', {
+        input: (r.usage && r.usage.input_tokens) || 0,
+        output: (r.usage && r.usage.output_tokens) || 0
+      });
+      return json(res, 200, { text: (r.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim() });
+    } catch (e) {
+      console.error('[presidente-ia]', e.message);
+      return json(res, 502, { code: 'upstream', error: 'A IA não respondeu' });
+    }
   }
 
   // ─── JOGOS: tela inicial com a escolha do jogo ────────────────────────────
