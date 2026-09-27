@@ -3057,6 +3057,16 @@ const server = http.createServer(async (req, res) => {
     return json(res, 200, { ok: true });
   }
 
+  // ─── MANDATO PRESIDENCIAL (simulador, HTML único, sem login) ──────────────
+  if (req.method === 'GET' && (pathname === '/presidente' || pathname === '/presidente/' || pathname === '/presidente/index.html')) {
+    fs.readFile(path.join(__dirname, 'presidente', 'index.html'), (err, data) => {
+      if (err) { res.writeHead(404); res.end('Not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+
   // ─── JOGOS: tela inicial com a escolha do jogo ────────────────────────────
   if (req.method === 'GET' && (pathname === '/jogos' || pathname === '/jogos/' || pathname === '/jogos/index.html')) {
     fs.readFile(path.join(__dirname, 'jogos', 'index.html'), (err, data) => {
