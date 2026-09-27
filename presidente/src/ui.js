@@ -404,6 +404,22 @@ function aiFail(e){
   else if(e&&e.code==='rate_limited')toast('Limite de uso da IA atingido. Tente de novo mais tarde.');
   else if(e&&e.code!=='cancelled')toast('A IA não respondeu desta vez.');
 }
+// Fora do claude.ai: mesma interface do claude.use('sample'), mas via /api/presidente/ia no servidor
+function serverSample(){
+  async function call(messages,json){
+    const r=await fetch('/api/presidente/ia',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages,json})});
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok){const e=new Error(j.error||'falha na IA');e.code=j.code||'upstream';throw e}
+    return j;
+  }
+  const fn=(turns)=>call(typeof turns==='string'?[{role:'user',content:turns}]:turns,false);
+  fn.json=async(prompt)=>{
+    const r=await call([{role:'user',content:prompt+'\n\nResponda apenas com o JSON, sem texto antes ou depois e sem markdown.'}],true);
+    const m=String(r.text||'').match(/\{[\s\S]*\}/);
+    try{return JSON.parse(m?m[0]:r.text)}catch(_){const e=new Error('JSON inválido');e.code='invalid_json';throw e}
+  };
+  return fn;
+}
 async function aiJSON(prompt,tier){AI_BUSY++;render();try{return await SAMPLE.json(prompt,{modelTier:tier,cache:false})}finally{AI_BUSY--}}
 
 function offlineFeed(NM){
@@ -674,5 +690,6 @@ function init(){
   render();
   showStart();
   if(window.claude&&typeof claude.use==='function'){claude.use('sample').then(s=>{SAMPLE=s;AI_OK=!!s;if(S)render()}).catch(()=>{})}
+  else fetch('/api/presidente/ia/status').then(r=>r.ok?r.json():null).then(j=>{if(j&&j.ok){SAMPLE=serverSample();AI_OK=true;if(S)render()}}).catch(()=>{})
 }
 init();

@@ -13,10 +13,14 @@ HTML único, JavaScript puro, sem framework. Globo 3D com globe.gl (CDN jsDelivr
 - Publicado em `/presidente` pelo `server.js` do PackScan
 
 ## IA
-Hoje usa `claude.use("sample")`, que só existe dentro de artifacts do claude.ai.
-Fora dele, trocar `SAMPLE(...)` / `SAMPLE.json(...)` em `ui.js` por chamadas à API da Anthropic
-(via um backend pequeno, para não expor a chave). Usos: feed mensal de manchetes e posts,
-análise de lei escrita em texto livre (Casa Civil), conversa com cidadãos, conselho de ministros.
+Dentro de artifacts do claude.ai usa `claude.use("sample")`. Fora dele (em `/presidente` no PackScan),
+`serverSample()` em `ui.js` imita a mesma interface chamando `POST /api/presidente/ia` no `server.js`,
+que usa a `ANTHROPIC_API_KEY` do servidor com claude-haiku-4-5 (custo entra no painel de admin como usuário
+`presidente`). A rota é pública, então tem teto: 60 chamadas/hora por IP e 1.500/dia no total
+(`PRES_IA_POR_IP_HORA` / `PRES_IA_POR_DIA`). Sem chave, `GET /api/presidente/ia/status` devolve `ok:false`
+e o jogo roda com textos automáticos.
+Usos: feed mensal de manchetes e posts, análise de lei escrita em texto livre (Casa Civil), conversa com
+cidadãos, conselho de ministros.
 
 ## Estado atual e próximos passos sugeridos
 - Balanceamento feito só por alto (sem ações, aprovação cai de ~46% para ~27% no 1º ano).
