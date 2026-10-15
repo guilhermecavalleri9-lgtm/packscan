@@ -76,6 +76,7 @@ td.p{font-family:var(--mono);color:var(--accent);font-size:11px}
 <body>
 
 <div class="header">
+  <a id="voltar-ps" href="/" style="display:none;color:var(--text2);text-decoration:none;font-size:20px;line-height:1;padding:0 4px">‹</a>
   <div class="logo">PACK<span>SCAN</span> · spoke</div>
   <div class="hdr-info" id="hdr-info"></div>
 </div>
@@ -794,6 +795,8 @@ function zerarBipagem() {
 
 restaurar();
 renderTudo();
+// veio pelo menu do PackScan: mostra a seta pra voltar
+try { if (document.referrer && new URL(document.referrer).origin === location.origin && !/\/scanner/.test(new URL(document.referrer).pathname)) document.getElementById('voltar-ps').style.display = ''; } catch(e) {}
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/scanner/sw.js', { scope:'/scanner' }).catch(function(){});
 </script>
 </body>
