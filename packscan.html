@@ -5128,6 +5128,9 @@ function homeExcluirPacote(tracking){
     if(rota){ rota.pkgs=rota.pkgs.filter(function(x){ return x.tracking!==tracking; }); rota.pkgs.forEach(function(x,i){ x.numNaRota=i+1; }); }
   }
   pacotes.splice(idx,1);
+  // limpa a marca de bipado: senão, se o mesmo código voltar numa importação
+  // futura, ele aparece como "já bipado" sem ter sido
+  try{ delete bipados[p.tracking]; if(p.tracking2) delete bipados[p.tracking2]; }catch(e){}
   // mantém o mapa antigo em sincronia, se já tiver sido aberto
   try{ if(typeof mapaInit!=='undefined' && mapaInit && map){ plotarPontos(); renderMotList(); renderRotasList(); } }catch(e){}
   try{ atualizarGeoInfo(); var gt=document.getElementById('gm-total'); if(gt) gt.textContent=pacotes.length; }catch(e){}
