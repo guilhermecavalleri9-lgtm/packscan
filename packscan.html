@@ -168,6 +168,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .home-hero .hpen{position:absolute;top:14px;right:62px;z-index:3;width:40px;height:40px;border-radius:50%;background:rgba(10,14,21,.72);border:1px solid var(--border2);display:grid;place-items:center;color:var(--text);cursor:pointer}
 .home-hero .hpen svg{width:19px;height:19px}
 .home-hero .hpen.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.home-hero .hpins{position:absolute;top:14px;right:254px;z-index:3;width:40px;height:40px;border-radius:50%;background:rgba(10,14,21,.72);border:1px solid var(--border2);display:grid;place-items:center;color:var(--text);cursor:pointer}
+.home-hero .hpins svg{width:19px;height:19px}
+.home-hero .hpins.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.home-hero.hero-full .hpins{top:calc(env(safe-area-inset-top,0px) + 14px)}
 .home-hero .htrash{position:absolute;top:14px;right:206px;z-index:3;width:40px;height:40px;border-radius:50%;background:rgba(10,14,21,.72);border:1px solid var(--border2);display:grid;place-items:center;color:var(--red,#e5484d);cursor:pointer}
 .home-hero .htrash svg{width:19px;height:19px}
 .home-hero.hero-full .htrash{top:calc(env(safe-area-inset-top,0px) + 14px)}
@@ -736,6 +740,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <button class="hcam" onclick="event.stopPropagation(); goTab(5)" aria-label="Bipar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V7a2 2 0 0 1 2-2h1.5l1-1.5h5L16 5H18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12" r="3.4"/></svg></button>
     <button class="hexp" onclick="event.stopPropagation(); heroFull()" aria-label="Expandir mapa"><svg id="hexp-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H3v6M21 9V3h-6M15 21h6v-6M3 15v6h6"/></svg></button>
     <button class="hpen" id="btn-pen" style="display:none" onclick="event.stopPropagation(); toggleEditarRotas()" aria-label="Editar rotas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+    <button class="hpins" id="btn-pins" onclick="event.stopPropagation(); togglePinos()" aria-label="Ocultar pacotes" title="Ocultar/mostrar os pacotes"><svg id="btn-pins-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 12S5 5.5 12 5.5 22.4 12 22.4 12 19 18.5 12 18.5 1.6 12 1.6 12z"/><circle cx="12" cy="12" r="3.1"/></svg></button>
     <button class="htrash" id="btn-trash" style="display:none" onclick="event.stopPropagation(); abrirExcluirRotas()" aria-label="Excluir rotas" title="Excluir rotas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 10v7M14 10v7"/></svg></button>
     <button class="hbai" id="btn-bai" onclick="event.stopPropagation(); bairrosToggle('home')" aria-label="Mostrar bairros" title="Mostrar/ocultar contorno dos bairros"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3z" stroke-dasharray="3 2"/><path d="M9 4v13M15 7v13"/></svg></button>
     <button class="hdraw" id="btn-draw" onclick="event.stopPropagation(); homeDesenharRota()" aria-label="Nova rota manual" title="Desenhar rota manual"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/><path d="M4 4v4M2 6h4"/></svg></button>
@@ -4966,6 +4971,17 @@ var hmap=null, hmapLayer=null;
 // mexeu nele. Depois que ele dá zoom ou arrasta, a vista é dele e nenhuma
 // atualização (editar área, arrastar pino, excluir pacote) tira mais o zoom.
 var _homeVistaUser=false, _homeAjustando=false;
+// esconder os pinos deixa só as áreas das rotas à vista, pra conferir a divisão
+var _pinosOff=false;
+function togglePinos(){
+  _pinosOff=!_pinosOff;
+  var b=document.getElementById('btn-pins'); if(b){ b.classList.toggle('on',_pinosOff); b.title=_pinosOff?'Mostrar os pacotes':'Ocultar os pacotes'; }
+  var ic=document.getElementById('btn-pins-ic');
+  if(ic) ic.innerHTML = _pinosOff
+    ? '<path d="M1.6 12S5 5.5 12 5.5c1.6 0 3 .34 4.2.87M20 8.6c1.5 1.7 2.4 3.4 2.4 3.4S19 18.5 12 18.5c-1.7 0-3.2-.38-4.5-.97"/><path d="M9.9 9.9a3.1 3.1 0 0 0 4.2 4.2"/><path d="M3 3l18 18"/>'
+    : '<path d="M1.6 12S5 5.5 12 5.5 22.4 12 22.4 12 19 18.5 12 18.5 1.6 12 1.6 12z"/><circle cx="12" cy="12" r="3.1"/>';
+  homeMapPlot(true); // nunca mexe no zoom
+}
 function homeVistaSolta(){ _homeVistaUser=false; } // volta a enquadrar sozinho (importação nova)
 function homeMapInit(){
   if(hmap || typeof L==='undefined') return;
@@ -5016,7 +5032,7 @@ function homeMapPlot(preservarVista){
         if(!geoPk.length) return;
       } else {
         r.latlngs = poly; // fixa a referência pra edição persistir
-        var pl=L.polygon(poly,{color:r.cor,fillColor:r.cor,fillOpacity:_editRotas?.2:.12,weight:_editRotas?3:2}).addTo(hmapLayer);
+        var pl=L.polygon(poly,{color:r.cor,fillColor:r.cor,fillOpacity:_editRotas?.2:(_pinosOff?.26:.12),weight:_editRotas?3:(_pinosOff?3:2)}).addTo(hmapLayer);
         if(_editRotas){
           // vértices arrastáveis pra remodelar a área
           poly.forEach(function(vtx, vi){
@@ -5043,8 +5059,10 @@ function homeMapPlot(preservarVista){
       +'<div style="display:flex;gap:6px;margin-top:8px"><button onclick="homeEditar(\''+tkEsc+'\')" style="flex:1;padding:6px 8px;border-radius:7px;border:1px solid var(--border2);background:var(--bg3);color:var(--text);cursor:pointer;font-size:12px;font-weight:600">✏ Editar</button>'
       +'<button onclick="homeExcluirPacote(\''+tkEsc+'\')" style="flex:1;padding:6px 8px;border-radius:7px;border:1px solid var(--red);background:#3a1a1a;color:var(--red);cursor:pointer;font-size:12px;font-weight:600">🗑 Excluir</button></div></div>';
     var icon=L.divIcon({className:'hpin', html:'<div style="width:15px;height:15px;border-radius:50%;background:'+cor+';border:2px solid #0b0f16;box-shadow:0 0 0 1px rgba(255,255,255,.35)"></div>', iconSize:[15,15], iconAnchor:[8,8], popupAnchor:[0,-8]});
-    var mk=L.marker([p.lat,p.lng],{icon:icon,draggable:true}).addTo(hmapLayer).bindPopup(pop);
-    mk.on('dragend', (function(pkg){ return function(){ var ll=mk.getLatLng(); homeArrastou(pkg.tracking, ll.lat, ll.lng); }; })(p));
+    if(!_pinosOff){
+      var mk=L.marker([p.lat,p.lng],{icon:icon,draggable:true}).addTo(hmapLayer).bindPopup(pop);
+      mk.on('dragend', (function(pkg){ return function(){ var ll=mk.getLatLng(); homeArrastou(pkg.tracking, ll.lat, ll.lng); }; })(p));
+    }
     pts.push([p.lat,p.lng]);
   });
   try{
