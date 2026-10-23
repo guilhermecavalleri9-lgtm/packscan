@@ -797,6 +797,11 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <div class="grab"></div>
   <h3>Roteirizar automático</h3>
   <div class="sd">Divide os pacotes geocodificados por proximidade. Escolha em quantos motoristas dividir:</div>
+  <div class="rlbl">dividir dentro de</div>
+  <select id="rot-area" onchange="rotAreaMudou()" style="width:100%;padding:9px 11px;border-radius:10px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;margin-bottom:4px">
+    <option value="*">todos os pacotes</option>
+  </select>
+  <div id="rot-area-info" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:10px"></div>
   <div class="rlbl">motoristas</div>
   <div class="mot-sel" id="rot-motsel"></div>
   <div id="rot-limite" style="display:none;font-size:11px;color:var(--text3);margin:-2px 0 8px"></div>
@@ -5923,8 +5928,66 @@ function renderAvisos(){
 // ── ROTEIRIZAR (sheet) ──
 var _nMot=1, _qs=[];
 function geoTotal(){ return pacotes.filter(function(p){return p.lat&&p.lng;}).length; }
+// ── seletor de bairro/área dentro da folha "Roteirizar" ──
+// Mesmas opções do painel da aba do mapa, mas aqui na tela inicial, que é onde
+// o dia a dia acontece.
+function rotNomeArea(){
+  var sel=document.getElementById('rot-area');
+  if(!sel || !_arAreaSel || _arAreaSel==='*') return '';
+  var o=sel.options[sel.selectedIndex];
+  return o ? String(o.textContent||'').replace(/\s*\(\d+\)\s*$/,'').trim() : '';
+}
+async function rotCarregarAreas(){
+  var sel=document.getElementById('rot-area'); if(!sel) return;
+  var geo=pacotes.filter(function(p){ return p.lat&&p.lng; });
+  var porBairro={};
+  geo.forEach(function(p){
+    if(bairroInvalido(p.bairro)) return;
+    var ch=_chaveBairro(p.bairro);
+    if(!porBairro[ch]) porBairro[ch]={ nome:_normBairro(p.bairro), n:0 };
+    porBairro[ch].n++;
+  });
+  try{
+    var r=await apiFetch(BACKEND+'/api/zonas'); var d=await r.json();
+    _arZonas=(d.zonas||[]).filter(function(z){ return z.latlngs && z.latlngs.length>=3; });
+  }catch(e){ _arZonas=[]; }
+  var html='<option value="*">todos os pacotes ('+geo.length+')</option>';
+  var chaves=Object.keys(porBairro).sort(function(a,b){ return porBairro[b].n-porBairro[a].n; });
+  if(chaves.length){
+    html+='<optgroup label="por bairro">';
+    chaves.forEach(function(ch){ html+='<option value="bairro:'+esc(ch)+'">'+esc(porBairro[ch].nome)+' ('+porBairro[ch].n+')</option>'; });
+    html+='</optgroup>';
+  }
+  if(_arZonas.length){
+    html+='<optgroup label="áreas que você desenhou">';
+    _arZonas.forEach(function(z,i){
+      var n=geo.filter(function(p){ return pontoDentro(z.latlngs,p.lat,p.lng); }).length;
+      html+='<option value="zona:'+i+'">'+esc(z.nome||('Área '+(i+1)))+' ('+n+')</option>';
+    });
+    html+='</optgroup>';
+  }
+  var ant=sel.value;
+  sel.innerHTML=html;
+  if(ant && Array.prototype.some.call(sel.options,function(o){ return o.value===ant; })) sel.value=ant;
+  rotAreaMudou();
+}
+function rotAreaMudou(){
+  var sel=document.getElementById('rot-area'); if(!sel) return;
+  _arAreaSel=sel.value||'*';
+  var n=rotTotal();
+  var jaTem=(_arAreaSel!=='*' && typeof rotas!=='undefined' && rotas)?rotas.length:0;
+  var info=document.getElementById('rot-area-info');
+  if(info){
+    info.textContent = (_arAreaSel==='*')
+      ? (n+' pacote(s) · substitui as rotas atuais')
+      : (n+' pacote(s) nesta área · não invade os outros bairros'+(jaTem?(' · soma às '+jaTem+' rota(s) que já existem'):''));
+  }
+  selMot(Math.min(_nMot||1, Math.max(1, AUTH_LIMITE_ROTAS||2)));
+}
+
 function abrirRoteirizar(){
   if(!geoTotal()){ alert('Geocodifique os pacotes antes de roteirizar.'); return; }
+  rotCarregarAreas();
   renderMotBtns(); selMot(1);
   document.getElementById('rot-bg').classList.add('show');
   document.getElementById('rot-sheet').style.display='block';
@@ -5960,7 +6023,8 @@ function renderMotBtns(){
     aviso.style.display='block';
   }
 }
-function dividirIgual(n){ var t=geoTotal(), base=Math.floor(t/n), rem=t%n, a=[]; for(var i=0;i<n;i++) a.push(base+(i<rem?1:0)); return a; }
+function rotTotal(){ try{ return arPacotesDaArea(_arAreaSel).length; }catch(e){ return geoTotal(); } }
+function dividirIgual(n){ var t=rotTotal(), base=Math.floor(t/n), rem=t%n, a=[]; for(var i=0;i<n;i++) a.push(base+(i<rem?1:0)); return a; }
 function selMot(n){
   var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
   if(n>lim){ alert(AUTH_TIPO==='motorista'?'O plano motorista permite até 2 rotas.':'Seu plano permite até '+lim+' rotas.'); n=lim; }
@@ -5970,7 +6034,7 @@ function selMot(n){
   _qs=dividirIgual(n); renderRotPreview();
 }
 function renderRotPreview(){
-  var n=_nMot, t=geoTotal(), html='';
+  var n=_nMot, t=rotTotal(), html='';
   document.getElementById('rot-plbl').textContent = n===1?'pacotes':'pacotes por rota · ajuste quanto cada um leva';
   for(var i=0;i<n;i++){
     html+='<div class="rrow"><span class="rl"><span class="dt" style="background:'+CORES[i%CORES.length]+'"></span>Rota '+(i+1)+'</span>';
@@ -5985,7 +6049,7 @@ function ajQ(i,d){ _qs[i]=Math.max(0,(_qs[i]||0)+d); renderRotPreview(); }
 function setQ(i,v){ _qs[i]=Math.max(0,parseInt(v)||0); renderRotPreview(); }
 function somaQ(){ return _qs.reduce(function(a,b){return a+b;},0); }
 function atTotal(){
-  var t=geoTotal(), bar=document.getElementById('rot-tot'), go=document.getElementById('rot-go'), gt=go.querySelector('.gotxt');
+  var t=rotTotal(), bar=document.getElementById('rot-tot'), go=document.getElementById('rot-go'), gt=go.querySelector('.gotxt');
   if(_nMot===1){ bar.innerHTML=''; bar.className='tot'; gt.textContent='Roteirizar tudo em 1 rota'; go.style.opacity=1; go.style.pointerEvents='auto'; return; }
   var sm=somaQ(), dif=t-sm, ok=(dif===0);
   bar.className='tot '+(ok?'ok':'off');
@@ -5994,9 +6058,15 @@ function atTotal(){
   go.style.opacity=ok?1:.5; go.style.pointerEvents=ok?'auto':'none';
 }
 async function confirmarRoteirizar(){
-  var t=geoTotal();
-  if(!t){ alert('Geocodifique os pacotes primeiro.'); return; }
+  var t=rotTotal();
+  if(!t){ alert(_arAreaSel==='*' ? 'Geocodifique os pacotes primeiro.' : 'Nenhum pacote geocodificado nesta área.'); return; }
   var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+  // com uma área escolhida, as rotas somam às que já existem
+  var jaTem=(_arAreaSel!=='*' && typeof rotas!=='undefined' && rotas)?rotas.length:0;
+  if(jaTem + _nMot > lim){
+    alert('Seu plano permite '+lim+' rota(s). Você já tem '+jaTem+' e pediu mais '+_nMot+'.');
+    return;
+  }
   if(_nMot>lim){
     alert(AUTH_TIPO==='motorista'
       ? 'O plano motorista permite no máximo 2 rotas. Para dividir em mais, conheça o plano empresa.'
@@ -6004,8 +6074,10 @@ async function confirmarRoteirizar(){
     return;
   }
   if(_nMot>1 && somaQ()!==t) return;
-  if(_nMot===1) _arConfig=[{nome:'Rota 1', qtd:t, cor:CORES[0]}];
-  else _arConfig=_qs.map(function(q,i){ return {nome:'Rota '+(i+1), qtd:q, cor:CORES[i%CORES.length]}; });
+  var pref = rotNomeArea();       // 'Forquilhas' quando a divisão é por bairro
+  var off  = jaTem;               // continua a numeração depois das rotas existentes
+  if(_nMot===1) _arConfig=[{nome:(pref||'Rota')+' '+(off+1), qtd:t, cor:CORES[off%CORES.length]}];
+  else _arConfig=_qs.map(function(q,i){ return {nome:(pref||'Rota')+' '+(off+i+1), qtd:q, cor:CORES[(off+i)%CORES.length]}; });
   var go=document.getElementById('rot-go'), gt=go?go.querySelector('.gotxt'):null, txtOrig=gt?gt.textContent:'';
   if(gt && osrmHabilitado()){ gt.textContent='Otimizando pelas ruas…'; go.style.pointerEvents='none'; }
   await arGerar();          // gera a divisão + ordena (OSRM com fallback no 2-opt)
