@@ -619,6 +619,33 @@ function senhaConfere(senha, hashArmazenado) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// ─── ZONAS SALVAS: vários conjuntos nomeados de áreas ─────────────────────────
+// O formato antigo era um array solto de áreas (um conjunto só). Ele continua
+// sendo lido e vira o conjunto "Áreas salvas", pra ninguém perder o que já tinha.
+function limparZonas(lista) {
+  return (Array.isArray(lista) ? lista : []).slice(0, 60).map(z => ({
+    nome: String((z && z.nome) || 'Rota').substring(0, 40),
+    cor: String((z && z.cor) || '#4f8ef7').substring(0, 12),
+    latlngs: (Array.isArray(z && z.latlngs) ? z.latlngs : []).slice(0, 400)
+      .map(p => [Number(p[0]), Number(p[1])]).filter(p => isFinite(p[0]) && isFinite(p[1]))
+  })).filter(z => z.latlngs.length >= 3);
+}
+function normalizarConjuntos(guardado) {
+  if (Array.isArray(guardado)) {
+    const zonas = limparZonas(guardado);
+    return zonas.length ? [{ id: 'legado', nome: 'Áreas salvas', criadoEm: null, zonas }] : [];
+  }
+  if (guardado && Array.isArray(guardado.conjuntos)) {
+    return guardado.conjuntos.map((c, i) => ({
+      id: String((c && c.id) || ('z' + i)),
+      nome: String((c && c.nome) || ('Conjunto ' + (i + 1))).substring(0, 40),
+      criadoEm: (c && c.criadoEm) || null,
+      zonas: limparZonas(c && c.zonas)
+    })).filter(c => c.zonas.length);
+  }
+  return [];
+}
+
 // ─── CONFIRMAÇÃO DE E-MAIL (Brevo) ─────────────────────────────────────────────
 const EMAIL_ATIVO = !!(BREVO_API_KEY && BREVO_SENDER); // dá pra enviar e-mail?
 // CHAVE GERAL da confirmação de e-mail no cadastro. Está DESLIGADA: o Brevo está
@@ -2399,20 +2426,38 @@ const server = http.createServer(async (req, res) => {
   // ─── ZONAS SALVAS (polígonos de rota reutilizáveis) — por usuário ─────────
   // empresa desenha as áreas uma vez e reaproveita todo dia.
   if (req.method === 'GET' && pathname === '/api/zonas') {
-    const z = await supabaseGet('zonas:' + req.usuarioAtual.usuario);
-    return json(res, 200, { zonas: Array.isArray(z) ? z : [] });
+    const guardado = await supabaseGet('zonas:' + req.usuarioAtual.usuario);
+    const conjuntos = normalizarConjuntos(guardado);
+    // 'zonas' continua saindo achatado, pra não quebrar quem já usava
+    const zonas = conjuntos.reduce((a, c) => a.concat(c.zonas), []);
+    return json(res, 200, { zonas, conjuntos });
   }
   if (req.method === 'POST' && pathname === '/api/zonas') {
     const body = await readBody(req);
-    const zonas = (Array.isArray(body.zonas) ? body.zonas : []).slice(0, 60).map(z => ({
-      nome: String(z.nome || 'Rota').substring(0, 40),
-      cor: String(z.cor || '#4f8ef7').substring(0, 12),
-      latlngs: (Array.isArray(z.latlngs) ? z.latlngs : []).slice(0, 400)
-        .map(p => [Number(p[0]), Number(p[1])]).filter(p => isFinite(p[0]) && isFinite(p[1]))
-    })).filter(z => z.latlngs.length >= 3);
-    await supabaseSet('zonas:' + req.usuarioAtual.usuario, zonas);
-    console.log(`[zonas] ${req.usuarioAtual.usuario}: ${zonas.length} zona(s) salva(s)`);
-    return json(res, 200, { ok: true, total: zonas.length });
+    const zonas = limparZonas(body.zonas);
+    if (!zonas.length) return json(res, 400, { error: 'Nenhuma área válida pra salvar.' });
+    const guardado = await supabaseGet('zonas:' + req.usuarioAtual.usuario);
+    const conjuntos = normalizarConjuntos(guardado);
+    const nome = String(body.nome || '').trim().substring(0, 40) || ('Áreas ' + new Date().toLocaleDateString('pt-BR'));
+    // mesmo nome = substitui aquele conjunto; nome novo = mais um na lista
+    const i = conjuntos.findIndex(c => c.nome.toLowerCase() === nome.toLowerCase());
+    const novo = { id: 'z' + Date.now().toString(36), nome, criadoEm: new Date().toISOString(), zonas };
+    if (i >= 0) { novo.id = conjuntos[i].id || novo.id; conjuntos[i] = novo; }
+    else {
+      if (conjuntos.length >= 30) return json(res, 400, { error: 'Limite de 30 conjuntos salvos. Apague algum antes.' });
+      conjuntos.push(novo);
+    }
+    await supabaseSet('zonas:' + req.usuarioAtual.usuario, { conjuntos });
+    console.log(`[zonas] ${req.usuarioAtual.usuario}: conjunto "${nome}" com ${zonas.length} área(s) · ${conjuntos.length} conjunto(s) no total`);
+    return json(res, 200, { ok: true, total: zonas.length, conjuntos: conjuntos.length, substituido: i >= 0, id: novo.id });
+  }
+  if (req.method === 'POST' && pathname === '/api/zonas/remover') {
+    const body = await readBody(req);
+    const id = String((body && body.id) || '');
+    const guardado = await supabaseGet('zonas:' + req.usuarioAtual.usuario);
+    const conjuntos = normalizarConjuntos(guardado).filter(c => c.id !== id);
+    await supabaseSet('zonas:' + req.usuarioAtual.usuario, { conjuntos });
+    return json(res, 200, { ok: true, conjuntos: conjuntos.length });
   }
 
   // ─── LOOKUP DE CEP (ponto de referência atual, p/ a aba Corrigir CEP) ─────

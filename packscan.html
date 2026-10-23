@@ -3988,7 +3988,13 @@ async function arCarregarAreas(){
   // áreas salvas no mapa
   try{
     var r=await apiFetch(BACKEND+'/api/zonas'); var d=await r.json();
-    _arZonas = (d.zonas||[]).filter(function(z){ return z.latlngs && z.latlngs.length>=3; });
+    // achata todos os conjuntos salvos, marcando de qual conjunto cada área veio
+    _arZonas=[];
+    (d.conjuntos||[]).forEach(function(c){
+      (c.zonas||[]).forEach(function(z){
+        if(z.latlngs && z.latlngs.length>=3) _arZonas.push({ nome:z.nome, cor:z.cor, latlngs:z.latlngs, conjunto:c.nome });
+      });
+    });
   }catch(e){ _arZonas=[]; }
 
   var html = '<option value="*">todos os pacotes ('+geo.length+')</option>';
@@ -4002,7 +4008,7 @@ async function arCarregarAreas(){
     html += '<optgroup label="áreas que você desenhou">';
     _arZonas.forEach(function(z,i){
       var n = geo.filter(function(p){ return pontoDentro(z.latlngs,p.lat,p.lng); }).length;
-      html += '<option value="zona:'+i+'">'+esc(z.nome||('Área '+(i+1)))+' ('+n+')</option>';
+      html += '<option value="zona:'+i+'">'+esc((z.conjunto?(z.conjunto+' › '):'')+(z.nome||('Área '+(i+1))))+' ('+n+')</option>';
     });
     html += '</optgroup>';
   }
@@ -5085,36 +5091,102 @@ async function zonasSalvar(){
     return { nome:r.motorista||('Rota '+r.id), cor:r.cor, latlngs:ll };
   }).filter(function(z){ return z.latlngs.length>=3; });
   if(!zonas.length){ alert('Nenhuma rota tem área desenhada no mapa pra salvar.'); return; }
-  if(!confirm('Salvar '+zonas.length+' área(s) de rota? Elas ficam guardadas pra você reaplicar em outros dias.')) return;
+  // cada conjunto tem um nome próprio: salvar de novo com outro nome NÃO apaga os
+  // anteriores (salvar com o mesmo nome substitui aquele conjunto)
+  var sugestao = (typeof rotNomeArea==='function' && rotNomeArea()) || ('Áreas '+new Date().toLocaleDateString('pt-BR'));
+  var nome = prompt('Nome deste conjunto de '+zonas.length+' área(s):\n(usar um nome que já existe substitui aquele conjunto)', sugestao);
+  if(nome===null) return;
+  nome=(nome||'').trim(); if(!nome){ alert('Dê um nome pro conjunto.'); return; }
   try{
-    var r=await apiFetch(BACKEND+'/api/zonas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({zonas:zonas})});
+    var r=await apiFetch(BACKEND+'/api/zonas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({nome:nome, zonas:zonas})});
     var d=await r.json();
-    if(r.ok) alert('✓ '+(d.total||zonas.length)+' área(s) salva(s). Use "Aplicar áreas salvas" nos próximos dias.');
+    if(r.ok) alert('✓ "'+nome+'" '+(d.substituido?'atualizado':'salvo')+' com '+(d.total||zonas.length)+' área(s).\nVocê tem '+(d.conjuntos||1)+' conjunto(s) salvo(s).');
     else alert('✗ '+(d.error||'Erro ao salvar.'));
   }catch(e){ alert('Erro: '+e.message); }
 }
+var _zonaConjuntos = [];
+// painel com todos os conjuntos salvos: escolher qual aplicar, ou apagar
 async function zonasAplicar(){
   if(!pacotes.filter(function(p){return p.lat&&p.lng;}).length){ alert('Geocodifique os pacotes primeiro.'); return; }
   try{
     var r=await apiFetch(BACKEND+'/api/zonas'); var d=await r.json();
-    var zonas=d.zonas||[];
-    if(!zonas.length){ alert('Você ainda não salvou nenhuma área. Desenhe as rotas e use "Salvar áreas das rotas".'); return; }
-    var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
-    if(zonas.length>lim){ alert('Você salvou '+zonas.length+' áreas, mas seu plano permite '+lim+'. Vou aplicar as '+lim+' primeiras.'); zonas=zonas.slice(0,lim); }
-    if(!confirm('Aplicar '+zonas.length+' área(s) salva(s)? Os pacotes serão redistribuídos pelas áreas.')) return;
-    pacotes.forEach(function(p){ p.rota=null; p.numNaRota=null; });
-    rotas=zonas.map(function(z,i){ return {id:i+1, motorista:z.nome, cor:z.cor||CORES[i%CORES.length], layer:null, latlngs:z.latlngs, pkgs:[]}; });
-    pacotes.forEach(function(p){
-      if(!(p.lat&&p.lng)) return;
-      for(var i=0;i<rotas.length;i++){ if(pontoDentro(rotas[i].latlngs,p.lat,p.lng)){ p.rota=rotas[i].id; break; } }
-    });
-    rotas.forEach(function(r2){ r2.pkgs=pacotes.filter(function(p){return p.rota===r2.id;}); r2.pkgs.forEach(function(p,i){ p.numNaRota=i+1; }); });
-    var fora=pacotes.filter(function(p){ return p.lat&&!p.rota; }).length;
-    try{ persistirLocal(); }catch(e){}
-    renderHome(); homeMapPlot(true);
-    try{ if(typeof renderListaPacotes==='function') renderListaPacotes(); }catch(e){}
-    alert('✓ Áreas aplicadas.'+(fora?(' '+fora+' pacote(s) ficaram fora das áreas — ajuste no mapa.'):''));
+    _zonaConjuntos = d.conjuntos||[];
+    if(!_zonaConjuntos.length){ alert('Você ainda não salvou nenhuma área. Desenhe as rotas e use "Salvar áreas das rotas".'); return; }
+    abrirPainelZonas();
   }catch(e){ alert('Erro: '+e.message); }
+}
+
+function abrirPainelZonas(){
+  var bg=document.getElementById('zon-bg');
+  if(!bg){
+    bg=document.createElement('div'); bg.id='zon-bg';
+    bg.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10050;display:flex;align-items:center;justify-content:center;padding:16px';
+    bg.onclick=function(e){ if(e.target===bg) fecharPainelZonas(); };
+    bg.innerHTML='<div class="modal-box" style="width:440px">'
+      +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">'
+      +'<b style="font-size:15px">Áreas salvas</b>'
+      +'<button class="btn btn-sm" onclick="fecharPainelZonas()">✕</button></div>'
+      +'<div style="font-size:11px;color:var(--text3);margin-bottom:1rem">Cada conjunto é um grupo de áreas. Aplicar substitui as rotas atuais pelas áreas do conjunto.</div>'
+      +'<div id="zon-lista" style="display:flex;flex-direction:column;gap:8px"></div></div>';
+    document.body.appendChild(bg);
+  }
+  bg.style.display='flex';
+  renderPainelZonas();
+}
+function fecharPainelZonas(){ var bg=document.getElementById('zon-bg'); if(bg) bg.style.display='none'; }
+
+function renderPainelZonas(){
+  var el=document.getElementById('zon-lista'); if(!el) return;
+  if(!_zonaConjuntos.length){ el.innerHTML='<div style="font-size:12px;color:var(--text3);font-family:var(--mono)">nenhum conjunto salvo</div>'; return; }
+  var geo=pacotes.filter(function(p){return p.lat&&p.lng;});
+  el.innerHTML='';
+  _zonaConjuntos.forEach(function(c,i){
+    var dentro=geo.filter(function(p){
+      return (c.zonas||[]).some(function(z){ return pontoDentro(z.latlngs,p.lat,p.lng); });
+    }).length;
+    var quando = c.criadoEm ? new Date(c.criadoEm).toLocaleDateString('pt-BR') : '';
+    var d=document.createElement('div'); d.className='rot-item';
+    d.innerHTML='<div style="flex:1;min-width:0">'
+      +'<div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.nome)+'</div>'
+      +'<div style="font-size:11px;color:var(--text3);font-family:var(--mono)">'+(c.zonas||[]).length+' área(s) · '+dentro+' pacote(s) hoje'+(quando?(' · '+quando):'')+'</div></div>'
+      +'<button class="btn btn-g btn-sm" onclick="zonasAplicarConjunto('+i+')">aplicar</button>'
+      +'<button class="btn btn-r btn-sm" onclick="zonasRemoverConjunto('+i+')">✕</button>';
+    el.appendChild(d);
+  });
+}
+
+async function zonasRemoverConjunto(i){
+  var c=_zonaConjuntos[i]; if(!c) return;
+  if(!confirm('Apagar o conjunto "'+c.nome+'"? As rotas de hoje não são afetadas.')) return;
+  try{
+    var r=await apiFetch(BACKEND+'/api/zonas/remover',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:c.id})});
+    if(!r.ok){ var d=await r.json(); alert('✗ '+(d.error||'Erro')); return; }
+    _zonaConjuntos.splice(i,1);
+    renderPainelZonas();
+    try{ if(typeof rotCarregarAreas==='function') rotCarregarAreas(); }catch(e){}
+  }catch(e){ alert('Erro: '+e.message); }
+}
+
+function zonasAplicarConjunto(i){
+  var c=_zonaConjuntos[i]; if(!c) return;
+  var zonas=(c.zonas||[]).filter(function(z){ return z.latlngs && z.latlngs.length>=3; });
+  if(!zonas.length){ alert('Esse conjunto não tem área válida.'); return; }
+  var lim=Math.max(1, AUTH_LIMITE_ROTAS||2);
+  if(zonas.length>lim){ alert('O conjunto tem '+zonas.length+' áreas, mas seu plano permite '+lim+'. Vou aplicar as '+lim+' primeiras.'); zonas=zonas.slice(0,lim); }
+  if(!confirm('Aplicar "'+c.nome+'" ('+zonas.length+' área(s))?\nOs pacotes serão redistribuídos e as rotas atuais substituídas.')) return;
+  pacotes.forEach(function(p){ p.rota=null; p.numNaRota=null; });
+  rotas=zonas.map(function(z,k){ return {id:k+1, motorista:z.nome, cor:z.cor||CORES[k%CORES.length], layer:null, latlngs:z.latlngs, pkgs:[]}; });
+  pacotes.forEach(function(p){
+    if(!(p.lat&&p.lng)) return;
+    for(var k=0;k<rotas.length;k++){ if(pontoDentro(rotas[k].latlngs,p.lat,p.lng)){ p.rota=rotas[k].id; break; } }
+  });
+  rotas.forEach(function(r2){ r2.pkgs=pacotes.filter(function(p){return p.rota===r2.id;}); r2.pkgs.forEach(function(p,k){ p.numNaRota=k+1; }); });
+  var fora=pacotes.filter(function(p){ return p.lat&&!p.rota; }).length;
+  try{ persistirLocal(); }catch(e){}
+  fecharPainelZonas();
+  renderHome(true);
+  try{ if(typeof renderListaPacotes==='function') renderListaPacotes(); }catch(e){}
+  alert('✓ "'+c.nome+'" aplicado.'+(fora?(' '+fora+' pacote(s) ficaram fora das áreas — ajuste no mapa.'):''));
 }
 
 // ── CONTORNO DOS BAIRROS (camada só visual, OpenStreetMap) ──
@@ -5967,7 +6039,13 @@ async function rotCarregarAreas(){
   });
   try{
     var r=await apiFetch(BACKEND+'/api/zonas'); var d=await r.json();
-    _arZonas=(d.zonas||[]).filter(function(z){ return z.latlngs && z.latlngs.length>=3; });
+    // achata todos os conjuntos salvos, marcando de qual conjunto cada área veio
+    _arZonas=[];
+    (d.conjuntos||[]).forEach(function(c){
+      (c.zonas||[]).forEach(function(z){
+        if(z.latlngs && z.latlngs.length>=3) _arZonas.push({ nome:z.nome, cor:z.cor, latlngs:z.latlngs, conjunto:c.nome });
+      });
+    });
   }catch(e){ _arZonas=[]; }
   var html='<option value="*">todos os pacotes ('+geo.length+')</option>';
   var chaves=Object.keys(porBairro).sort(function(a,b){ return porBairro[b].n-porBairro[a].n; });
@@ -5980,7 +6058,7 @@ async function rotCarregarAreas(){
     html+='<optgroup label="áreas que você desenhou">';
     _arZonas.forEach(function(z,i){
       var n=geo.filter(function(p){ return pontoDentro(z.latlngs,p.lat,p.lng); }).length;
-      html+='<option value="zona:'+i+'">'+esc(z.nome||('Área '+(i+1)))+' ('+n+')</option>';
+      html+='<option value="zona:'+i+'">'+esc((z.conjunto?(z.conjunto+' › '):'')+(z.nome||('Área '+(i+1))))+' ('+n+')</option>';
     });
     html+='</optgroup>';
   }
@@ -6110,8 +6188,8 @@ async function confirmarRoteirizar(){
 function abrirMenu(){
   var itens=[
     {t:'Início e fim da rota', s:'ponto de partida e chegada', act:'abrirPontos()', ic:'<path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z" stroke-linejoin="round"/><circle cx="12" cy="10" r="2.6"/>'},
-    {t:'Salvar áreas das rotas', s:'guarda os polígonos do mapa', act:'zonasSalvar()', empresa:true, ic:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8" stroke-linecap="round"/>'},
-    {t:'Aplicar áreas salvas', s:'redistribui os pacotes pelas áreas', act:'zonasAplicar()', empresa:true, ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
+    {t:'Salvar áreas das rotas', s:'guarda com um nome, pode ter várias', act:'zonasSalvar()', empresa:true, ic:'<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8" stroke-linecap="round"/>'},
+    {t:'Áreas salvas', s:'escolher qual conjunto aplicar', act:'zonasAplicar()', empresa:true, ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
     {t:'Reprocessar geocodificação', s:'refaz tudo ignorando o cache', act:'homeForcarGeo()', ic:'<path d="M20 11A8 8 0 1 0 6.3 6.3M20 4v4h-4" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Testar cobertura (banco local)', s:'só CNEFE, sem Google', act:'testarCoberturaLocal()', admin:true, ic:'<path d="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" stroke-linecap="round" stroke-linejoin="round"/>'},
     {t:'Regiões CEP', s:'faixas de CEP por bairro', act:'goTab(4)', ic:'<path d="M9 20l-5.5 2.5V6L9 3.5m0 16.5l6-2.5m-6 2.5V3.5m6 14l5.5 2.5V4L15 6.5m0 11V6.5m0 0L9 3.5" stroke-linejoin="round"/>'},
