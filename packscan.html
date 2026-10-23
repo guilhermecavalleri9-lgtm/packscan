@@ -775,7 +775,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
   <!-- lista de todos os pacotes (editável) -->
   <div class="home-lista-head">
     <b>Todos os pacotes</b>
-    <input type="text" id="home-lista-busca" placeholder="buscar código ou rua..." oninput="renderListaPacotes()">
+    <input type="text" id="home-lista-busca" placeholder="buscar código, rua, bairro ou CEP..." oninput="renderListaPacotes()">
   </div>
   <div id="home-lista"></div>
 </div>
@@ -5069,9 +5069,18 @@ function renderListaPacotes(){
   var el=document.getElementById('home-lista'); if(!el) return;
   var busca=(document.getElementById('home-lista-busca')||{}).value||'';
   busca=busca.trim().toLowerCase();
+  // CEP é comparado só pelos dígitos, pra achar igual digitando 88107-368,
+  // 88107368 ou só o começo (88107) — e sem depender do traço
+  var buscaNum=busca.replace(/\D/g,'');
   var lista=pacotes.filter(function(p){
     if(!busca) return true;
-    return String(p.tracking||'').toLowerCase().indexOf(busca)>=0 || String(p.endereco||'').toLowerCase().indexOf(busca)>=0 || String(p.bairro||'').toLowerCase().indexOf(busca)>=0;
+    if(String(p.tracking||'').toLowerCase().indexOf(busca)>=0) return true;
+    if(String(p.tracking2||'').toLowerCase().indexOf(busca)>=0) return true;
+    if(String(p.endereco||'').toLowerCase().indexOf(busca)>=0) return true;
+    if(String(p.enderecoNorm||'').toLowerCase().indexOf(busca)>=0) return true;
+    if(String(p.bairro||'').toLowerCase().indexOf(busca)>=0) return true;
+    if(buscaNum && String(p.cep||'').replace(/\D/g,'').indexOf(buscaNum)>=0) return true;
+    return false;
   });
   // ordem da rota: por rota, depois pela posição na rota (numNaRota)
   lista=lista.slice().sort(function(a,b){
@@ -5091,7 +5100,7 @@ function renderListaPacotes(){
     html+='<div class="pcard"><span class="pdot" style="background:'+cor+'"></span>'
       +'<div class="pmid"><div class="pt">'+esc(p.tracking||p.codigo||'')+'</div>'
       +'<div class="pe" title="'+esc(p.endereco||'')+'">'+esc((geoOk&&p.enderecoNorm)?p.enderecoNorm:(p.endereco|| [p.bairro,p.cep?('CEP '+p.cep):''].filter(Boolean).join(' · ') ||'(sem endereço)'))+'</div>'
-      +'<div class="pb">'+badge+'</div></div>'
+      +'<div class="pb">'+badge+(p.cep?('<span style="color:var(--text3)"> · CEP '+esc(formatarCep(p.cep))+'</span>'):'')+'</div></div>'
       +'<div class="pact"><button title="Editar" onclick="homeEditar(\''+tkEsc+'\')">✏</button>'
       +'<button class="del" title="Excluir" onclick="homeExcluirPacote(\''+tkEsc+'\')">🗑</button></div></div>';
   });
