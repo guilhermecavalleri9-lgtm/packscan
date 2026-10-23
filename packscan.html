@@ -2684,6 +2684,7 @@ function finImport() {
   document.getElementById('preview-tabela').innerHTML = html;
   document.getElementById('gm-total').textContent = pacotes.length;
   if (_pFile) _arquivoNome = _pFile.name;
+  try{ homeVistaSolta(); }catch(e){} // planilha nova: deixa o mapa enquadrar os pacotes uma vez
   // NÃO persiste aqui: finImport também roda ao restaurar/sincronizar, e persistir
   // nesses casos carimbava dado velho como "novo", quebrando o sync entre aparelhos
 }
@@ -4358,7 +4359,7 @@ async function apagarSessao() {
   // limpa memória
   if (map) { rotas.forEach(function(r){ try{ map.removeLayer(r.layer); }catch(e){} }); if (drawnItems) drawnItems.clearLayers(); }
   pacotes = []; rotas = []; bipados = {}; motAtivo = null; _arquivoNome = ''; _rotasPendentes = null;
-  try{ _selPkgs = {}; _listaVisivel = []; }catch(e){}
+  try{ _selPkgs = {}; _listaVisivel = []; homeVistaSolta(); }catch(e){}
   try { localStorage.removeItem(chaveEstadoLocal()); localStorage.removeItem('packscan_estado'); } catch(e){}
   // limpa UI
   document.getElementById('import-msg').innerHTML = '';
@@ -4778,7 +4779,7 @@ function checarRetornoAssinatura() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // NOVA HOME — resumo, geocodificar, roteirizar, menu
 // ═══════════════════════════════════════════════════════════════════════════════
-function renderHome(){
+function renderHome(preservarVista){
   if(typeof reconstruirRotasHome==='function') reconstruirRotasHome(); // garante rotas salvas antes de contar
   var geo = pacotes.filter(function(p){return p.lat&&p.lng;}).length;
   var tot = pacotes.length;
@@ -4814,13 +4815,18 @@ function renderHome(){
   var hint=document.getElementById('edit-rotas-hint');
   if(hint){ hint.style.display=_editRotas?'block':'none'; if(_editRotas) hint.innerHTML='✏️ <b>Editando rotas</b> — arraste os pontos brancos pra remodelar a área de cada rota. Os pacotes que ficarem dentro passam pra aquela rota. Toque no lápis de novo pra concluir.'; }
   var reo=document.getElementById('btn-reotimizar'); if(reo) reo.style.display = nrotas ? 'flex':'none';
-  homeMapPlot();
+  homeMapPlot(preservarVista);
   renderListaPacotes();
   if(typeof motAtualizarHome==='function') motAtualizarHome();
 }
 
 // ── MAPA DA TELA INICIAL (hero) — pinos + rotas, só leitura ──
 var hmap=null, hmapLayer=null;
+// Enquadramento automático: o mapa só se ajusta sozinho enquanto o usuário não
+// mexeu nele. Depois que ele dá zoom ou arrasta, a vista é dele e nenhuma
+// atualização (editar área, arrastar pino, excluir pacote) tira mais o zoom.
+var _homeVistaUser=false, _homeAjustando=false;
+function homeVistaSolta(){ _homeVistaUser=false; } // volta a enquadrar sozinho (importação nova)
 function homeMapInit(){
   if(hmap || typeof L==='undefined') return;
   var el=document.getElementById('hmap'); if(!el) return;
@@ -4828,6 +4834,8 @@ function homeMapInit(){
     hmap=L.map('hmap',{preferCanvas:true,zoomControl:true,attributionControl:false}).setView([-27.6136,-48.64],12);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(hmap);
     hmapLayer=L.layerGroup().addTo(hmap);
+    hmap.on('zoomend', function(){ if(!_homeAjustando) _homeVistaUser=true; });
+    hmap.on('dragend', function(){ _homeVistaUser=true; });
     setTimeout(function(){ try{hmap.invalidateSize();}catch(e){} },250);
   }catch(e){ hmap=null; }
 }
@@ -4874,7 +4882,7 @@ function homeMapPlot(preservarVista){
           poly.forEach(function(vtx, vi){
             var hnd=L.marker([vtx[0],vtx[1]],{draggable:true,zIndexOffset:1000,icon:L.divIcon({className:'',html:'<div style="width:17px;height:17px;border-radius:50%;background:#fff;border:3px solid '+r.cor+';box-shadow:0 1px 4px rgba(0,0,0,.5)"></div>',iconSize:[17,17],iconAnchor:[8,8]})}).addTo(hmapLayer);
             hnd.on('drag', function(){ var ll=hnd.getLatLng(); r.latlngs[vi]=[ll.lat,ll.lng]; pl.setLatLngs(r.latlngs); });
-            hnd.on('dragend', function(){ reatribuirPorPoligonos(); persistirLocal(); renderHome(); homeMapPlot(true); renderListaPacotes(); });
+            hnd.on('dragend', function(){ reatribuirPorPoligonos(); persistirLocal(); renderHome(true); renderListaPacotes(); });
           });
         }
       }
@@ -4899,7 +4907,14 @@ function homeMapPlot(preservarVista){
     mk.on('dragend', (function(pkg){ return function(){ var ll=mk.getLatLng(); homeArrastou(pkg.tracking, ll.lat, ll.lng); }; })(p));
     pts.push([p.lat,p.lng]);
   });
-  try{ hmap.invalidateSize(); if(!preservarVista) hmap.fitBounds(pts,{padding:[26,26],maxZoom:15}); }catch(e){}
+  try{
+    hmap.invalidateSize();
+    if(!preservarVista && !_homeVistaUser && pts.length){
+      _homeAjustando=true;
+      hmap.fitBounds(pts,{padding:[26,26],maxZoom:15});
+      setTimeout(function(){ _homeAjustando=false; }, 500);
+    }
+  }catch(e){}
 }
 function homeEditar(tracking){ try{ if(hmap) hmap.closePopup(); }catch(e){} abrirModal(tracking); }
 
@@ -5176,7 +5191,7 @@ function homeArrastou(tracking, lat, lng){
   // salva a correção no servidor pra valer também nos próximos dias (mesmo CEP/endereço)
   try{ apiFetch(BACKEND+'/api/geocode/correcao',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cacheKey:(p.cep+'|'+p.endereco).toLowerCase().trim(),lat:lat,lng:lng,enderecoNormalizado:p.enderecoNorm||p.endereco,precisao:'MANUAL',enderecoFormatado:p.enderecoNorm||p.endereco})}).catch(function(){}); }catch(e){}
   try{ if(typeof mapaInit!=='undefined' && mapaInit && map) plotarPontos(); }catch(e){}
-  renderHome(); homeMapPlot(true); // preserva a vista atual (não dá zoom após arrastar)
+  renderHome(true); // preserva a vista atual (não dá zoom após arrastar)
   renderListaPacotes();
 }
 
