@@ -3028,6 +3028,7 @@ function abrirExcluirRotas() {
       + '<button class="btn btn-sm" onclick="fecharExcluirRotas()">✕</button></div>'
       + '<div id="exr-lista" style="display:flex;flex-direction:column;gap:8px"></div>'
       + '<button class="btn btn-r btn-sm" id="exr-todas" style="justify-content:center;width:100%;margin-top:1rem" onclick="excluirTodasRotas()">🗑 Apagar todas as rotas</button>'
+      + '<button class="btn btn-sm" style="justify-content:center;width:100%;margin-top:.5rem" onclick="homeApagarCircular()">⭕ Apagar pacotes circulando no mapa</button>'
       + '<div style="border-top:1px solid var(--border);margin:1rem 0 .75rem"></div>'
       + '<div style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-bottom:.5rem" id="exr-imp-info"></div>'
       + '<button class="btn btn-r btn-sm" style="justify-content:center;width:100%" onclick="apagarSessao()">🗑 Apagar a importação inteira</button>'
@@ -4992,6 +4993,51 @@ async function bairrosToggle(alvo){
   g.addTo(m);
   try{ g.eachLayer(function(l){ if(l.bringToBack) l.bringToBack(); }); }catch(e){}
   _baiLayers[alvo]=g; _baiBotao(alvo,true);
+}
+
+// ── APAGAR PACOTES CIRCULANDO NO MAPA ──
+// Desenha um cerco à mão livre no mapa da home e apaga tudo que cair dentro.
+// Só pega pacote geocodificado — sem coordenada não dá pra saber se está dentro.
+var _hapagando=false;
+function homeApagarCircular(){
+  var geo=pacotes.filter(function(p){ return p.lat&&p.lng; });
+  if(!geo.length){ alert('Nenhum pacote no mapa ainda. Geocodifique primeiro.'); return; }
+  if(_hapagando) return;
+  try{ fecharExcluirRotas(); }catch(e){}
+  homeMapInit(); if(!hmap){ homeMapPlot(); }
+  var h=document.querySelector('.home-hero'); if(h && !h.classList.contains('hero-full')) heroFull();
+  _hapagando=true;
+  var hint=document.getElementById('edit-rotas-hint');
+  if(hint){ hint.style.display='block'; hint.innerHTML='🗑 <b>Apagar circulando</b> — toque no mapa pra cercar a área. Tudo que ficar dentro do cerco será apagado (ainda vai dar pra confirmar).'; }
+  function encerrar(){
+    _hapagando=false;
+    var hi=document.getElementById('edit-rotas-hint'); if(hi){ hi.style.display='none'; hi.innerHTML=''; }
+  }
+  setTimeout(function(){
+    try{
+      hmap.once(L.Draw.Event.CREATED, function(e){
+        var poly=e.layer.getLatLngs()[0].map(function(ll){ return [ll.lat, ll.lng]; });
+        encerrar();
+        if(poly.length<3){ homeMapPlot(true); return; }
+        var dentro=pacotes.filter(function(p){ return p.lat&&p.lng&&pontoDentro(poly,p.lat,p.lng); });
+        if(!dentro.length){ alert('Nenhum pacote dentro do cerco.'); homeMapPlot(true); return; }
+        // resumo por bairro, pra conferir antes de apagar de vez
+        var porBairro={};
+        dentro.forEach(function(p){ var b=p.bairro||'(sem bairro)'; porBairro[b]=(porBairro[b]||0)+1; });
+        var resumo=Object.keys(porBairro).sort(function(a,b){ return porBairro[b]-porBairro[a]; })
+          .slice(0,6).map(function(b){ return '  • '+b+': '+porBairro[b]; }).join('\n');
+        if(!confirm('Apagar '+dentro.length+' pacote(s) dentro do cerco?\n\n'+resumo
+          +(Object.keys(porBairro).length>6?'\n  • ...':'')+'\n\nEssa ação não pode ser desfeita.')){ homeMapPlot(true); return; }
+        try{ if(hmap) hmap.closePopup(); }catch(err){}
+        var n=0;
+        dentro.forEach(function(p){ if(_removerPacoteDaMemoria(p.tracking)) n++; });
+        _renumerarParadas();
+        _redesenharTudoAposExcluir();
+        alert('✓ '+n+' pacote(s) apagado(s).');
+      });
+      new L.Draw.Polygon(hmap,{shapeOptions:{color:'#e5484d',fillColor:'#e5484d',fillOpacity:.15,weight:2},allowIntersection:false}).enable();
+    }catch(err){ encerrar(); alert('Não consegui iniciar o cerco: '+err.message); }
+  }, 80);
 }
 
 // ── DESENHAR ROTA MANUAL no mapa da home (+✏️) ──
