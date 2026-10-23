@@ -1075,11 +1075,18 @@ tr:hover td{background:rgba(255,255,255,.02)}
       </div>
       <!-- AUTO ROTAS (embutido) -->
       <div class="card">
-        <div class="card-title" style="cursor:pointer" onclick="arToggle()">⚡ auto rotas — k-means <span id="ar-chevron" style="float:right;font-size:14px">▼</span></div>
+        <div class="card-title" style="cursor:pointer" onclick="arToggle()">⚡ auto rotas — por bairro / proximidade <span id="ar-chevron" style="float:right;font-size:14px">▼</span></div>
         <div id="ar-body">
-          <div class="alert alert-blue" style="margin-bottom:.75rem">⚡ <div>Agrupa automaticamente por <strong>proximidade geográfica</strong> (K-Means). Pacotes próximos ficam na mesma rota.</div></div>
+          <div class="alert alert-blue" style="margin-bottom:.75rem">⚡ <div>Agrupa por <strong>proximidade geográfica</strong>: pacotes próximos ficam na mesma rota. Escolhendo um <strong>bairro</strong> abaixo, a divisão acontece só dentro dele — as rotas não invadem o bairro vizinho, e as rotas dos outros bairros que você já dividiu são mantidas.</div></div>
           <div style="margin-bottom:.75rem;font-size:13px;color:var(--text2)">
             Pacotes geocodificados: <strong id="ar-total" style="color:var(--text)">0</strong>
+          </div>
+          <div style="margin-bottom:.75rem">
+            <div style="font-size:12px;color:var(--text2);margin-bottom:4px">Dividir dentro de:</div>
+            <select id="ar-area" onchange="arAreaMudou()" style="width:100%;padding:8px 10px;border-radius:var(--radius);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px">
+              <option value="*">todos os pacotes</option>
+            </select>
+            <div id="ar-area-info" style="font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:4px"></div>
           </div>
           <div id="ar-rotas-config"></div>
           <div class="btn-row" style="margin-top:.75rem">
@@ -2547,6 +2554,7 @@ function goTab(n) {
   }
   if (n===2) { renderMotList(); renderEtSelect(); }
   if (n===3) renderMotDownload();
+  if (n===1) { try{ arCarregarAreas(); }catch(e){} } // aba do mapa: atualiza os bairros disponíveis
   if (n===4) renderRegioes();
   if (n===6 && _cepCorrMap) setTimeout(function(){ _cepCorrMap.invalidateSize(); }, 100);
   if (n===7 && AUTH_ADMIN) { carregarPendentes(); carregarUsuarios(); carregarUsoGoogle(); carregarCupons(); carregarCnefe(); carregarGkeys(); }
@@ -2561,6 +2569,7 @@ function arToggle() {
   var hidden = body.style.display === 'none';
   body.style.display = hidden ? '' : 'none';
   chev.textContent = hidden ? '▼' : '▶';
+  if (hidden) { try{ arCarregarAreas(); }catch(e){} }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3914,6 +3923,100 @@ async function regeocodificarPacotes(lista, statusEl) {
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTO ROTAS — K-Means geográfico
 // ═══════════════════════════════════════════════════════════════════════════════
+// ── ÁREA DA DIVISÃO AUTOMÁTICA ──
+// Permite dividir SÓ dentro de um bairro (ou de uma área salva no mapa), pra que
+// as rotas geradas nunca invadam o bairro vizinho. As rotas de cada bairro vão
+// se somando às que já existem, então dá pra fazer um bairro de cada vez.
+var _arZonas = [];            // áreas salvas pelo usuário (polígonos)
+var _arAreaSel = '*';         // '*' | 'bairro:<nome>' | 'zona:<i>'
+
+// normaliza bairro pra agrupar grafias diferentes ("SERTAO" = "Sertão") e
+// conserta o acento que vem quebrado de algumas planilhas (RoÃ§ado → Roçado)
+function _normBairro(b){
+  var t = String(b||'').trim();
+  if(!t) return '';
+  if(/[ÃÂ][\x80-\xBF\u00A0-\u00BF]/.test(t)){
+    try{ t = decodeURIComponent(escape(t)); }catch(e){}
+  }
+  return t;
+}
+function _chaveBairro(b){
+  return _normBairro(b).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+}
+function bairroInvalido(b){
+  var t=_chaveBairro(b);
+  return !t || t==='#n/a' || t==='n/a' || t==='#valor!' || t==='nd' || t==='n/d';
+}
+
+// pacotes de uma área: '*', 'bairro:<chave>' ou 'zona:<i>'
+function arPacotesDaArea(sel){
+  var geo = pacotes.filter(function(p){ return p.lat && p.lng; });
+  if(!sel || sel==='*') return geo;
+  if(sel.indexOf('bairro:')===0){
+    var ch = sel.slice(7);
+    return geo.filter(function(p){ return _chaveBairro(p.bairro)===ch; });
+  }
+  if(sel.indexOf('zona:')===0){
+    var z = _arZonas[parseInt(sel.slice(5),10)];
+    if(!z || !z.latlngs || z.latlngs.length<3) return [];
+    return geo.filter(function(p){ return pontoDentro(z.latlngs, p.lat, p.lng); });
+  }
+  return geo;
+}
+
+async function arCarregarAreas(){
+  var sel = document.getElementById('ar-area'); if(!sel) return;
+  // bairros que aparecem nos pacotes geocodificados
+  var geo = pacotes.filter(function(p){ return p.lat && p.lng; });
+  var porBairro = {};
+  geo.forEach(function(p){
+    if(bairroInvalido(p.bairro)) return;
+    var ch=_chaveBairro(p.bairro);
+    if(!porBairro[ch]) porBairro[ch]={ nome:_normBairro(p.bairro), n:0 };
+    porBairro[ch].n++;
+  });
+  // áreas salvas no mapa
+  try{
+    var r=await apiFetch(BACKEND+'/api/zonas'); var d=await r.json();
+    _arZonas = (d.zonas||[]).filter(function(z){ return z.latlngs && z.latlngs.length>=3; });
+  }catch(e){ _arZonas=[]; }
+
+  var html = '<option value="*">todos os pacotes ('+geo.length+')</option>';
+  var chaves = Object.keys(porBairro).sort(function(a,b){ return porBairro[b].n - porBairro[a].n; });
+  if(chaves.length){
+    html += '<optgroup label="por bairro (da planilha)">';
+    chaves.forEach(function(ch){ html += '<option value="bairro:'+esc(ch)+'">'+esc(porBairro[ch].nome)+' ('+porBairro[ch].n+')</option>'; });
+    html += '</optgroup>';
+  }
+  if(_arZonas.length){
+    html += '<optgroup label="áreas que você desenhou">';
+    _arZonas.forEach(function(z,i){
+      var n = geo.filter(function(p){ return pontoDentro(z.latlngs,p.lat,p.lng); }).length;
+      html += '<option value="zona:'+i+'">'+esc(z.nome||('Área '+(i+1)))+' ('+n+')</option>';
+    });
+    html += '</optgroup>';
+  }
+  var anterior = sel.value;
+  sel.innerHTML = html;
+  // mantém a seleção se ela ainda existir
+  if(anterior && Array.prototype.some.call(sel.options, function(o){ return o.value===anterior; })) sel.value = anterior;
+  _arAreaSel = sel.value || '*';
+  arAreaMudou();
+}
+
+function arAreaMudou(){
+  var sel=document.getElementById('ar-area'); if(!sel) return;
+  _arAreaSel = sel.value || '*';
+  var n = arPacotesDaArea(_arAreaSel).length;
+  var info=document.getElementById('ar-area-info');
+  if(info){
+    info.textContent = (_arAreaSel==='*')
+      ? (n+' pacote(s) · as rotas podem cruzar bairros')
+      : (n+' pacote(s) nesta área · a divisão não sai dela');
+  }
+  arRenderConfig();
+}
+
 var _arConfig = []; // [{nome, qtd, cor}]
 var _arRotasGeradas = []; // resultado do K-Means
 
@@ -4174,12 +4277,27 @@ async function testarOSRM(){
 }
 
 async function arGerar() {
-  var geo = pacotes.filter(function(p){ return p.lat && p.lng; });
-  if (!geo.length) { alert('Geocodifique os pacotes primeiro.'); return; }
+  // só os pacotes da área escolhida — é isso que impede a rota de invadir o
+  // bairro vizinho: o que está fora nem entra na conta
+  var geo = arPacotesDaArea(_arAreaSel);
+  if (!geo.length) {
+    alert(_arAreaSel==='*' ? 'Geocodifique os pacotes primeiro.' : 'Nenhum pacote geocodificado nesta área.');
+    return;
+  }
   if (!_arConfig.length) { alert('Adicione pelo menos uma rota.'); return; }
 
   var totalConf = _arConfig.reduce(function(s,r){ return s+(parseInt(r.qtd)||0); }, 0);
   if (totalConf === 0) { alert('Defina a quantidade de pacotes em cada rota.'); return; }
+  if (totalConf > geo.length) {
+    if(!confirm('Você pediu '+totalConf+' pacotes no total, mas esta área só tem '+geo.length+'.\n\nAs últimas rotas vão sair menores ou vazias. Continuar?')) return;
+  }
+  // respeita o limite de rotas do plano, contando as que já existem
+  var lim = Math.max(1, AUTH_LIMITE_ROTAS||2);
+  var jaTem = (_arAreaSel!=='*' && typeof rotas!=='undefined' && rotas) ? rotas.length : 0;
+  if (jaTem + _arConfig.length > lim) {
+    alert('Seu plano permite '+lim+' rota(s). Você já tem '+jaTem+' e pediu mais '+_arConfig.length+'.');
+    return;
+  }
 
   var aviso = document.getElementById('ar-aviso');
 
@@ -4228,18 +4346,33 @@ async function arGerar() {
 function arAplicarNoMapa(semIr) {
   if (!_arRotasGeradas.length) { alert('Gere as rotas primeiro.'); return; }
   if (!mapaInit) initMap();
-  // limpa rotas existentes
-  rotas.forEach(function(r){ try{ map.removeLayer(r.layer); }catch(e){} });
-  rotas = []; drawnItems.clearLayers();
-  // remove atribuições anteriores
-  pacotes.forEach(function(p){ p.rota=null; p.numNaRota=null; });
+  // Com uma área escolhida, as rotas novas SOMAM às que já existem — assim dá
+  // pra dividir um bairro de cada vez sem perder o que já foi feito.
+  var somar = (_arAreaSel !== '*') && rotas.length > 0;
+  if (!somar) {
+    rotas.forEach(function(r){ try{ map.removeLayer(r.layer); }catch(e){} });
+    rotas = []; drawnItems.clearLayers();
+    pacotes.forEach(function(p){ p.rota=null; p.numNaRota=null; });
+  } else {
+    // só desatribui os pacotes desta área; os outros bairros ficam como estão
+    var daArea = arPacotesDaArea(_arAreaSel);
+    daArea.forEach(function(p){
+      if(p.rota){
+        var rt = rotas.find(function(x){ return x.id===p.rota; });
+        if(rt) rt.pkgs = (rt.pkgs||[]).filter(function(x){ return x!==p; });
+      }
+      p.rota=null; p.numNaRota=null;
+    });
+  }
+  var base = rotas.length;
 
   _arRotasGeradas.forEach(function(r, i) {
     if (!r.pkgs.length) return;
     var cor = r.conf.cor;
     var nome = r.conf.nome;
     // atribui pacotes
-    r.pkgs.forEach(function(p, j){ p.rota=i+1; p.numNaRota=j+1; });
+    var novoId = base + i + 1;
+    r.pkgs.forEach(function(p, j){ p.rota=novoId; p.numNaRota=j+1; });
     // cria polígono ao redor dos pontos — com margem PARA FORA, pra que a rota
     // englobe todos os pacotes (inclusive os que ficam na borda) com folga
     var latlngs = bufferHull(convexHull(r.pkgs), 0.0018);
@@ -4251,11 +4384,13 @@ function arAplicarNoMapa(semIr) {
     var layer = L.polygon(latlngs, {color:cor,fillColor:cor,fillOpacity:.12,weight:2});
     layer.bindTooltip('<b>'+nome+'</b> ('+r.pkgs.length+')',{permanent:true,direction:'center'});
     drawnItems.addLayer(layer);
-    rotas.push({id:i+1, motorista:nome, cor:cor, layer:layer, latlngs:latlngs, pkgs:r.pkgs});
+    rotas.push({id:novoId, motorista:nome, cor:cor, layer:layer, latlngs:latlngs, pkgs:r.pkgs});
   });
 
   renderRotasList(); renderMotList(); renderEtSelect(); renderMotDownload();
   persistirLocal();
+  try{ renderHome(true); }catch(e){}
+  try{ arCarregarAreas(); }catch(e){}
   if (!semIr) goTab(1); // vai para o mapa
 }
 
