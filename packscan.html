@@ -1413,6 +1413,15 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div class="card">
       <div class="card-title">3. Resultado</div>
       <div id="cz-resumo" style="font-size:13px;color:var(--text3);font-family:var(--mono)">suba as duas planilhas acima</div>
+      <div id="cz-cols-box" style="display:none;margin-top:.9rem;border-top:1px solid var(--border);padding-top:.75rem">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:.5rem">Colunas da planilha nova <span style="color:var(--text3)">(marque o que quer levar)</span>:</div>
+        <div id="cz-cols" style="display:flex;flex-direction:column;gap:5px;max-height:230px;overflow-y:auto"></div>
+        <div class="btn-row" style="margin-top:.6rem;gap:6px">
+          <button class="btn btn-sm" onclick="czColsPadrao()">↺ só as 5 principais</button>
+          <button class="btn btn-sm" onclick="czColsTodas(true)">marcar todas</button>
+          <button class="btn btn-sm" onclick="czColsTodas(false)">desmarcar todas</button>
+        </div>
+      </div>
       <div id="cz-tabela" style="overflow-x:auto;margin-top:.75rem"></div>
       <div class="btn-row" style="margin-top:1rem;flex-wrap:wrap">
         <button class="btn btn-g btn-sm" id="cz-dl" style="display:none" onclick="czBaixar()">⬇ Baixar Excel do cruzamento</button>
@@ -1832,6 +1841,68 @@ function czCarregar(qual, inp){
   if(ext==='csv') reader.readAsText(f); else reader.readAsBinaryString(f);
 }
 
+// Colunas que a planilha nova leva. Começa com as 5 que interessam; a coluna do
+// código entra sempre, porque é a chave do cruzamento.
+var CZ_COLS_PADRAO = ['número de pedido jms','estado de destino','município de destino','bairro','número do lote'];
+var _czCols = [];   // [{rotulo, origem:'a'|'b', campo, on}]
+
+function czMontarCols(){
+  var r=_cz.result; if(!r) { _czCols=[]; return; }
+  var vistos={};
+  _czCols=[];
+  // A primeiro (é a planilha mais completa), depois o que só existe na B
+  _cz.a.hdrs.forEach(function(h){
+    var k=String(h).trim().toLowerCase();
+    if(vistos[k]) return; vistos[k]=true;
+    _czCols.push({ rotulo:h, origem:'a', campo:h, on:CZ_COLS_PADRAO.indexOf(k)>=0 });
+  });
+  _cz.b.hdrs.forEach(function(h){
+    var k=String(h).trim().toLowerCase();
+    if(vistos[k]) return; vistos[k]=true;
+    _czCols.push({ rotulo:h, origem:'b', campo:h, on:CZ_COLS_PADRAO.indexOf(k)>=0 });
+  });
+  // a coluna do código é obrigatória
+  var temCod=_czCols.some(function(c){ return c.on && String(c.rotulo).trim().toLowerCase()===String(r.ka).trim().toLowerCase(); });
+  if(!temCod){
+    var cod=_czCols.find(function(c){ return String(c.rotulo).trim().toLowerCase()===String(r.ka).trim().toLowerCase(); });
+    if(cod) cod.on=true;
+  }
+  czRenderCols();
+}
+function czRenderCols(){
+  var el=document.getElementById('cz-cols'); if(!el) return;
+  el.innerHTML=_czCols.map(function(c,i){
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:12.5px;cursor:pointer">'
+      +'<input type="checkbox" '+(c.on?'checked':'')+' onchange="_czCols['+i+'].on=this.checked; czRenderPrevia();" style="width:16px;height:16px;accent-color:var(--accent)">'
+      +'<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(c.rotulo)+'</span>'
+      +'<span style="font-size:10px;color:var(--text3);font-family:var(--mono)">'+(c.origem==='a'?'A':'B')+'</span></label>';
+  }).join('');
+  document.getElementById('cz-cols-box').style.display=_czCols.length?'block':'none';
+}
+function czColsPadrao(){
+  var r=_cz.result;
+  _czCols.forEach(function(c){
+    var k=String(c.rotulo).trim().toLowerCase();
+    c.on = CZ_COLS_PADRAO.indexOf(k)>=0 || (r && k===String(r.ka).trim().toLowerCase());
+  });
+  czRenderCols(); czRenderPrevia();
+}
+function czColsTodas(v){ _czCols.forEach(function(c){ c.on=v; }); czRenderCols(); czRenderPrevia(); }
+function czColsAtivas(){ return _czCols.filter(function(c){ return c.on; }); }
+// valor de uma coluna numa junção: usa a planilha de origem e, se vier vazio,
+// tenta a outra (ex.: Município existe nas duas)
+function czValor(j, c){
+  var v = (c.origem==='a') ? j.a[c.campo] : j.b[c.campo];
+  if(v===undefined || String(v).trim()===''){
+    var o = (c.origem==='a') ? j.b[c.campo] : j.a[c.campo];
+    if(o!==undefined) v=o;
+  }
+  var t = (v===undefined) ? '' : String(v).trim();
+  // conserta o acento quebrado que vem de algumas exportações (Flor de NÃ¡polis)
+  if(t && /[ÃÂ]/.test(t)){ try{ t=_normBairro(t); }catch(e){} }
+  return t;
+}
+
 function czPrevia(){
   var resumo=document.getElementById('cz-resumo');
   var dl=document.getElementById('cz-dl'), imp=document.getElementById('cz-imp');
@@ -1867,50 +1938,43 @@ function czPrevia(){
     +' · <span style="color:var(--amber)">'+soB.length+' só na B</span>'
     +(dupA||dupB ? ('<br><span style="color:var(--text3)">códigos repetidos ignorados: '+dupA+' na A, '+dupB+' na B</span>') : '');
 
-  // prévia das 8 primeiras junções
-  if(juntos.length){
-    var colsA=_cz.a.hdrs.slice(0,4), colsB=_cz.b.hdrs.filter(function(h){ return h!==kb; }).slice(0,3);
-    var html='<table><thead><tr><th>código</th>';
-    colsA.forEach(function(h){ if(h!==ka) html+='<th>A · '+esc(h)+'</th>'; });
-    colsB.forEach(function(h){ html+='<th>B · '+esc(h)+'</th>'; });
-    html+='</tr></thead><tbody>';
-    juntos.slice(0,8).forEach(function(j){
-      html+='<tr><td style="font-family:var(--mono);font-size:11px">'+esc(j.cod)+'</td>';
-      colsA.forEach(function(h){ if(h!==ka) html+='<td>'+esc(String(j.a[h]||''))+'</td>'; });
-      colsB.forEach(function(h){ html+='<td>'+esc(String(j.b[h]||''))+'</td>'; });
-      html+='</tr>';
-    });
-    if(juntos.length>8) html+='<tr><td colspan="9" style="text-align:center;color:var(--text3);font-family:var(--mono);padding:8px">... +'+(juntos.length-8)+'</td></tr>';
-    html+='</tbody></table>';
-    document.getElementById('cz-tabela').innerHTML=html;
-    dl.style.display='inline-flex'; imp.style.display='inline-flex';
+  czMontarCols();
+  czRenderPrevia();
+}
+
+// desenha a prévia com exatamente as colunas marcadas — é o que vai sair no Excel
+function czRenderPrevia(){
+  var r=_cz.result, el=document.getElementById('cz-tabela');
+  var dl=document.getElementById('cz-dl'), imp=document.getElementById('cz-imp');
+  if(!r || !r.juntos.length){ el.innerHTML=''; dl.style.display='none'; imp.style.display='none'; return; }
+  var cols=czColsAtivas();
+  if(!cols.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--amber);font-family:var(--mono)">marque ao menos uma coluna</div>';
+    dl.style.display='none'; imp.style.display='none'; return;
   }
+  var html='<table><thead><tr>'+cols.map(function(c){ return '<th>'+esc(c.rotulo)+'</th>'; }).join('')+'</tr></thead><tbody>';
+  r.juntos.slice(0,8).forEach(function(j){
+    html+='<tr>'+cols.map(function(c){ return '<td style="font-size:12px">'+esc(czValor(j,c))+'</td>'; }).join('')+'</tr>';
+  });
+  if(r.juntos.length>8) html+='<tr><td colspan="'+cols.length+'" style="text-align:center;color:var(--text3);font-family:var(--mono);padding:8px">... +'+(r.juntos.length-8)+' linha(s)</td></tr>';
+  html+='</tbody></table>';
+  el.innerHTML=html;
+  dl.style.display='inline-flex'; imp.style.display='inline-flex';
 }
 
 function czBaixar(){
   var r=_cz.result; if(!r||!r.juntos.length){ alert('Nada pra baixar.'); return; }
-  var hdrsA=_cz.a.hdrs, hdrsB=_cz.b.hdrs.filter(function(h){ return h!==r.kb; });
-  var cab=['Código'].concat(hdrsA.map(function(h){ return 'A · '+h; })).concat(hdrsB.map(function(h){ return 'B · '+h; }));
-  var linhas=r.juntos.map(function(j){
-    return [j.cod]
-      .concat(hdrsA.map(function(h){ return j.a[h]===undefined?'':String(j.a[h]); }))
-      .concat(hdrsB.map(function(h){ return j.b[h]===undefined?'':String(j.b[h]); }));
-  });
+  var cols=czColsAtivas();
+  if(!cols.length){ alert('Marque ao menos uma coluna.'); return; }
+  // só os pacotes que estão NAS DUAS planilhas, só as colunas marcadas
+  var cab=cols.map(function(c){ return c.rotulo; });
+  var linhas=r.juntos.map(function(j){ return cols.map(function(c){ return czValor(j,c); }); });
   var wb=XLSX.utils.book_new();
   var ws=XLSX.utils.aoa_to_sheet([cab].concat(linhas));
-  ws['!cols']=cab.map(function(){ return {wch:18}; });
+  ws['!cols']=cols.map(function(c){ return {wch: Math.min(34, Math.max(14, String(c.rotulo).length+4))}; });
   XLSX.utils.book_append_sheet(wb,ws,'Em comum');
-  if(r.soA.length){
-    var wsa=XLSX.utils.aoa_to_sheet([hdrsA].concat(r.soA.map(function(x){ return hdrsA.map(function(h){ return x[h]===undefined?'':String(x[h]); }); })));
-    XLSX.utils.book_append_sheet(wb,wsa,'Só na A');
-  }
-  if(r.soB.length){
-    var hb=_cz.b.hdrs;
-    var wsb=XLSX.utils.aoa_to_sheet([hb].concat(r.soB.map(function(x){ return hb.map(function(h){ return x[h]===undefined?'':String(x[h]); }); })));
-    XLSX.utils.book_append_sheet(wb,wsb,'Só na B');
-  }
   XLSX.writeFile(wb,'PackScan_Cruzamento_'+new Date().toISOString().slice(0,10)+'.xlsx');
-  document.getElementById('cz-status').textContent='✓ Excel gerado com 3 abas: Em comum, Só na A, Só na B.';
+  document.getElementById('cz-status').textContent='✓ Excel gerado: '+linhas.length+' linha(s) e '+cab.length+' coluna(s). Quem não estava nas duas planilhas ficou de fora.';
 }
 
 // manda os coincidentes pra importação normal, já com as colunas mapeadas
@@ -1919,10 +1983,11 @@ function czImportar(){
   if(!confirm('Importar os '+r.juntos.length+' pacote(s) em comum?\n\nIsso substitui a importação atual do PackScan.')) return;
   // junta as colunas das duas planilhas numa linha só e deixa a importação
   // normal (com seu auto-mapeamento) cuidar do resto
+  var cols=czColsAtivas();
+  if(!cols.length){ alert('Marque ao menos uma coluna.'); return; }
   var linhas=r.juntos.map(function(j){
     var o={};
-    _cz.a.hdrs.forEach(function(h){ o[h]=j.a[h]; });
-    _cz.b.hdrs.forEach(function(h){ if(o[h]===undefined||String(o[h]).trim()==='') o[h]=j.b[h]; });
+    cols.forEach(function(c){ o[c.rotulo]=czValor(j,c); });
     return o;
   });
   // gera um .xlsx em memória com as colunas das duas planilhas juntas e entrega
