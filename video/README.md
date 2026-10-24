@@ -37,13 +37,42 @@ npx remotion render
 npx remotion upgrade
 ```
 
+## Captioning
+
+Replace the `sample-video.mp4` with your video file.
+Caption all the videos in you `public` by running the following command:
+
+```console
+node sub.mjs
+```
+
+Only caption a specific video:
+
+```console
+node sub.mjs <path-to-video-file>
+```
+
+Only caption a specific folder:
+
+```console
+node sub.mjs <path-to-folder>
+```
+
+## Configure Whisper.cpp
+
+Captioning will download Whisper.cpp and the 1.5GB big `medium.en` model. To configure which model is being used, you can configure the variables in `whisper-config.mjs`.
+
+### Non-English languages
+
+To support non-English languages, you need to change the `WHISPER_MODEL` variable in `whisper-config.mjs` to a model that does not have a `.en` sufix.
+
 ## Docs
 
 Get started with Remotion by reading the [fundamentals page](https://www.remotion.dev/docs/the-fundamentals).
 
 ## Help
 
-We provide help on our [Discord server](https://discord.gg/6VzzNDwUwV).
+We provide help on our [Discord server](https://remotion.dev/discord).
 
 ## Issues
 

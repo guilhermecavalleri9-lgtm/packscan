@@ -1,7 +1,7 @@
 {
   "name": "video",
   "version": "1.0.0",
-  "description": "My Remotion video",
+  "description": "A Remotion template for TikTok-style captions",
   "repository": {},
   "license": "UNLICENSED",
   "engines": {
@@ -11,6 +11,9 @@
   "dependencies": {
     "@remotion/cli": "4.0.538",
     "@remotion/zod-types": "4.0.538",
+    "@remotion/animation-utils": "4.0.538",
+    "@remotion/layout-utils": "4.0.538",
+    "@remotion/media-utils": "4.0.538",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "remotion": "4.0.538",
@@ -18,6 +21,8 @@
   },
   "devDependencies": {
     "@remotion/eslint-config-flat": "4.0.538",
+    "@remotion/install-whisper-cpp": "4.0.538",
+    "@remotion/captions": "4.0.538",
     "@types/react": "19.2.7",
     "@types/web": "0.0.166",
     "eslint": "10.12.0",
@@ -28,7 +33,8 @@
     "dev": "remotion studio",
     "build": "remotion bundle",
     "upgrade": "remotion upgrade",
-    "lint": "eslint src && tsc"
+    "lint": "eslint src && tsc",
+    "create-subtitles": "node sub.mjs"
   },
   "allowScripts": {
     "esbuild": false
