@@ -1418,7 +1418,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <div style="font-size:12px;color:var(--text2);margin-bottom:.5rem">Colunas da planilha nova <span style="color:var(--text3)">(marque o que quer levar)</span>:</div>
         <div id="cz-cols" style="display:flex;flex-direction:column;gap:5px;max-height:230px;overflow-y:auto"></div>
         <div class="btn-row" style="margin-top:.6rem;gap:6px">
-          <button class="btn btn-sm" onclick="czColsPadrao()">↺ só as 4 principais</button>
+          <button class="btn btn-sm" onclick="czColsPadrao()">↺ só as 5 principais</button>
           <button class="btn btn-sm" onclick="czColsTodas(true)">marcar todas</button>
           <button class="btn btn-sm" onclick="czColsTodas(false)">desmarcar todas</button>
         </div>
@@ -1844,7 +1844,7 @@ function czCarregar(qual, inp){
 
 // Colunas que a planilha nova leva. Começa com as 5 que interessam; a coluna do
 // código entra sempre, porque é a chave do cruzamento.
-var CZ_COLS_PADRAO = ['número de pedido jms','estado de destino','município de destino','bairro'];
+var CZ_COLS_PADRAO = ['número de pedido jms','estado de destino','município de destino','bairro','cep'];
 // compara nome de coluna ignorando acento, caixa e espaço — exportações variam
 function _czChaveCol(h){
   return String(h||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
@@ -1855,10 +1855,13 @@ var CZ_ALIAS = {
   'numero de pedido jms':['numero de pedido jms','pedidos','tracking','codigo','n de pedido jms'],
   'estado de destino':['estado de destino','uf','uf de destino'],
   'municipio de destino':['municipio de destino','cidade de destino','municipio'],
-  'bairro':['bairro','distrito']
+  'bairro':['bairro','distrito'],
+  'cep':['cep','cep destino','cep de destino','cep do destino','zipcode','zip','codigo postal','postal code']
 };
 function _czEhPadrao(h){
   var k=_czChaveCol(h);
+  // a planilha traz origem E destino; a de origem nunca deve ser marcada sozinha
+  if(k.indexOf('origem')>=0) return false;
   return Object.keys(CZ_ALIAS).some(function(base){ return CZ_ALIAS[base].indexOf(k)>=0; });
 }
 var _czCols = [];   // [{rotulo, origem:'a'|'b', campo, on}]
@@ -1914,7 +1917,7 @@ function czAvisarFaltando(){
     return !CZ_ALIAS[base].some(function(ap){ return presentes.indexOf(ap)>=0; });
   });
   var bonito={ 'numero de pedido jms':'Número de pedido JMS','estado de destino':'Estado de destino',
-    'municipio de destino':'Município de Destino','bairro':'BAIRRO' };
+    'municipio de destino':'Município de Destino','bairro':'BAIRRO','cep':'CEP (destino)' };
   if(!faltam.length){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='block';
   el.innerHTML='⚠ Nenhuma das duas planilhas tem: <b>'+faltam.map(function(f){ return esc(bonito[f]||f); }).join(', ')
@@ -1933,6 +1936,13 @@ function czValor(j, c){
   var t = (v===undefined) ? '' : String(v).trim();
   // conserta o acento quebrado que vem de algumas exportações (Flor de NÃ¡polis)
   if(t && /[ÃÂ]/.test(t)){ try{ t=_normBairro(t); }catch(e){} }
+  // CEP costuma vir gravado como número (88107368.0): sai só com os 8 dígitos,
+  // como texto, pra não virar notação científica nem perder zero à esquerda
+  if(t && _czChaveCol(c.rotulo).indexOf('cep')>=0){
+    var d=t.replace(/\.0+$/,'').replace(/\D/g,'');
+    if(d.length===7) d='0'+d;          // zero à esquerda comido pelo Excel
+    if(d.length===8) t=d;
+  }
   return t;
 }
 
