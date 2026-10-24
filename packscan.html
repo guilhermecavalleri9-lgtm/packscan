@@ -1413,6 +1413,7 @@ tr:hover td{background:rgba(255,255,255,.02)}
     <div class="card">
       <div class="card-title">3. Resultado</div>
       <div id="cz-resumo" style="font-size:13px;color:var(--text3);font-family:var(--mono)">suba as duas planilhas acima</div>
+      <div id="cz-faltando" class="alert alert-amber" style="display:none;margin-top:.75rem;font-size:12px"></div>
       <div id="cz-cols-box" style="display:none;margin-top:.9rem;border-top:1px solid var(--border);padding-top:.75rem">
         <div style="font-size:12px;color:var(--text2);margin-bottom:.5rem">Colunas da planilha nova <span style="color:var(--text3)">(marque o que quer levar)</span>:</div>
         <div id="cz-cols" style="display:flex;flex-direction:column;gap:5px;max-height:230px;overflow-y:auto"></div>
@@ -1844,6 +1845,23 @@ function czCarregar(qual, inp){
 // Colunas que a planilha nova leva. Começa com as 5 que interessam; a coluna do
 // código entra sempre, porque é a chave do cruzamento.
 var CZ_COLS_PADRAO = ['número de pedido jms','estado de destino','município de destino','bairro','número do lote'];
+// compara nome de coluna ignorando acento, caixa e espaço — exportações variam
+function _czChaveCol(h){
+  return String(h||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[º°\.]/g,'').replace(/\s+/g,' ').trim();
+}
+// apelidos aceitos pra cada coluna padrão (algumas exportações mudam o rótulo)
+var CZ_ALIAS = {
+  'numero de pedido jms':['numero de pedido jms','pedidos','tracking','codigo','n de pedido jms'],
+  'estado de destino':['estado de destino','uf','uf de destino'],
+  'municipio de destino':['municipio de destino','cidade de destino','municipio'],
+  'bairro':['bairro','distrito'],
+  'numero do lote':['numero do lote','n do lote','no do lote','lote','numero lote']
+};
+function _czEhPadrao(h){
+  var k=_czChaveCol(h);
+  return Object.keys(CZ_ALIAS).some(function(base){ return CZ_ALIAS[base].indexOf(k)>=0; });
+}
 var _czCols = [];   // [{rotulo, origem:'a'|'b', campo, on}]
 
 function czMontarCols(){
@@ -1854,19 +1872,20 @@ function czMontarCols(){
   _cz.a.hdrs.forEach(function(h){
     var k=String(h).trim().toLowerCase();
     if(vistos[k]) return; vistos[k]=true;
-    _czCols.push({ rotulo:h, origem:'a', campo:h, on:CZ_COLS_PADRAO.indexOf(k)>=0 });
+    _czCols.push({ rotulo:h, origem:'a', campo:h, on:_czEhPadrao(h) });
   });
   _cz.b.hdrs.forEach(function(h){
     var k=String(h).trim().toLowerCase();
     if(vistos[k]) return; vistos[k]=true;
-    _czCols.push({ rotulo:h, origem:'b', campo:h, on:CZ_COLS_PADRAO.indexOf(k)>=0 });
+    _czCols.push({ rotulo:h, origem:'b', campo:h, on:_czEhPadrao(h) });
   });
   // a coluna do código é obrigatória
-  var temCod=_czCols.some(function(c){ return c.on && String(c.rotulo).trim().toLowerCase()===String(r.ka).trim().toLowerCase(); });
+  var temCod=_czCols.some(function(c){ return c.on && _czChaveCol(c.rotulo)===_czChaveCol(r.ka); });
   if(!temCod){
-    var cod=_czCols.find(function(c){ return String(c.rotulo).trim().toLowerCase()===String(r.ka).trim().toLowerCase(); });
+    var cod=_czCols.find(function(c){ return _czChaveCol(c.rotulo)===_czChaveCol(r.ka); });
     if(cod) cod.on=true;
   }
+  czAvisarFaltando();
   czRenderCols();
 }
 function czRenderCols(){
@@ -1882,10 +1901,25 @@ function czRenderCols(){
 function czColsPadrao(){
   var r=_cz.result;
   _czCols.forEach(function(c){
-    var k=String(c.rotulo).trim().toLowerCase();
-    c.on = CZ_COLS_PADRAO.indexOf(k)>=0 || (r && k===String(r.ka).trim().toLowerCase());
+    c.on = _czEhPadrao(c.rotulo) || (r && _czChaveCol(c.rotulo)===_czChaveCol(r.ka));
   });
   czRenderCols(); czRenderPrevia();
+}
+// avisa, antes de baixar, se alguma das colunas esperadas não existe em NENHUMA
+// das duas planilhas — foi o que aconteceu com o 'Número do lote', que só existe
+// no relatório de bipagem
+function czAvisarFaltando(){
+  var el=document.getElementById('cz-faltando'); if(!el) return;
+  var presentes=_czCols.map(function(c){ return _czChaveCol(c.rotulo); });
+  var faltam=Object.keys(CZ_ALIAS).filter(function(base){
+    return !CZ_ALIAS[base].some(function(ap){ return presentes.indexOf(ap)>=0; });
+  });
+  var bonito={ 'numero de pedido jms':'Número de pedido JMS','estado de destino':'Estado de destino',
+    'municipio de destino':'Município de Destino','bairro':'BAIRRO','numero do lote':'Número do lote' };
+  if(!faltam.length){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  el.innerHTML='⚠ Nenhuma das duas planilhas tem: <b>'+faltam.map(function(f){ return esc(bonito[f]||f); }).join(', ')
+    +'</b>. Essa coluna não vai sair no resultado — confira se subiu a planilha certa (o <i>Número do lote</i>, por exemplo, só vem no relatório de bipagem).';
 }
 function czColsTodas(v){ _czCols.forEach(function(c){ c.on=v; }); czRenderCols(); czRenderPrevia(); }
 function czColsAtivas(){ return _czCols.filter(function(c){ return c.on; }); }
