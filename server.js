@@ -288,7 +288,17 @@ function demoSemear() {
       ceps++;
     }
   });
+  // usuário fixo da demonstração: demo / demo1234, conta empresa com plano ativo
+  const senhaHash = hashSenha('demo1234');
+  memoriaCache[AUTH_USUARIOS_KEY] = [{
+    usuario: 'demo', senhaHash, email: 'demo@packscan.local',
+    tipoConta: 'empresa', emailVerificado: true, status: 'aprovado', admin: true,
+    creditos: 0, planoId: 'empresa_frota', limiteRotas: 50,
+    planoAte: Date.now() + 365 * 86400000, trialAte: 0,
+    criadoEm: new Date().toISOString()
+  }];
   console.log(`[demo] ${ceps} CEPs fictícios de São José carregados na memória`);
+  console.log('[demo] usuário: demo / demo1234 (empresa, plano Frota)');
   return ceps;
 }
 
