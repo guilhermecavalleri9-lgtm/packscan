@@ -28,7 +28,7 @@ const PLANOS = [
   // Oferta de abertura: 60 dias de Starter por R$ 197 (tabela: R$ 780 em 2 meses).
   // 'oculto' tira da lista normal — só chega nela por link direto (?plano=empresa_60d).
   { id: 'empresa_60d', tipo: 'empresa', nome: '60 dias', preco: 197.00, dias: 60, rotas: 10, oculto: true,
-    precoDe: 780.00,
+    precoDe: 780.00, parcelas: 6,
     itens: ['2 meses de acesso completo', 'Até 10 rotas por dia', 'Roteirização automática por bairro',
             'Bipagem por câmera e por código', 'Modo motorista com GPS', 'Pagamento único — não renova sozinho'] }
 ];
@@ -2333,6 +2333,47 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // ─── PAGAMENTO: checkout no cartão, com parcelamento ───────────────────────
+  // Cria uma preferência no Mercado Pago e devolve o link do checkout. Diferente
+  // do PIX, aqui dá pra parcelar no cartão. Quem credita é o webhook, pelo
+  // external_reference (o pagamento acontece fora do app).
+  if (req.method === 'POST' && pathname === '/api/pagamento/checkout') {
+    if (!MERCADOPAGO_TOKEN) return json(res, 503, { error: 'Pagamento ainda não configurado pelo administrador.' });
+    const body = await readBody(req);
+    const usuario = req.usuarioAtual.usuario;
+    const plano = acharPlano(body.planoId);
+    if (!plano) return json(res, 400, { error: 'Plano inválido' });
+    const maxParc = Math.max(1, Math.min(12, Number(plano.parcelas) || 1));
+    const base = (process.env.APP_URL || ('https://' + (req.headers.host || 'packscan-noma.onrender.com'))).replace(/\/+$/, '');
+    try {
+      const pref = await mpRequest('POST', '/checkout/preferences', {
+        items: [{
+          title: `PackScan — plano ${plano.nome} (${plano.dias} dias)`,
+          quantity: 1, currency_id: 'BRL', unit_price: Number(plano.preco)
+        }],
+        payer: { email: emailPagador(usuario) },
+        external_reference: `${usuario}|${plano.id}|${plano.dias}`,
+        payment_methods: { installments: maxParc },
+        ...(base ? {
+          back_urls: { success: base + '/?pago=1', pending: base + '/?pago=0', failure: base + '/?pago=0' },
+          auto_return: 'approved',
+          notification_url: base + '/api/pagamento/webhook'
+        } : {})
+      });
+      if (pref.status >= 300 || !pref.body || !pref.body.init_point) {
+        console.error('[checkout]', pref.status, JSON.stringify(pref.body));
+        const b = pref.body || {};
+        const det = b.message || (b.cause && b.cause[0] && (b.cause[0].description || b.cause[0].code)) || ('HTTP ' + pref.status);
+        return json(res, 502, { error: 'Mercado Pago recusou: ' + det });
+      }
+      console.log(`[checkout] ${usuario} → ${plano.id} R$ ${plano.preco} em até ${maxParc}x`);
+      return json(res, 200, { init_point: pref.body.init_point, parcelas: maxParc });
+    } catch (e) {
+      console.error('[checkout]', e.message);
+      return json(res, 502, { error: 'Erro ao falar com o Mercado Pago.' });
+    }
+  }
+
   // ─── PAGAMENTO: consulta status (frontend faz polling) ─────────────────────
   if (req.method === 'GET' && pathname === '/api/pagamento/status') {
     const id = (parsedUrl.query.id || '').toString();
@@ -2452,7 +2493,23 @@ const server = http.createServer(async (req, res) => {
       if (tipo === 'payment' && /^\d+$/.test(idRaw) && MERCADOPAGO_TOKEN) {
         // PIX avulso
         const mp = await mpRequest('GET', '/v1/payments/' + idRaw);
-        if (mp.body && mp.body.status === 'approved') await creditarPagamento(idRaw);
+        if (mp.body && mp.body.status === 'approved') {
+          // pagamento do checkout (cartão parcelado): não existe registro prévio,
+          // então monta um a partir do external_reference antes de creditar
+          if (!(await supabaseGet('pay:' + idRaw))) {
+            const ref = String(mp.body.external_reference || '');
+            const [usuario, planoId, diasTxt] = ref.split('|');
+            if (usuario && planoId) {
+              await supabaseSet('pay:' + idRaw, {
+                usuario, tipo: 'plano', planoId,
+                dias: Number(diasTxt) || (acharPlano(planoId) || {}).dias || 30,
+                preco: Number(mp.body.transaction_amount) || 0,
+                cupom: null, status: 'pendente', origem: 'checkout'
+              });
+            }
+          }
+          await creditarPagamento(idRaw);
+        }
       } else if ((tipo === 'subscription_preapproval' || tipo === 'preapproval') && idRaw && MERCADOPAGO_TOKEN) {
         // assinatura autorizada/cancelada
         const mp = await mpRequest('GET', '/preapproval/' + idRaw);

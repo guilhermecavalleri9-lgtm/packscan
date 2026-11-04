@@ -1688,6 +1688,24 @@ async function abrirPlanoDireto(id){
     renderOferta(d.plano, d.ativo);
   }catch(e){ lista.innerHTML='<div style="color:var(--red)">Erro: '+esc(e.message)+'</div>'; }
 }
+// checkout do cartão (permite parcelar) — abre o Mercado Pago
+function checkoutCartao(planoId){
+  var lista=document.getElementById('comprar-lista');
+  var antes=lista.innerHTML;
+  lista.innerHTML='Abrindo o checkout do cartão...';
+  apiFetch(BACKEND+'/api/pagamento/checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({planoId:planoId})})
+    .then(function(r){ return r.json().then(function(d){ return {ok:r.ok,d:d}; }); })
+    .then(function(res){
+      if(!res.ok || !res.d.init_point){
+        lista.innerHTML='<div style="color:var(--red)">'+esc((res.d&&res.d.error)||'Erro ao abrir o checkout')+'</div>'
+          +'<button class="btn btn-sm" style="margin-top:.6rem" onclick="comprarAbrir()">← Voltar</button>';
+        return;
+      }
+      window.location.href=res.d.init_point;
+    })
+    .catch(function(e){ lista.innerHTML='<div style="color:var(--red)">Erro: '+esc(e.message)+'</div>'; setTimeout(function(){lista.innerHTML=antes;},2500); });
+}
+
 function renderOferta(pl, ativo){
   var lista=document.getElementById('comprar-lista');
   var idEsc=String(pl.id).replace(/'/g,"\\'");
@@ -1706,8 +1724,14 @@ function renderOferta(pl, ativo){
     html += '<div style="color:var(--amber);font-size:12px">Pagamento automático indisponível no momento. Fale no WhatsApp:</div>'
       + '<a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-top:.6rem" href="'+WHATSAPP_COMPRA+'" target="_blank" rel="noopener">💬 Falar no WhatsApp</a>';
   } else {
-    html += '<button class="btn btn-g" style="width:100%;justify-content:center;padding:13px;font-size:14px;font-weight:650" onclick="comprarPacote(\''+idEsc+'\')">Pagar R$ '+pl.preco.toFixed(2).replace('.',',')+' no PIX</button>'
-      + '<div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Liberação automática assim que o PIX cair</div>';
+    var parc = Math.max(1, Math.min(12, Number(pl.parcelas)||1));
+    var vParc = (pl.preco/parc);
+    html += '<button class="btn btn-g" style="width:100%;justify-content:center;padding:13px;font-size:14px;font-weight:650" onclick="comprarPacote(\''+idEsc+'\')">Pagar R$ '+pl.preco.toFixed(2).replace('.',',')+' no PIX</button>';
+    if(parc>1){
+      html += '<button class="btn btn-p" style="width:100%;justify-content:center;padding:13px;font-size:14px;font-weight:650;margin-top:8px" onclick="checkoutCartao(\''+idEsc+'\')">'
+        + '💳 Cartão em até '+parc+'x de R$ '+vParc.toFixed(2).replace('.',',')+'</button>';
+    }
+    html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Liberação automática assim que o pagamento cair</div>';
   }
   html += '</div><button class="btn btn-sm" style="width:100%;justify-content:center;margin-top:.8rem" onclick="_planoDoLink=null;comprarAbrir()">ver os planos normais</button>';
   lista.innerHTML=html;
