@@ -245,6 +245,79 @@ function unzipPrimeiroArquivo(buf) {
   return method === 8 ? zlib.inflateRawSync(comp) : comp;
 }
 
+// ─── MODO DEMO ────────────────────────────────────────────────────────────────
+// Com MODO_DEMO=1 o sistema sobe sem banco e sem chave de API, com uma base de
+// CEPs fictícios de São José já no cache. Serve pra gravar vídeo, demonstrar em
+// reunião e testar, sem tocar em dado real de cliente. NÃO use em produção.
+const MODO_DEMO = String(process.env.MODO_DEMO || '') === '1';
+
+// ruas e bairros reais da região, com coordenadas aproximadas — os PACOTES é que
+// são inventados, não os logradouros
+const DEMO_BAIRROS = [
+  { nome: 'Forquilhas',      cep5: '88107', lat: -27.6090, lng: -48.6760, n: 46 },
+  { nome: 'Forquilhinha',    cep5: '88106', lat: -27.6010, lng: -48.6640, n: 34 },
+  { nome: 'Areias',          cep5: '88113', lat: -27.5760, lng: -48.6260, n: 30 },
+  { nome: 'Ipiranga',        cep5: '88111', lat: -27.5930, lng: -48.6480, n: 28 },
+  { nome: 'Bela Vista',      cep5: '88110', lat: -27.5880, lng: -48.6190, n: 24 },
+  { nome: 'Potecas',         cep5: '88117', lat: -27.6190, lng: -48.6430, n: 20 },
+  { nome: 'Real Parque',     cep5: '88115', lat: -27.6040, lng: -48.6310, n: 18 },
+  { nome: 'Picadas do Sul',  cep5: '88119', lat: -27.6280, lng: -48.6600, n: 16 },
+  { nome: 'Roçado',          cep5: '88104', lat: -27.5960, lng: -48.6120, n: 14 },
+  { nome: 'Serraria',        cep5: '88112', lat: -27.5700, lng: -48.6400, n: 12 }
+];
+const DEMO_RUAS = ['Rua das Palmeiras','Rua João Pereira','Avenida Central','Rua Santa Luzia',
+  'Rua dos Lírios','Travessa Bom Jardim','Rua Antônio Dias','Avenida das Flores',
+  'Rua Monte Alegre','Rua São Jorge','RuaPedra Branca','Avenida do Parque'];
+
+// gera um número pseudoaleatório estável — a demo sai igual toda vez
+let _demoSeed = 20261104;
+function demoRand() { _demoSeed = (_demoSeed * 1103515245 + 12345) & 0x7fffffff; return _demoSeed / 0x7fffffff; }
+
+function demoSemear() {
+  let ceps = 0;
+  DEMO_BAIRROS.forEach(b => {
+    for (let i = 0; i < b.n; i++) {
+      const cep = b.cep5 + String(100 + i * 7).padStart(3, '0');
+      memoriaCache['cep:' + cep] = {
+        rua: DEMO_RUAS[(i + b.cep5.charCodeAt(4)) % DEMO_RUAS.length],
+        bairro: b.nome,
+        cidade: 'São José',
+        lat: b.lat + (demoRand() - 0.5) * 0.016,
+        lng: b.lng + (demoRand() - 0.5) * 0.020
+      };
+      ceps++;
+    }
+  });
+  console.log(`[demo] ${ceps} CEPs fictícios de São José carregados na memória`);
+  return ceps;
+}
+
+// planilha de demonstração, no mesmo formato das exportações reais
+function demoPacotes(qtd) {
+  const linhas = [];
+  const total = qtd || 420;
+  const peso = DEMO_BAIRROS.reduce((a, b) => a + b.n, 0);
+  let i = 0;
+  while (linhas.length < total) {
+    for (const b of DEMO_BAIRROS) {
+      const quantos = Math.max(1, Math.round(total * (b.n / peso) / 4));
+      for (let k = 0; k < quantos && linhas.length < total; k++) {
+        const cep = b.cep5 + String(100 + ((i * 7) % (b.n * 7))).padStart(3, '0');
+        linhas.push({
+          'Número de pedido JMS': '9' + String(10000000000000 + i * 37 + 7).slice(0, 14),
+          'Estado de destino': 'SC',
+          'Município de Destino': 'São José',
+          'BAIRRO': b.nome,
+          'CEP': cep,
+          'Nome da plataforma': ['TikTok', 'TikTok', 'TikTok', 'MERCADO'][i % 4]
+        });
+        i++;
+      }
+    }
+  }
+  return linhas.slice(0, total);
+}
+
 // ─── SUPABASE CACHE ───────────────────────────────────────────────────────────
 // cache local em memória para esta instância (evita bater no Supabase toda requisição)
 const memoriaCache = {};
@@ -1838,7 +1911,7 @@ const server = http.createServer(async (req, res) => {
   const pathname = parsedUrl.pathname;
 
   // rotas de API que não exigem login (login/registro em si)
-  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados', '/api/jogodavelha/criar', '/api/jogodavelha/entrar', '/api/jogodavelha/estado', '/api/jogodavelha/jogar', '/api/jogodavelha/revanche', '/api/jogodavelha/zerar', '/api/jogodavelha/sair', '/api/cobras/criar', '/api/cobras/entrar', '/api/cobras/estado', '/api/cobras/tabuleiro', '/api/cobras/comecar', '/api/cobras/rolar', '/api/cobras/revanche', '/api/cobras/lobby', '/api/cobras/sair', '/api/ludo/criar', '/api/ludo/entrar', '/api/ludo/estado', '/api/ludo/comecar', '/api/ludo/rolar', '/api/ludo/mover', '/api/ludo/revanche', '/api/ludo/sair', '/api/presidente/ia', '/api/presidente/ia/status']);
+  const AUTH_PUBLICA = new Set(['/api/auth/login', '/api/auth/registrar', '/api/auth/verificar-email', '/api/auth/reenviar-email', '/api/auth/esqueci', '/api/auth/redefinir', '/api/pagamento/webhook', '/api/escala/dados', '/api/financeiro/dados', '/api/jogodavelha/criar', '/api/jogodavelha/entrar', '/api/jogodavelha/estado', '/api/jogodavelha/jogar', '/api/jogodavelha/revanche', '/api/jogodavelha/zerar', '/api/jogodavelha/sair', '/api/cobras/criar', '/api/cobras/entrar', '/api/cobras/estado', '/api/cobras/tabuleiro', '/api/cobras/comecar', '/api/cobras/rolar', '/api/cobras/revanche', '/api/cobras/lobby', '/api/cobras/sair', '/api/ludo/criar', '/api/ludo/entrar', '/api/ludo/estado', '/api/ludo/comecar', '/api/ludo/rolar', '/api/ludo/mover', '/api/ludo/revanche', '/api/ludo/sair', '/api/presidente/ia', '/api/presidente/ia/status', '/api/demo/planilha']);
   // rotas que, além de logado, exigem admin
   const SOMENTE_ADMIN = new Set(['/api/cache/clear', '/api/cep/excluir', '/api/nomes/remover', '/api/rotas/apagar', '/api/admin/google-usage', '/api/admin/cupons', '/api/admin/cupons/remover', '/api/admin/cnefe', '/api/admin/cnefe/importar', '/api/admin/cnefe/status', '/api/admin/gkeys', '/api/admin/gkeys/remover', '/api/admin/gkeys/importar-usuarios', '/api/admin/gkeys/testar', '/api/admin/gkeys/avisar', '/api/admin/email/testar', '/api/admin/gkeys/diagnostico', '/api/admin/gkeys/marcar', '/api/admin/correcoes', '/api/admin/correcoes/excluir', '/api/admin/correcoes/apagar-todas', '/api/admin/conta', '/api/endereco/ajeitar', '/api/auth/pendentes', '/api/auth/usuarios', '/api/auth/creditos', '/api/auth/aprovar', '/api/auth/rejeitar']);
 
@@ -2787,6 +2860,12 @@ const server = http.createServer(async (req, res) => {
       res.end(data);
     });
     return;
+  }
+
+  // ─── MODO DEMO: planilha fictícia pra demonstração ────────────────────────
+  if (MODO_DEMO && req.method === 'GET' && pathname === '/api/demo/planilha') {
+    const qtd = Math.min(2000, Math.max(10, parseInt(parsedUrl.query.qtd, 10) || 420));
+    return json(res, 200, { ok: true, linhas: demoPacotes(qtd) });
   }
 
   // ─── contornos dos bairros (OpenStreetMap) ────────────────────────────────
@@ -4056,4 +4135,5 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404); res.end('Not found');
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`✅ PackScan na porta ${PORT} | Supabase: ${SUPABASE_URL ? 'conectado' : 'não configurado'}`));
+if (MODO_DEMO) { demoSemear(); console.warn('[demo] MODO_DEMO ligado — dados fictícios, sem banco. Não use em produção.'); }
+server.listen(PORT, '0.0.0.0', () => console.log(`✅ PackScan na porta ${PORT} | Supabase: ${SUPABASE_URL ? 'conectado' : 'não configurado'}${MODO_DEMO ? ' | MODO DEMO' : ''}`));
