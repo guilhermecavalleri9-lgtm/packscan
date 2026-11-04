@@ -1667,6 +1667,52 @@ function comprarAbrir() {
   }).catch(function(e){ lista.innerHTML = '<div style="color:var(--red)">Erro: ' + esc(e.message) + '</div>'; });
 }
 
+// ── OFERTA POR LINK DIRETO (?plano=<id>) ──
+// Abre a tela de pagamento já num plano específico, inclusive os que não
+// aparecem na lista normal. É assim que a oferta de 60 dias chega ao cliente.
+var _planoDoLink = null;
+function planoDoLink(){
+  try{ return new URLSearchParams(location.search).get('plano') || null; }catch(e){ return null; }
+}
+async function abrirPlanoDireto(id){
+  _planoDoLink = id;
+  var bg=document.getElementById('comprar-bg'); if(!bg) return;
+  bg.style.display='flex';
+  document.getElementById('comprar-pix').style.display='none';
+  var lista=document.getElementById('comprar-lista');
+  lista.style.display='block'; lista.innerHTML='Carregando a oferta...';
+  try{
+    var r=await apiFetch(BACKEND+'/api/pagamento/plano?id='+encodeURIComponent(id));
+    var d=await r.json();
+    if(!r.ok || !d.plano){ lista.innerHTML='<div style="color:var(--red)">Oferta não encontrada.</div>'; return; }
+    renderOferta(d.plano, d.ativo);
+  }catch(e){ lista.innerHTML='<div style="color:var(--red)">Erro: '+esc(e.message)+'</div>'; }
+}
+function renderOferta(pl, ativo){
+  var lista=document.getElementById('comprar-lista');
+  var idEsc=String(pl.id).replace(/'/g,"\\'");
+  var economia = pl.precoDe ? (pl.precoDe - pl.preco) : 0;
+  var html='<div style="border:2px solid var(--accent);border-radius:14px;padding:18px;background:var(--bg3)">'
+    + '<div style="font-size:10.5px;color:var(--accent);letter-spacing:.08em;font-weight:700;margin-bottom:6px">OFERTA DE ABERTURA</div>'
+    + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">'
+      + '<strong style="font-size:17px">'+esc(pl.nome)+' de plano empresa</strong></div>'
+    + (pl.precoDe ? '<div style="font-size:12px;color:var(--text3);margin-bottom:2px"><span style="text-decoration:line-through">R$ '+pl.precoDe.toFixed(2).replace('.',',')+'</span> nos '+pl.dias+' dias</div>' : '')
+    + '<div style="font-size:30px;font-weight:800;color:var(--text);margin-bottom:2px">R$ '+pl.preco.toFixed(2).replace('.',',')+'</div>'
+    + '<div style="font-size:12px;color:var(--green);margin-bottom:12px">'+(economia>0?('você economiza R$ '+economia.toFixed(2).replace('.',',')+' · '):'')+'pagamento único, não renova sozinho</div>'
+    + '<div style="font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:14px">'
+      + (pl.itens||[]).map(function(i){ return '<div>✓ '+esc(i)+'</div>'; }).join('')
+    + '</div>';
+  if(!ativo){
+    html += '<div style="color:var(--amber);font-size:12px">Pagamento automático indisponível no momento. Fale no WhatsApp:</div>'
+      + '<a class="btn btn-g" style="width:100%;justify-content:center;text-decoration:none;margin-top:.6rem" href="'+WHATSAPP_COMPRA+'" target="_blank" rel="noopener">💬 Falar no WhatsApp</a>';
+  } else {
+    html += '<button class="btn btn-g" style="width:100%;justify-content:center;padding:13px;font-size:14px;font-weight:650" onclick="comprarPacote(\''+idEsc+'\')">Pagar R$ '+pl.preco.toFixed(2).replace('.',',')+' no PIX</button>'
+      + '<div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Liberação automática assim que o PIX cair</div>';
+  }
+  html += '</div><button class="btn btn-sm" style="width:100%;justify-content:center;margin-top:.8rem" onclick="_planoDoLink=null;comprarAbrir()">ver os planos normais</button>';
+  lista.innerHTML=html;
+}
+
 function comprarRenderLista() {
   var lista = document.getElementById('comprar-lista');
   var d = _pacotesCache;
@@ -6586,6 +6632,21 @@ if ('serviceWorker' in navigator) {
   if (!alvo) return;
   try { history.replaceState(null,'','/'); } catch(e){}
   setTimeout(function(){ if (typeof abrirPlanos==='function') abrirPlanos(alvo); }, 60);
+})();
+// link da oferta (?plano=...): guarda e abre assim que a conta estiver logada
+(function(){
+  var id = planoDoLink(); if(!id) return;
+  var tentar = function(){
+    if (AUTH_TOKEN && document.getElementById('auth-bg').classList.contains('hide')) {
+      try { history.replaceState(null,'',location.pathname); } catch(e){}
+      abrirPlanoDireto(id);
+      return true;
+    }
+    return false;
+  };
+  if (tentar()) return;
+  var t = setInterval(function(){ if (tentar()) clearInterval(t); }, 800);
+  setTimeout(function(){ clearInterval(t); }, 300000); // desiste depois de 5 min
 })();
 authBootstrap();
 </script>

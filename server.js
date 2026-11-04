@@ -24,7 +24,13 @@ const PLANOS = [
   { id: 'empresa_starter', tipo: 'empresa',   nome: 'Starter', preco: 390.00, dias: 30, rotas: 10,
     itens: ['Até 10 rotas por dia', 'Roteirização + endereço', 'Bipagem por câmera e por código', 'Áreas de rota salvas'] },
   { id: 'empresa_frota',   tipo: 'empresa',   nome: 'Frota',   preco: 990.00, dias: 30, rotas: 50, destaque: true,
-    itens: ['Até 50 rotas por dia', 'Tudo do Starter', 'Integração com Circuit', 'Aviso ao cliente no WhatsApp', 'Escala de motoristas'] }
+    itens: ['Até 50 rotas por dia', 'Tudo do Starter', 'Integração com Circuit', 'Aviso ao cliente no WhatsApp', 'Escala de motoristas'] },
+  // Oferta de abertura: 60 dias de Starter por R$ 197 (tabela: R$ 780 em 2 meses).
+  // 'oculto' tira da lista normal — só chega nela por link direto (?plano=empresa_60d).
+  { id: 'empresa_60d', tipo: 'empresa', nome: '60 dias', preco: 197.00, dias: 60, rotas: 10, oculto: true,
+    precoDe: 780.00,
+    itens: ['2 meses de acesso completo', 'Até 10 rotas por dia', 'Roteirização automática por bairro',
+            'Bipagem por câmera e por código', 'Modo motorista com GPS', 'Pagamento único — não renova sozinho'] }
 ];
 function acharPlano(id) { return PLANOS.find(p => p.id === String(id || '')) || null; }
 // créditos de boas-vindas pra testar o sistema ao se registrar
@@ -2260,11 +2266,18 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ─── PAGAMENTO: o que está à venda — planos do tipo da conta (motorista/empresa) ──
+  // busca UM plano pelo id, inclusive os ocultos — é o que o link promocional usa
+  if (req.method === 'GET' && pathname === '/api/pagamento/plano') {
+    const pl = acharPlano((parsedUrl.query.id || '').toString());
+    if (!pl) return json(res, 404, { error: 'Plano não encontrado' });
+    return json(res, 200, { plano: pl, ativo: !!MERCADOPAGO_TOKEN });
+  }
+
   if (req.method === 'GET' && pathname === '/api/pagamento/pacotes') {
     const lista = await getUsuarios();
     const eu = lista.find(x => x.usuario === req.usuarioAtual.usuario);
     const tipo = (eu && eu.tipoConta) || 'motorista';
-    const doTipo = PLANOS.filter(p => p.tipo === tipo);
+    const doTipo = PLANOS.filter(p => p.tipo === tipo && !p.oculto);
     return json(res, 200, {
       pacotes: [], tipoConta: tipo,
       planos: doTipo,
