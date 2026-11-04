@@ -267,7 +267,7 @@ const DEMO_BAIRROS = [
 ];
 const DEMO_RUAS = ['Rua das Palmeiras','Rua João Pereira','Avenida Central','Rua Santa Luzia',
   'Rua dos Lírios','Travessa Bom Jardim','Rua Antônio Dias','Avenida das Flores',
-  'Rua Monte Alegre','Rua São Jorge','RuaPedra Branca','Avenida do Parque'];
+  'Rua Monte Alegre','Rua São Jorge','Rua Pedra Branca','Avenida do Parque'];
 
 // gera um número pseudoaleatório estável — a demo sai igual toda vez
 let _demoSeed = 20261104;
