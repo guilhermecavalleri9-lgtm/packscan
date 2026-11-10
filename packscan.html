@@ -2992,6 +2992,7 @@ function arToggle() {
 // IMPORTAR
 // ═══════════════════════════════════════════════════════════════════════════════
 var _pFile = null;
+var _impDuplicados = 0;   // códigos repetidos ignorados na última importação
 function handleFile(inp, cb) {
   _pFile = inp.files[0]; if (!_pFile) return;
   var ext = _pFile.name.split('.').pop().toLowerCase();
@@ -3067,6 +3068,17 @@ function _importarPlanilha(adicionar) {
         cidade:cols[4]!=='—'?String(r[cols[4]]||'').trim():'',
         tracking2:cols[5]!=='—'?String(r[cols[5]]||'').trim():'', lat:null,lng:null,enderecoNorm:null,precisao:null,rota:null,numNaRota:null };
     });
+    // Código repetido DENTRO da própria planilha conta uma vez só. A comparação é
+    // pelos dígitos, senão o mesmo pedido gravado como número (999...,0) e como
+    // texto passaria por dois pacotes diferentes.
+    var _vistos = {}, _dups = 0;
+    linhas = linhas.filter(function(l){
+      var ch = String(l.tracking||'').replace(/\.0+$/,'').replace(/\D/g,'') || String(l.tracking||'').toLowerCase();
+      if (!ch) return false;
+      if (_vistos[ch]) { _dups++; return false; }
+      _vistos[ch] = true; return true;
+    });
+    _impDuplicados = _dups;
     var _nNovos = 0;
     if (!adicionar) {
       // importação nova = recomeço limpo: apaga rotas, bipagens e o mapa da
@@ -3085,7 +3097,8 @@ function _importarPlanilha(adicionar) {
       _nNovos = novos.length;
       finImport();
       document.getElementById('import-msg').innerHTML = '<div class="alert alert-green">✓ <strong>'+novos.length+' pacotes novos adicionados.</strong> '
-        + (linhas.length-novos.length)+' já existiam e foram mantidos como estavam. Total agora: '+pacotes.length+'. Vá em Geocodificar — só os novos serão processados.</div>';
+        + (linhas.length-novos.length)+' já existiam e foram mantidos como estavam. Total agora: '+pacotes.length+'. Vá em Geocodificar — só os novos serão processados.</div>'
+        + (_impDuplicados ? ('<div class="alert alert-amber">⚠ <div><strong>'+_impDuplicados+' linha(s) com código repetido</strong> na planilha foram ignoradas.</div></div>') : '');
       atualizarGeoInfo();
     }
     persistirLocal(); // importação/adição de verdade — salva e sincroniza
@@ -3101,7 +3114,8 @@ function carregarDemo() {
 }
 
 function finImport() {
-  document.getElementById('import-msg').innerHTML = '<div class="alert alert-green">✓ <strong>'+pacotes.length.toLocaleString('pt-BR')+' pacotes importados.</strong> Vá para Geocodificar.</div>';
+  document.getElementById('import-msg').innerHTML = '<div class="alert alert-green">✓ <strong>'+pacotes.length.toLocaleString('pt-BR')+' pacotes importados.</strong> Vá para Geocodificar.</div>'
+    + (_impDuplicados ? ('<div class="alert alert-amber">⚠ <div><strong>'+_impDuplicados+' linha(s) com código repetido</strong> foram ignoradas — cada pedido entrou uma vez só.</div></div>') : '');
   var html = '<div class="card" style="overflow-x:auto"><div class="card-title">prévia</div><table><thead><tr><th>Tracking</th><th>Endereço</th><th>Bairro</th><th>CEP</th></tr></thead><tbody>';
   pacotes.slice(0,5).forEach(function(p){ html+='<tr><td style="font-family:var(--mono);font-size:11px">'+esc(p.tracking)+'</td><td>'+esc(p.endereco)+'</td><td>'+esc(p.bairro)+'</td><td style="font-family:var(--mono)">'+esc(p.cep)+'</td></tr>'; });
   if (pacotes.length>5) html+='<tr><td colspan="4" style="color:var(--text3);text-align:center;padding:8px;font-family:var(--mono)">... +'+( pacotes.length-5)+' pacotes</td></tr>';
